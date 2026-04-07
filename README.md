@@ -77,3 +77,7 @@ Full syntax guide, advanced features, and examples → **[docs/usage.md](docs/us
 
 > Project is under active development and already powering real workflows.  
 > Star the repo if you like where this is going ✨
+
+## LICENSE
+
+[MIT](LICENSE)
