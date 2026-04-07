@@ -1,6 +1,8 @@
+use std::fs;
+use std::path::PathBuf;
 use std::process::ExitCode;
 
-use only::{CliInput, build_execution_plan, parse_onlyfile, run_plan};
+use only::{CliInput, build_execution_plan, parse_onlyfile, run_plan, run_with};
 
 fn cli(task_path: &[&str]) -> CliInput {
     CliInput {
@@ -41,7 +43,7 @@ fn propagates_command_failure() {
     let error = run_plan(&plan).expect_err("runtime should return contextual error");
     assert_eq!(
         error.to_string(),
-        "task 'fail' failed while running `false` with exit code ExitCode(unix_exit_status(1))"
+        "task 'fail' failed at step [1/1] while running `false` with exit code ExitCode(unix_exit_status(1))"
     );
 }
 
@@ -196,4 +198,41 @@ build(profile):
 
     let code = run_plan(&plan).expect("runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
+}
+
+#[test]
+fn runs_tasks_from_onlyfile_base_dir() {
+    let root = temp_case_dir("only-runtime-base-dir");
+    let onlyfile_path = root.join("Onlyfile");
+    fs::write(root.join("marker.txt"), "marker").expect("marker should be written");
+    fs::write(
+        &onlyfile_path,
+        "check():
+    test -f marker.txt
+",
+    )
+    .expect("Onlyfile should be written");
+
+    let input = CliInput {
+        onlyfile_path: Some(onlyfile_path),
+        print_discovered_path: false,
+        top_level_help_requested: false,
+        task_path: vec!["check".into()],
+        parameter_overrides: vec![],
+    };
+
+    let code = run_with(input).expect("runtime should use the Onlyfile base directory");
+    assert_eq!(code, ExitCode::SUCCESS);
+
+    fs::remove_dir_all(root).expect("temp tree should be removed");
+}
+
+fn temp_case_dir(name: &str) -> PathBuf {
+    let root = std::env::temp_dir().join(format!("{name}-{}", std::process::id()));
+    if root.exists() {
+        fs::remove_dir_all(&root).expect("existing temp tree should be removed");
+    }
+
+    fs::create_dir_all(&root).expect("temp tree should be created");
+    root
 }

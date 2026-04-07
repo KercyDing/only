@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::path::PathBuf;
 
 use crate::cli::args::CliInput;
 use crate::diagnostic::error::{OnlyError, Result};
@@ -28,6 +29,24 @@ pub enum InvocationTarget {
 /// Returns:
 /// Ordered execution plan after dependency expansion.
 pub fn build_execution_plan(document: &Onlyfile, cli: &CliInput) -> Result<ExecutionPlan> {
+    let working_dir = std::env::current_dir().map_err(OnlyError::cwd)?;
+    build_execution_plan_in_dir(document, cli, working_dir)
+}
+
+/// Builds a resolved execution plan with an explicit working directory.
+///
+/// Args:
+/// document: Parsed Onlyfile document.
+/// cli: Normalized CLI input.
+/// working_dir: Directory used for task execution.
+///
+/// Returns:
+/// Ordered execution plan after dependency expansion.
+pub fn build_execution_plan_in_dir(
+    document: &Onlyfile,
+    cli: &CliInput,
+    working_dir: PathBuf,
+) -> Result<ExecutionPlan> {
     let target = resolve_target(document, cli)?;
     let mut nodes = Vec::new();
     let mut visiting = Vec::new();
@@ -78,6 +97,7 @@ pub fn build_execution_plan(document: &Onlyfile, cli: &CliInput) -> Result<Execu
     Ok(ExecutionPlan {
         nodes,
         verbose: is_verbose_enabled(document),
+        working_dir,
     })
 }
 

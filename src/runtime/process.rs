@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::process::{Command, ExitCode};
 
 use crate::diagnostic::error::{OnlyError, Result};
@@ -6,11 +7,13 @@ use crate::diagnostic::error::{OnlyError, Result};
 ///
 /// Args:
 /// command: Shell command text to execute.
+/// working_dir: Directory used as the shell working directory.
 ///
 /// Returns:
 /// Process exit code produced by the shell.
-pub fn run_command(command: &str) -> Result<ExitCode> {
+pub fn run_command(command: &str, working_dir: &Path) -> Result<ExitCode> {
     let status = Command::new("/bin/sh")
+        .current_dir(working_dir)
         .arg("-c")
         .arg(command)
         .status()
@@ -25,14 +28,22 @@ pub fn run_command(command: &str) -> Result<ExitCode> {
 ///
 /// Args:
 /// task: Qualified task name.
+/// step_index: One-based command index within the task.
+/// step_total: Total number of commands in the task.
 /// command: Rendered shell command.
 /// code: Exit code returned by the shell.
 ///
 /// Returns:
 /// Structured runtime error with execution context.
-pub fn command_failed(task: &str, command: &str, code: ExitCode) -> OnlyError {
+pub fn command_failed(
+    task: &str,
+    step_index: usize,
+    step_total: usize,
+    command: &str,
+    code: ExitCode,
+) -> OnlyError {
     OnlyError::runtime(format!(
-        "task '{task}' failed while running `{command}` with exit code {:?}",
+        "task '{task}' failed at step [{step_index}/{step_total}] while running `{command}` with exit code {:?}",
         code
     ))
 }

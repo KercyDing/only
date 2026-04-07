@@ -1,7 +1,10 @@
+use std::path::PathBuf;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionPlan {
     pub nodes: Vec<ExecutionNode>,
     pub verbose: bool,
+    pub working_dir: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

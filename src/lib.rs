@@ -18,7 +18,7 @@ pub use cli::args::CliInput;
 pub use config::discover::{DiscoveredOnlyfile, discover_onlyfile};
 pub use diagnostic::error::{OnlyError, Result};
 pub use model::{Directive, Onlyfile};
-pub use planner::ExecutionPlan;
+pub use planner::{ExecutionPlan, build_execution_plan_in_dir};
 
 /// Runs the default CLI entry point with two-phase parsing.
 ///
@@ -31,12 +31,12 @@ pub fn run() -> ExitCode {
     match run_inner() {
         Ok(code) => code,
         Err(OnlyError::NotFound(message)) => {
-            eprintln!("Error: {message}");
+            eprintln!("{}", render_error_message(&message));
             eprintln!("{}", render_help_hint());
             ExitCode::from(2)
         }
         Err(error) => {
-            eprintln!("{error}");
+            eprintln!("{}", render_error_message(&error.to_string()));
             ExitCode::from(2)
         }
     }
@@ -78,7 +78,8 @@ fn run_inner() -> Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
 
-    let plan = build_execution_plan(&discovered.document, &cli)?;
+    let plan =
+        build_execution_plan_in_dir(&discovered.document, &cli, discovered.base_dir.clone())?;
     run_plan(&plan)
 }
 
@@ -100,7 +101,8 @@ pub fn run_with(cli: CliInput) -> Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
 
-    let plan = build_execution_plan(&discovered.document, &cli)?;
+    let plan =
+        build_execution_plan_in_dir(&discovered.document, &cli, discovered.base_dir.clone())?;
     run_plan(&plan)
 }
 
@@ -165,4 +167,32 @@ fn render_help_hint() -> String {
         style.render(),
         style.render_reset()
     )
+}
+
+fn render_error_message(message: &str) -> String {
+    let label_style = Style::new()
+        .fg_color(Some(AnsiColor::BrightRed.into()))
+        .bold();
+    let body_style = Style::new().fg_color(Some(AnsiColor::BrightRed.into()));
+
+    format!(
+        "{}Error:{} {}{}{}",
+        label_style.render(),
+        label_style.render_reset(),
+        body_style.render(),
+        message,
+        body_style.render_reset()
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_error_message;
+
+    #[test]
+    fn renders_colored_error_message() {
+        let rendered = render_error_message("task failed");
+        assert!(rendered.contains("Error:"));
+        assert!(rendered.contains("task failed"));
+    }
 }
