@@ -12,6 +12,6 @@ pub fn parse_global_options() -> Result<CliInput> {
 
 pub fn parse_with_onlyfile(onlyfile: &Onlyfile) -> Result<CliInput> {
     let matches = app::build(onlyfile).get_matches();
-    let input = CliInput::from_matches(matches.clone())?.with_task_path(matches);
+    let input = CliInput::from_matches(matches.clone())?.with_task_path(matches, onlyfile);
     Ok(input)
 }

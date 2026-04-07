@@ -78,13 +78,14 @@ pub fn render_available_tasks(onlyfile: &Onlyfile) -> String {
             (
                 task.signature.name.clone(),
                 task.doc.clone().unwrap_or_default(),
+                false,
             )
         })
         .chain(
             onlyfile
                 .namespaces
                 .iter()
-                .map(|namespace| (namespace.name.clone(), namespace_summary(namespace))),
+                .map(|namespace| (namespace.name.clone(), namespace_summary(namespace), true)),
         )
         .collect::<Vec<_>>();
 
@@ -94,7 +95,7 @@ pub fn render_available_tasks(onlyfile: &Onlyfile) -> String {
 
     let width = entries
         .iter()
-        .map(|(name, _)| name.len())
+        .map(|(name, _, is_group)| name.len() + if *is_group { 8 } else { 0 })
         .max()
         .unwrap_or_default();
 
@@ -104,19 +105,33 @@ pub fn render_available_tasks(onlyfile: &Onlyfile) -> String {
     let task_style = TermStyle::new()
         .fg_color(Some(TermAnsiColor::BrightCyan.into()))
         .bold();
+    let group_style = TermStyle::new()
+        .fg_color(Some(TermAnsiColor::BrightYellow.into()))
+        .bold();
 
     let mut output = format!(
         "{}Available tasks:{}\n",
         header_style.render(),
         header_style.render_reset()
     );
-    for (name, doc) in entries {
-        let padding = " ".repeat(width.saturating_sub(name.len()));
+    for (name, doc, is_group) in entries {
+        let suffix = if is_group { " [group]" } else { "" };
+        let padding = " ".repeat(width.saturating_sub(name.len() + suffix.len()));
+        let group_marker = if is_group {
+            format!(
+                " {}[group]{}",
+                group_style.render(),
+                group_style.render_reset()
+            )
+        } else {
+            String::new()
+        };
         output.push_str(&format!(
-            "  {}{}{}{}  {doc}\n",
+            "  {}{}{}{}{} {doc}\n",
             task_style.render(),
             name,
             task_style.render_reset(),
+            group_marker,
             padding
         ));
     }
@@ -150,6 +165,7 @@ fn build_namespace_command(namespace: &Namespace) -> Command {
     let mut cmd = Command::new(name)
         .bin_name(format!("only {}", namespace.name))
         .disable_help_subcommand(true)
+        .styles(cli_styles())
         .about(namespace_summary(namespace));
 
     for task in &namespace.tasks {
@@ -170,28 +186,23 @@ fn namespace_summary(namespace: &Namespace) -> String {
 fn build_task_command(task: &TaskDefinition) -> Command {
     let about = task.doc.clone().unwrap_or_default();
     let name: &'static str = Box::leak(task.signature.name.clone().into_boxed_str());
-    let mut cmd = Command::new(name).about(about);
+    let mut cmd = Command::new(name).styles(cli_styles()).about(about);
 
-    for param in &task.signature.parameters {
+    for (index, param) in task.signature.parameters.iter().enumerate() {
         let pname: &'static str = Box::leak(param.name.clone().into_boxed_str());
         let arg = if let Some(default) = &param.default_value {
             let help = format!("Parameter (default: {default})");
-            Arg::new(pname).long(pname).help(help)
+            Arg::new(pname).index(index + 1).required(false).help(help)
         } else {
             Arg::new(pname)
-                .long(pname)
+                .index(index + 1)
                 .required(true)
                 .help("Required parameter")
         };
         cmd = cmd.arg(arg);
     }
 
-    cmd.arg(
-        Arg::new("task-args")
-            .num_args(1..)
-            .trailing_var_arg(true)
-            .help("Additional task arguments"),
-    )
+    cmd
 }
 
 fn cli_styles() -> Styles {

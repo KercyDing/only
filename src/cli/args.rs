@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use clap::ArgMatches;
 
 use crate::diagnostic::error::{OnlyError, Result};
+use crate::model::{Namespace, Onlyfile, TaskDefinition};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CliInput {
@@ -46,13 +47,21 @@ impl CliInput {
     ///
     /// Returns:
     /// Self with task_path populated.
-    pub fn with_task_path(mut self, matches: ArgMatches) -> Self {
+    pub fn with_task_path(mut self, matches: ArgMatches, onlyfile: &Onlyfile) -> Self {
         let mut path = Vec::new();
         let mut current = matches;
 
         while let Some((name, sub_matches)) = current.subcommand() {
             path.push(name.trim_end_matches('/').to_string());
             current = sub_matches.clone();
+        }
+
+        if let Some(task) = task_for_path(onlyfile, &path) {
+            for parameter in &task.signature.parameters {
+                if let Some(value) = current.get_one::<String>(&parameter.name) {
+                    path.push(value.clone());
+                }
+            }
         }
 
         self.task_path = path;
@@ -161,6 +170,25 @@ fn os_string_to_string(value: OsString, option: &str) -> Result<String> {
     value
         .into_string()
         .map_err(|_| OnlyError::parse(format!("non-UTF-8 values are not supported for '{option}'")))
+}
+
+fn task_for_path<'a>(onlyfile: &'a Onlyfile, path: &[String]) -> Option<&'a TaskDefinition> {
+    match path {
+        [task] => onlyfile
+            .global_tasks
+            .iter()
+            .find(|item| item.signature.name == *task),
+        [namespace, task, ..] => namespace_for_name(onlyfile, namespace)
+            .and_then(|scope| scope.tasks.iter().find(|item| item.signature.name == *task)),
+        _ => None,
+    }
+}
+
+fn namespace_for_name<'a>(onlyfile: &'a Onlyfile, name: &str) -> Option<&'a Namespace> {
+    onlyfile
+        .namespaces
+        .iter()
+        .find(|namespace| namespace.name == name)
 }
 
 #[cfg(test)]
