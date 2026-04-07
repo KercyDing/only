@@ -22,3 +22,56 @@ fn parses_minimal_document_shape() {
     assert_eq!(document.namespaces[0].name, "tools");
     assert_eq!(document.namespaces[0].tasks[0].signature.name, "fmt");
 }
+
+#[test]
+fn rejects_ambiguous_guards() {
+    let source = "build() ? @os(\"linux\"):
+    echo one
+
+build() ? @os(\"linux\"):
+    echo two
+";
+    let error = parse_onlyfile(source).expect_err("ambiguous guards should fail");
+    assert_eq!(
+        error.to_string(),
+        "ambiguous guard: 'build' conflicts with 'build'"
+    );
+}
+
+#[test]
+fn rejects_duplicate_parameter_names() {
+    let source = "build(tag, tag=\"v1\"):
+    echo build
+";
+    let error = parse_onlyfile(source).expect_err("duplicate parameters should fail");
+    assert_eq!(
+        error.to_string(),
+        "duplicate parameter 'tag' in task 'build'"
+    );
+}
+
+#[test]
+fn assigns_following_tasks_to_current_namespace() {
+    let source = "[frontend]
+build():
+    npm run build
+
+test():
+    npm test
+
+[backend]
+serve():
+    cargo run
+";
+    let document = parse_onlyfile(source).expect("namespaced tasks should parse");
+
+    assert!(document.global_tasks.is_empty());
+    assert_eq!(document.namespaces.len(), 2);
+    assert_eq!(document.namespaces[0].name, "frontend");
+    assert_eq!(document.namespaces[0].tasks.len(), 2);
+    assert_eq!(document.namespaces[0].tasks[0].signature.name, "build");
+    assert_eq!(document.namespaces[0].tasks[1].signature.name, "test");
+    assert_eq!(document.namespaces[1].name, "backend");
+    assert_eq!(document.namespaces[1].tasks.len(), 1);
+    assert_eq!(document.namespaces[1].tasks[0].signature.name, "serve");
+}

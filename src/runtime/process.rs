@@ -20,3 +20,19 @@ pub fn run_command(command: &str) -> Result<ExitCode> {
 
     Ok(ExitCode::from(status.code().unwrap_or(1) as u8))
 }
+
+/// Builds a runtime error for a failed command execution.
+///
+/// Args:
+/// task: Qualified task name.
+/// command: Rendered shell command.
+/// code: Exit code returned by the shell.
+///
+/// Returns:
+/// Structured runtime error with execution context.
+pub fn command_failed(task: &str, command: &str, code: ExitCode) -> OnlyError {
+    OnlyError::runtime(format!(
+        "task '{task}' failed while running `{command}` with exit code {:?}",
+        code
+    ))
+}

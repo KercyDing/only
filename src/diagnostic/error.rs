@@ -14,6 +14,7 @@ pub enum OnlyError {
     },
     NotFound(String),
     Parse(String),
+    Runtime(String),
     Unsupported(&'static str),
 }
 
@@ -45,6 +46,10 @@ impl OnlyError {
     pub fn unsupported(message: &'static str) -> Self {
         Self::Unsupported(message)
     }
+
+    pub fn runtime(message: impl Into<String>) -> Self {
+        Self::Runtime(message.into())
+    }
 }
 
 impl fmt::Display for OnlyError {
@@ -61,7 +66,9 @@ impl fmt::Display for OnlyError {
                     write!(f, "{message}: {source}")
                 }
             }
-            Self::NotFound(message) | Self::Parse(message) => f.write_str(message),
+            Self::NotFound(message) | Self::Parse(message) | Self::Runtime(message) => {
+                f.write_str(message)
+            }
             Self::Unsupported(message) => f.write_str(message),
         }
     }
@@ -71,7 +78,7 @@ impl StdError for OnlyError {
     fn source(&self) -> Option<&(dyn StdError + 'static)> {
         match self {
             Self::Io { source, .. } => Some(source),
-            Self::NotFound(_) | Self::Parse(_) | Self::Unsupported(_) => None,
+            Self::NotFound(_) | Self::Parse(_) | Self::Runtime(_) | Self::Unsupported(_) => None,
         }
     }
 }

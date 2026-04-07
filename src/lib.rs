@@ -23,7 +23,7 @@ pub use planner::ExecutionPlan;
 /// Returns:
 /// Process exit code for the current invocation.
 pub fn run() -> ExitCode {
-    match run_with(cli::parse()) {
+    match cli::parse().and_then(run_with) {
         Ok(code) => code,
         Err(error) => {
             eprintln!("{error}");

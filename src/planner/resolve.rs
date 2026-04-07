@@ -247,10 +247,29 @@ fn bind_parameters(
     task: &TaskDefinition,
     overrides: &[(String, String)],
 ) -> Result<std::collections::HashMap<String, String>> {
-    let override_map = overrides
+    let mut override_map = std::collections::HashMap::new();
+    let allowed = task
+        .signature
+        .parameters
         .iter()
-        .cloned()
-        .collect::<std::collections::HashMap<_, _>>();
+        .map(|parameter| parameter.name.as_str())
+        .collect::<std::collections::HashSet<_>>();
+
+    for (name, value) in overrides {
+        if !allowed.contains(name.as_str()) {
+            return Err(OnlyError::parse(format!(
+                "unknown parameter '{name}' for task '{}'",
+                task.signature.name
+            )));
+        }
+
+        if override_map.insert(name.clone(), value.clone()).is_some() {
+            return Err(OnlyError::parse(format!(
+                "duplicate parameter override '{name}'"
+            )));
+        }
+    }
+
     let mut parameters = std::collections::HashMap::new();
 
     for parameter in &task.signature.parameters {
