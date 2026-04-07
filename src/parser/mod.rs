@@ -13,5 +13,7 @@ use crate::model::Onlyfile;
 /// Returns:
 /// Parsed `Onlyfile` document.
 pub fn parse_onlyfile(content: &str) -> Result<Onlyfile> {
-    grammar::parse(content)
+    let document = grammar::parse(content)?;
+    validate::validate(&document)?;
+    Ok(document)
 }

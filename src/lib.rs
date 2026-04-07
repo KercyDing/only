@@ -15,7 +15,7 @@ use std::process::ExitCode;
 pub use cli::args::CliInput;
 pub use config::discover::{DiscoveredOnlyfile, discover_onlyfile};
 pub use diagnostic::error::{OnlyError, Result};
-pub use model::Onlyfile;
+pub use model::{Directive, Onlyfile};
 
 /// Runs the default CLI entry point.
 ///

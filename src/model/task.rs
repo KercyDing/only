@@ -8,6 +8,22 @@ pub struct TaskDefinition {
     pub span: SourceSpan,
 }
 
+impl TaskDefinition {
+    /// Returns the fully-qualified task name used in diagnostics.
+    ///
+    /// Args:
+    /// namespace: Optional namespace prefix.
+    ///
+    /// Returns:
+    /// Fully-qualified task display name.
+    pub fn display_name(&self, namespace: Option<&str>) -> String {
+        match namespace {
+            Some(namespace) => format!("{namespace}.{}", self.signature.name),
+            None => self.signature.name.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskSignature {
     pub name: String,
