@@ -1,4 +1,4 @@
-use only::{Directive, parse_onlyfile};
+use only::{Directive, ShellKind, parse_onlyfile};
 
 #[test]
 fn parses_empty_onlyfile() {
@@ -10,12 +10,20 @@ fn parses_empty_onlyfile() {
 
 #[test]
 fn parses_minimal_document_shape() {
-    let source = "!verbose false\nhello():\n    echo hello\n[tools]\nfmt():\n    cargo fmt\n";
+    let source =
+        "!verbose false\n!shell sh\nhello():\n    echo hello\n[tools]\nfmt():\n    cargo fmt\n";
     let document = parse_onlyfile(source).expect("minimal document should parse");
 
     assert!(matches!(
         document.directives[0],
         Directive::Verbose { value: false, .. }
+    ));
+    assert!(matches!(
+        document.directives[1],
+        Directive::Shell {
+            shell: ShellKind::Sh,
+            ..
+        }
     ));
     assert_eq!(document.global_tasks[0].signature.name, "hello");
     assert_eq!(document.global_tasks[0].commands[0].text, "echo hello");

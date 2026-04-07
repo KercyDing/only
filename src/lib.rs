@@ -17,7 +17,7 @@ use std::process::ExitCode;
 pub use cli::args::CliInput;
 pub use config::discover::{DiscoveredOnlyfile, discover_onlyfile};
 pub use diagnostic::error::{OnlyError, Result};
-pub use model::{Directive, Onlyfile};
+pub use model::{Directive, Onlyfile, ShellKind};
 pub use planner::{ExecutionPlan, build_execution_plan_in_dir};
 
 /// Runs the default CLI entry point with two-phase parsing.

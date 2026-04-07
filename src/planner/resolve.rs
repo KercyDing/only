@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use crate::cli::args::CliInput;
 use crate::diagnostic::error::{OnlyError, Result};
-use crate::model::{Directive, Namespace, Onlyfile, ProbeKind, TaskDefinition};
+use crate::model::{Directive, Namespace, Onlyfile, ProbeKind, ShellKind, TaskDefinition};
 
 use super::dag::{ExecutionNode, ExecutionPlan};
 
@@ -98,6 +98,7 @@ pub fn build_execution_plan_in_dir(
         nodes,
         verbose: is_verbose_enabled(document),
         working_dir,
+        shell: configured_shell(document),
     })
 }
 
@@ -362,7 +363,18 @@ fn is_verbose_enabled(document: &Onlyfile) -> bool {
     document
         .directives
         .iter()
-        .fold(false, |_, directive| match directive {
+        .fold(false, |current, directive| match directive {
             Directive::Verbose { value, .. } => *value,
+            Directive::Shell { .. } => current,
+        })
+}
+
+fn configured_shell(document: &Onlyfile) -> ShellKind {
+    document
+        .directives
+        .iter()
+        .fold(ShellKind::Deno, |current, directive| match directive {
+            Directive::Verbose { .. } => current,
+            Directive::Shell { shell, .. } => *shell,
         })
 }

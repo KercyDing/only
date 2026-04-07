@@ -1,6 +1,6 @@
 use crate::diagnostic::error::{OnlyError, Result};
 use crate::model::{
-    CommandLine, Directive, Guard, Namespace, Onlyfile, Parameter, ProbeCall, ProbeKind,
+    CommandLine, Directive, Guard, Namespace, Onlyfile, Parameter, ProbeCall, ProbeKind, ShellKind,
     SourceSpan, TaskDefinition, TaskSignature,
 };
 
@@ -113,17 +113,33 @@ impl<'a> Parser<'a> {
 
     fn parse_directive(&self, trimmed: &str) -> Result<Directive> {
         let span = self.span_for_line(self.index, trimmed);
-        let Some(value) = trimmed.strip_prefix("!verbose ") else {
-            return Err(
-                self.error_current("unsupported directive; MVP only supports !verbose true|false")
-            );
-        };
-
-        match value.trim() {
-            "true" => Ok(Directive::Verbose { value: true, span }),
-            "false" => Ok(Directive::Verbose { value: false, span }),
-            _ => Err(self.error_current("invalid !verbose value; expected true or false")),
+        if let Some(value) = trimmed.strip_prefix("!verbose ") {
+            return match value.trim() {
+                "true" => Ok(Directive::Verbose { value: true, span }),
+                "false" => Ok(Directive::Verbose { value: false, span }),
+                _ => Err(self.error_current("invalid !verbose value; expected true or false")),
+            };
         }
+
+        if let Some(value) = trimmed.strip_prefix("!shell ") {
+            let shell = match value.trim() {
+                "deno" => ShellKind::Deno,
+                "sh" => ShellKind::Sh,
+                "bash" => ShellKind::Bash,
+                "powershell" => ShellKind::PowerShell,
+                "pwsh" => ShellKind::Pwsh,
+                _ => {
+                    return Err(self.error_current(
+                        "invalid !shell value; expected deno, sh, bash, powershell, or pwsh",
+                    ));
+                }
+            };
+
+            return Ok(Directive::Shell { shell, span });
+        }
+
+        Err(self
+            .error_current("unsupported directive; supported directives are !verbose and !shell"))
     }
 
     fn parse_namespace_header(&self, trimmed: &str) -> Result<Namespace> {
@@ -498,7 +514,7 @@ fn is_valid_dependency_name(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::parse;
-    use crate::model::{Directive, ProbeKind};
+    use crate::model::{Directive, ProbeKind, ShellKind, SourceSpan};
 
     #[test]
     fn parses_empty_document() {
@@ -554,10 +570,32 @@ mod tests {
 
     #[test]
     fn rejects_unknown_directive() {
-        let error = parse("!shell bash\n").expect_err("unknown directive should fail");
+        let error = parse("!unknown true\n").expect_err("unknown directive should fail");
         assert_eq!(
             error.to_string(),
-            "line 1: unsupported directive; MVP only supports !verbose true|false"
+            "line 1: unsupported directive; supported directives are !verbose and !shell"
+        );
+    }
+
+    #[test]
+    fn parses_shell_directive() {
+        let document =
+            parse("!shell bash\nbuild():\n    echo ok\n").expect("shell directive should parse");
+        assert_eq!(
+            document.directives,
+            vec![Directive::Shell {
+                shell: ShellKind::Bash,
+                span: SourceSpan::new(0, 11),
+            }]
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_shell_directive_value() {
+        let error = parse("!shell fish\n").expect_err("invalid shell should fail");
+        assert_eq!(
+            error.to_string(),
+            "line 1: invalid !shell value; expected deno, sh, bash, powershell, or pwsh"
         );
     }
 }

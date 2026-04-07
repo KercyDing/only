@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use only::{CliInput, build_execution_plan, parse_onlyfile, run_plan, run_with};
+use only::{CliInput, ShellKind, build_execution_plan, parse_onlyfile, run_plan, run_with};
 
 fn cli(task_path: &[&str]) -> CliInput {
     CliInput {
@@ -156,6 +156,7 @@ fn rejects_duplicate_parameter_overrides() {
 fn runs_verbose_plan_successfully() {
     let document = parse_onlyfile(
         "!verbose true
+!shell sh
 hello():
     true
 ",
@@ -163,9 +164,24 @@ hello():
     .expect("document should parse");
 
     let plan = build_execution_plan(&document, &cli(&["hello"])).expect("plan should build");
+    assert!(plan.verbose);
+    assert_eq!(plan.shell, ShellKind::Sh);
 
     let code = run_plan(&plan).expect("verbose runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
+}
+
+#[test]
+fn uses_deno_task_shell_by_default() {
+    let document = parse_onlyfile(
+        "hello():
+    true
+",
+    )
+    .expect("document should parse");
+
+    let plan = build_execution_plan(&document, &cli(&["hello"])).expect("plan should build");
+    assert_eq!(plan.shell, ShellKind::Deno);
 }
 
 #[test]

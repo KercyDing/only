@@ -1,6 +1,8 @@
 # Only
 
-A minimalist, deterministic task runner.
+A cross-platform, deterministic task runner for modern projects.
+
+Write tasks once in an `Onlyfile`, then run them the same way across macOS, Linux, and Windows.
 
 > Project is currently under active development.
 
@@ -34,16 +36,6 @@ only fmt
 only dev
 only dev smoke "hello world"
 ```
-
-## Notes
-
-- `only` searches for `Onlyfile` or `onlyfile` in the current directory and parent directories.
-- `only` with no arguments lists available tasks when an `Onlyfile` is found.
-- `only <namespace>` prints help for that namespace and its child tasks.
-- Tasks run from the discovered `Onlyfile` directory, not necessarily from the shell's current directory.
-- Task parameters are positional. `--set NAME=VALUE` can override task parameters from the CLI.
-- With `!verbose true`, `only` prints a task banner, numbered command steps, and step-aware failure messages.
-- `{{name}}` interpolation is plain text substitution. It does not perform shell escaping, so task authors must quote or escape parameters when needed.
 
 ## Docs
 

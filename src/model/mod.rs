@@ -4,7 +4,7 @@ mod probe;
 mod span;
 mod task;
 
-pub use directive::Directive;
+pub use directive::{Directive, ShellKind};
 pub use namespace::Namespace;
 pub use probe::{Guard, ProbeCall, ProbeKind};
 pub use span::{SourceSpan, Spanned};

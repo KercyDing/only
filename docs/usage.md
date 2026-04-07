@@ -123,6 +123,25 @@ Current supported directive:
 
 - `!verbose true`
 - `!verbose false`
+- `!shell deno`
+- `!shell sh`
+- `!shell bash`
+- `!shell powershell`
+- `!shell pwsh`
+
+`only` uses `deno_task_shell` by default. This gives cross-platform shell behavior without requiring `/bin/sh`.
+
+Use `!shell ...` when you want to force a specific backend:
+
+```text
+!shell bash
+```
+
+Notes:
+
+- `!shell deno` uses the default cross-platform backend.
+- `!shell sh` and `!shell bash` require those executables to exist on the host system.
+- `!shell powershell` and `!shell pwsh` require the corresponding PowerShell executable to exist on the host system.
 
 When `!verbose true` is enabled, `only` prints each task and command before executing it.
 
