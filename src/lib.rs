@@ -16,6 +16,7 @@ pub use cli::args::CliInput;
 pub use config::discover::{DiscoveredOnlyfile, discover_onlyfile};
 pub use diagnostic::error::{OnlyError, Result};
 pub use model::{Directive, Onlyfile};
+pub use planner::ExecutionPlan;
 
 /// Runs the default CLI entry point.
 ///
@@ -46,7 +47,11 @@ pub fn run_with(cli: CliInput) -> Result<ExitCode> {
 
     if cli.print_discovered_path {
         println!("{}", discovered.path.display());
+        return Ok(ExitCode::SUCCESS);
     }
+
+    let plan = build_execution_plan(&discovered.document, &cli)?;
+    println!("planned {} task(s)", plan.nodes.len());
 
     Ok(ExitCode::SUCCESS)
 }
@@ -79,18 +84,16 @@ pub fn parse_onlyfile(content: &str) -> Result<Onlyfile> {
     parser::parse_onlyfile(content)
 }
 
-/// Placeholder for the future planning stage.
+/// Builds a resolved execution plan from parsed input and CLI target.
 ///
 /// Args:
-/// _onlyfile: Parsed source document.
-/// _cli: Normalized CLI input.
+/// onlyfile: Parsed source document.
+/// cli: Normalized CLI input.
 ///
 /// Returns:
-/// A not-yet-implemented error until planner exists.
-pub fn build_execution_plan(_onlyfile: &Onlyfile, _cli: &CliInput) -> Result<()> {
-    Err(OnlyError::unsupported(
-        "execution planner is not implemented yet",
-    ))
+/// Resolved execution plan.
+pub fn build_execution_plan(onlyfile: &Onlyfile, cli: &CliInput) -> Result<ExecutionPlan> {
+    planner::build_execution_plan(onlyfile, cli)
 }
 
 /// Placeholder for the future runtime stage.
@@ -100,6 +103,6 @@ pub fn build_execution_plan(_onlyfile: &Onlyfile, _cli: &CliInput) -> Result<()>
 ///
 /// Returns:
 /// A not-yet-implemented error until runtime exists.
-pub fn run_plan(_plan: &()) -> Result<ExitCode> {
+pub fn run_plan(_plan: &ExecutionPlan) -> Result<ExitCode> {
     Err(OnlyError::unsupported("runtime is not implemented yet"))
 }

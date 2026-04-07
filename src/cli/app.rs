@@ -19,4 +19,14 @@ pub fn build() -> Command {
                 .action(ArgAction::SetTrue)
                 .help("Print the resolved Onlyfile path and exit successfully"),
         )
+        .arg(
+            Arg::new("task")
+                .value_name("TASK")
+                .help("Global task name or namespace name"),
+        )
+        .arg(
+            Arg::new("subtask")
+                .value_name("SUBTASK")
+                .help("Task name inside the selected namespace"),
+        )
 }

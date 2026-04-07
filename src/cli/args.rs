@@ -6,6 +6,8 @@ use clap::ArgMatches;
 pub struct CliInput {
     pub onlyfile_path: Option<PathBuf>,
     pub print_discovered_path: bool,
+    pub task: Option<String>,
+    pub subtask: Option<String>,
 }
 
 impl From<ArgMatches> for CliInput {
@@ -13,6 +15,8 @@ impl From<ArgMatches> for CliInput {
         Self {
             onlyfile_path: matches.get_one::<String>("onlyfile").map(PathBuf::from),
             print_discovered_path: matches.get_flag("print-discovered-path"),
+            task: matches.get_one::<String>("task").cloned(),
+            subtask: matches.get_one::<String>("subtask").cloned(),
         }
     }
 }
