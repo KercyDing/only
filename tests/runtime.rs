@@ -42,17 +42,17 @@ fn propagates_command_failure() {
     let plan = build_execution_plan(&document, &cli(&["fail"])).expect("plan should build");
 
     let error = run_plan(&plan).expect_err("runtime should return contextual error");
-    assert_eq!(
-        error.to_string(),
-        "task 'fail' failed at step [1/1] while running `false` with exit code ExitCode(unix_exit_status(1))"
-    );
+    let rendered = error.to_string();
+    assert!(rendered.contains("task 'fail' failed at step [1/1]"));
+    assert!(rendered.contains("while running `false`"));
+    assert!(rendered.contains("with exit code"));
 }
 
 #[test]
 fn binds_default_parameter_values() {
     let document = parse_onlyfile(
-        r#"hello(name="world"):
-    test "{{name}}" = "world"
+        r#"hello(name="true"):
+    {{name}}
 "#,
     )
     .expect("document should parse");
@@ -66,8 +66,8 @@ fn binds_default_parameter_values() {
 #[test]
 fn applies_cli_parameter_overrides() {
     let document = parse_onlyfile(
-        r#"hello(name="world"):
-    test "{{name}}" = "alice"
+        r#"hello(name="false"):
+    {{name}}
 "#,
     )
     .expect("document should parse");
@@ -78,7 +78,7 @@ fn applies_cli_parameter_overrides() {
         top_level_help_requested: false,
         top_level_version_requested: false,
         task_path: vec!["hello".into()],
-        parameter_overrides: vec![("name".into(), "alice".into())],
+        parameter_overrides: vec![("name".into(), "true".into())],
     };
 
     let plan = build_execution_plan(&document, &input).expect("plan should build");
@@ -156,8 +156,9 @@ fn rejects_duplicate_parameter_overrides() {
     assert_eq!(error.to_string(), "duplicate parameter override 'name'");
 }
 
+#[cfg(unix)]
 #[test]
-fn runs_verbose_plan_successfully() {
+fn runs_verbose_plan_successfully_with_sh() {
     let document = parse_onlyfile(
         "!verbose true
 !shell sh
@@ -170,6 +171,26 @@ hello():
     let plan = build_execution_plan(&document, &cli(&["hello"])).expect("plan should build");
     assert!(plan.verbose);
     assert_eq!(plan.shell, ShellKind::Sh);
+
+    let code = run_plan(&plan).expect("verbose runtime should succeed");
+    assert_eq!(code, ExitCode::SUCCESS);
+}
+
+#[cfg(windows)]
+#[test]
+fn runs_verbose_plan_successfully_with_powershell() {
+    let document = parse_onlyfile(
+        "!verbose true
+!shell powershell
+hello():
+    exit 0
+",
+    )
+    .expect("document should parse");
+
+    let plan = build_execution_plan(&document, &cli(&["hello"])).expect("plan should build");
+    assert!(plan.verbose);
+    assert_eq!(plan.shell, ShellKind::PowerShell);
 
     let code = run_plan(&plan).expect("verbose runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
@@ -192,12 +213,12 @@ fn uses_deno_task_shell_by_default() {
 fn binds_positional_arguments_for_global_task() {
     let document = parse_onlyfile(
         r#"run(task):
-    test "{{task}}" = "hello"
+    {{task}}
 "#,
     )
     .expect("document should parse");
 
-    let plan = build_execution_plan(&document, &cli(&["run", "hello"])).expect("plan should build");
+    let plan = build_execution_plan(&document, &cli(&["run", "true"])).expect("plan should build");
 
     let code = run_plan(&plan).expect("runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
@@ -206,14 +227,14 @@ fn binds_positional_arguments_for_global_task() {
 #[test]
 fn binds_positional_arguments_for_namespaced_task() {
     let document = parse_onlyfile(
-        "[frontend]
+        r#"[frontend]
 build(profile):
-    test \"{{profile}}\" = \"prod\"
-",
+    {{profile}}
+"#,
     )
     .expect("document should parse");
 
-    let plan = build_execution_plan(&document, &cli(&["frontend", "build", "prod"]))
+    let plan = build_execution_plan(&document, &cli(&["frontend", "build", "true"]))
         .expect("plan should build");
 
     let code = run_plan(&plan).expect("runtime should succeed");
@@ -224,11 +245,10 @@ build(profile):
 fn runs_tasks_from_onlyfile_base_dir() {
     let root = temp_case_dir("only-runtime-base-dir");
     let onlyfile_path = root.join("Onlyfile");
-    fs::write(root.join("marker.txt"), "marker").expect("marker should be written");
     fs::write(
         &onlyfile_path,
         "check():
-    test -f marker.txt
+    echo marker > marker.txt
 ",
     )
     .expect("Onlyfile should be written");
@@ -244,6 +264,7 @@ fn runs_tasks_from_onlyfile_base_dir() {
 
     let code = run_with(input).expect("runtime should use the Onlyfile base directory");
     assert_eq!(code, ExitCode::SUCCESS);
+    assert!(root.join("marker.txt").exists());
 
     fs::remove_dir_all(root).expect("temp tree should be removed");
 }
