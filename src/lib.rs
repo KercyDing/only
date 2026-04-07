@@ -51,9 +51,7 @@ pub fn run_with(cli: CliInput) -> Result<ExitCode> {
     }
 
     let plan = build_execution_plan(&discovered.document, &cli)?;
-    println!("planned {} task(s)", plan.nodes.len());
-
-    Ok(ExitCode::SUCCESS)
+    run_plan(&plan)
 }
 
 /// Loads and parses the requested `Onlyfile`.
@@ -96,13 +94,13 @@ pub fn build_execution_plan(onlyfile: &Onlyfile, cli: &CliInput) -> Result<Execu
     planner::build_execution_plan(onlyfile, cli)
 }
 
-/// Placeholder for the future runtime stage.
+/// Runs the resolved execution plan.
 ///
 /// Args:
-/// _plan: Resolved execution plan.
+/// plan: Resolved execution plan.
 ///
 /// Returns:
-/// A not-yet-implemented error until runtime exists.
-pub fn run_plan(_plan: &ExecutionPlan) -> Result<ExitCode> {
-    Err(OnlyError::unsupported("runtime is not implemented yet"))
+/// Process exit code from the first failing command or overall success.
+pub fn run_plan(plan: &ExecutionPlan) -> Result<ExitCode> {
+    runtime::engine::run_plan(plan)
 }

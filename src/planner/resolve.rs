@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::cli::args::CliInput;
 use crate::diagnostic::error::{OnlyError, Result};
-use crate::model::{Namespace, Onlyfile, ProbeKind, TaskDefinition};
+use crate::model::{Directive, Namespace, Onlyfile, ProbeKind, TaskDefinition};
 
 use super::dag::{ExecutionNode, ExecutionPlan};
 
@@ -61,7 +61,10 @@ pub fn build_execution_plan(document: &Onlyfile, cli: &CliInput) -> Result<Execu
         }
     }
 
-    Ok(ExecutionPlan { nodes })
+    Ok(ExecutionPlan {
+        nodes,
+        verbose: is_verbose_enabled(document),
+    })
 }
 
 fn resolve_target(document: &Onlyfile, cli: &CliInput) -> Result<InvocationTarget> {
@@ -132,7 +135,11 @@ fn visit_task(
     visited.insert(qualified_name.clone());
     nodes.push(ExecutionNode {
         qualified_name,
-        command_count: task.commands.len(),
+        commands: task
+            .commands
+            .iter()
+            .map(|command| command.text.clone())
+            .collect(),
     });
     Ok(())
 }
@@ -226,4 +233,13 @@ fn command_exists(command: &str) -> bool {
     std::env::var_os("PATH").is_some_and(|paths| {
         std::env::split_paths(&paths).any(|directory| directory.join(command).is_file())
     })
+}
+
+fn is_verbose_enabled(document: &Onlyfile) -> bool {
+    document
+        .directives
+        .iter()
+        .fold(false, |_, directive| match directive {
+            Directive::Verbose { value, .. } => *value,
+        })
 }
