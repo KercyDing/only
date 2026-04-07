@@ -25,6 +25,7 @@ pub fn build_execution_plan(document: &Onlyfile, cli: &CliInput) -> Result<Execu
     let mut nodes = Vec::new();
     let mut visiting = Vec::new();
     let mut visited = HashSet::new();
+    let overrides = cli.parameter_overrides.clone();
 
     match target {
         InvocationTarget::GlobalTask(task) => {
@@ -37,6 +38,7 @@ pub fn build_execution_plan(document: &Onlyfile, cli: &CliInput) -> Result<Execu
                 document,
                 None,
                 resolved,
+                &overrides,
                 &mut visiting,
                 &mut visited,
                 &mut nodes,
@@ -54,6 +56,7 @@ pub fn build_execution_plan(document: &Onlyfile, cli: &CliInput) -> Result<Execu
                 document,
                 Some(namespace_ref),
                 resolved,
+                &overrides,
                 &mut visiting,
                 &mut visited,
                 &mut nodes,
@@ -96,6 +99,7 @@ fn visit_task(
     document: &Onlyfile,
     namespace: Option<&Namespace>,
     task: &TaskDefinition,
+    overrides: &[(String, String)],
     visiting: &mut Vec<String>,
     visited: &mut HashSet<String>,
     nodes: &mut Vec<ExecutionNode>,
@@ -122,6 +126,7 @@ fn visit_task(
                     document,
                     dependency_namespace,
                     dependency_task,
+                    &[],
                     visiting,
                     visited,
                     nodes,
@@ -140,6 +145,9 @@ fn visit_task(
             .iter()
             .map(|command| command.text.clone())
             .collect(),
+        parameters: bind_parameters(task, overrides)?
+            .into_iter()
+            .collect::<Vec<_>>(),
     });
     Ok(())
 }
@@ -233,6 +241,36 @@ fn command_exists(command: &str) -> bool {
     std::env::var_os("PATH").is_some_and(|paths| {
         std::env::split_paths(&paths).any(|directory| directory.join(command).is_file())
     })
+}
+
+fn bind_parameters(
+    task: &TaskDefinition,
+    overrides: &[(String, String)],
+) -> Result<std::collections::HashMap<String, String>> {
+    let override_map = overrides
+        .iter()
+        .cloned()
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut parameters = std::collections::HashMap::new();
+
+    for parameter in &task.signature.parameters {
+        if let Some(value) = override_map.get(&parameter.name) {
+            parameters.insert(parameter.name.clone(), value.clone());
+            continue;
+        }
+
+        if let Some(default) = &parameter.default_value {
+            parameters.insert(parameter.name.clone(), default.clone());
+            continue;
+        }
+
+        return Err(OnlyError::parse(format!(
+            "missing required parameter '{{{{{}}}}}'",
+            parameter.name
+        )));
+    }
+
+    Ok(parameters)
 }
 
 fn is_verbose_enabled(document: &Onlyfile) -> bool {

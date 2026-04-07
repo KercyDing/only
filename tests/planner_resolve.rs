@@ -23,6 +23,7 @@ default() & install & bootstrap:
             print_discovered_path: false,
             task: Some("frontend".into()),
             subtask: None,
+            parameter_overrides: vec![],
         },
     )
     .expect("plan should build");
@@ -57,6 +58,7 @@ b() & a:
             print_discovered_path: false,
             task: Some("a".into()),
             subtask: None,
+            parameter_overrides: vec![],
         },
     )
     .expect_err("cycle should fail");

@@ -3,6 +3,7 @@ use std::process::ExitCode;
 use crate::diagnostic::error::Result;
 use crate::planner::ExecutionPlan;
 
+use super::interpolate::interpolate;
 use super::process::run_command;
 
 /// Executes an ordered execution plan.
@@ -15,11 +16,13 @@ use super::process::run_command;
 pub fn run_plan(plan: &ExecutionPlan) -> Result<ExitCode> {
     for node in &plan.nodes {
         for command in &node.commands {
+            let rendered = interpolate(command, &node.parameters)?;
+
             if plan.verbose {
-                println!("{}", command);
+                println!("{}", rendered);
             }
 
-            let code = run_command(command)?;
+            let code = run_command(&rendered)?;
             if code != ExitCode::SUCCESS {
                 return Ok(code);
             }

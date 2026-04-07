@@ -29,4 +29,11 @@ pub fn build() -> Command {
                 .value_name("SUBTASK")
                 .help("Task name inside the selected namespace"),
         )
+        .arg(
+            Arg::new("set")
+                .long("set")
+                .value_name("NAME=VALUE")
+                .action(ArgAction::Append)
+                .help("Override a target task parameter"),
+        )
 }

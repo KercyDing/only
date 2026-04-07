@@ -8,4 +8,5 @@ pub struct ExecutionPlan {
 pub struct ExecutionNode {
     pub qualified_name: String,
     pub commands: Vec<String>,
+    pub parameters: Vec<(String, String)>,
 }
