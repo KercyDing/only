@@ -9,6 +9,7 @@ fn cli(task_path: &[&str]) -> CliInput {
         onlyfile_path: None,
         print_discovered_path: false,
         top_level_help_requested: false,
+        top_level_version_requested: false,
         task_path: task_path.iter().map(|s| s.to_string()).collect(),
         parameter_overrides: vec![],
     }
@@ -75,6 +76,7 @@ fn applies_cli_parameter_overrides() {
         onlyfile_path: None,
         print_discovered_path: false,
         top_level_help_requested: false,
+        top_level_version_requested: false,
         task_path: vec!["hello".into()],
         parameter_overrides: vec![("name".into(), "alice".into())],
     };
@@ -113,6 +115,7 @@ fn rejects_unknown_parameter_override() {
         onlyfile_path: None,
         print_discovered_path: false,
         top_level_help_requested: false,
+        top_level_version_requested: false,
         task_path: vec!["hello".into()],
         parameter_overrides: vec![("other".into(), "alice".into())],
     };
@@ -139,6 +142,7 @@ fn rejects_duplicate_parameter_overrides() {
         onlyfile_path: None,
         print_discovered_path: false,
         top_level_help_requested: false,
+        top_level_version_requested: false,
         task_path: vec!["hello".into()],
         parameter_overrides: vec![
             ("name".into(), "alice".into()),
@@ -233,6 +237,7 @@ fn runs_tasks_from_onlyfile_base_dir() {
         onlyfile_path: Some(onlyfile_path),
         print_discovered_path: false,
         top_level_help_requested: false,
+        top_level_version_requested: false,
         task_path: vec!["check".into()],
         parameter_overrides: vec![],
     };

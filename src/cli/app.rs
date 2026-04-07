@@ -8,6 +8,7 @@ use crate::model::{Namespace, Onlyfile, TaskDefinition};
 pub fn build_global() -> Command {
     Command::new("only")
         .about("A minimalist, deterministic task runner")
+        .version(env!("CARGO_PKG_VERSION"))
         .styles(cli_styles())
         .disable_help_subcommand(true)
         .override_usage("only [OPTIONS] [TASK] [ARGS]...")
@@ -268,6 +269,16 @@ workflow():
 
         assert!(help.contains("Usage: only [OPTIONS] [TASK] [ARGS]..."));
         assert!(help.contains("--file"));
+        assert!(help.contains("--version"));
+    }
+
+    #[test]
+    fn supports_global_version_flag() {
+        let error = super::build_global()
+            .try_get_matches_from(["only", "--version"])
+            .expect_err("version should short-circuit parsing");
+
+        assert_eq!(error.kind(), ErrorKind::DisplayVersion);
     }
 
     #[test]

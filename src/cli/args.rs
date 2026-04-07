@@ -11,6 +11,7 @@ pub struct CliInput {
     pub onlyfile_path: Option<PathBuf>,
     pub print_discovered_path: bool,
     pub top_level_help_requested: bool,
+    pub top_level_version_requested: bool,
     pub task_path: Vec<String>,
     pub parameter_overrides: Vec<(String, String)>,
 }
@@ -35,6 +36,7 @@ impl CliInput {
             onlyfile_path: matches.get_one::<String>("onlyfile").map(PathBuf::from),
             print_discovered_path: matches.get_flag("print-path"),
             top_level_help_requested: false,
+            top_level_version_requested: false,
             task_path: vec![],
             parameter_overrides,
         })
@@ -88,6 +90,7 @@ where
     let mut onlyfile_path = None;
     let mut print_discovered_path = false;
     let mut top_level_help_requested = false;
+    let mut top_level_version_requested = false;
     let mut parameter_overrides = Vec::new();
     let mut seen_task_token = false;
     let mut iter = args.into_iter().map(Into::into);
@@ -124,6 +127,11 @@ where
                     top_level_help_requested = true;
                 }
             }
+            "-V" | "--version" => {
+                if !seen_task_token {
+                    top_level_version_requested = true;
+                }
+            }
             _ => {
                 if let Some(value) = text.strip_prefix("--file=") {
                     onlyfile_path = Some(PathBuf::from(value));
@@ -144,6 +152,7 @@ where
         onlyfile_path,
         print_discovered_path,
         top_level_help_requested,
+        top_level_version_requested,
         task_path: vec![],
         parameter_overrides,
     })
@@ -206,6 +215,7 @@ mod tests {
         assert_eq!(cli.parameter_overrides, Vec::<(String, String)>::new());
         assert!(!cli.print_discovered_path);
         assert!(!cli.top_level_help_requested);
+        assert!(!cli.top_level_version_requested);
         assert!(cli.onlyfile_path.is_none());
     }
 
@@ -240,11 +250,27 @@ mod tests {
     }
 
     #[test]
+    fn records_top_level_version_requests() {
+        let cli = parse_global_options_from(["only", "--version"])
+            .expect("phase-one parsing should succeed");
+
+        assert!(cli.top_level_version_requested);
+    }
+
+    #[test]
     fn ignores_nested_help_requests_after_task_token() {
         let cli = parse_global_options_from(["only", "dev", "--help"])
             .expect("phase-one parsing should succeed");
 
         assert!(!cli.top_level_help_requested);
+    }
+
+    #[test]
+    fn ignores_nested_version_requests_after_task_token() {
+        let cli = parse_global_options_from(["only", "dev", "--version"])
+            .expect("phase-one parsing should succeed");
+
+        assert!(!cli.top_level_version_requested);
     }
 
     #[test]
@@ -255,6 +281,7 @@ mod tests {
 
         assert!(!cli.print_discovered_path);
         assert!(!cli.top_level_help_requested);
+        assert!(!cli.top_level_version_requested);
         assert!(cli.parameter_overrides.is_empty());
     }
 }

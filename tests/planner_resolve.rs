@@ -5,6 +5,7 @@ fn cli(task_path: &[&str]) -> CliInput {
         onlyfile_path: None,
         print_discovered_path: false,
         top_level_help_requested: false,
+        top_level_version_requested: false,
         task_path: task_path.iter().map(|s| s.to_string()).collect(),
         parameter_overrides: vec![],
     }

@@ -51,6 +51,11 @@ fn run_inner() -> Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
 
+    if partial.top_level_version_requested {
+        println!("{}", env!("CARGO_PKG_VERSION"));
+        return Ok(ExitCode::SUCCESS);
+    }
+
     // Discover Onlyfile
     let discovered = load_onlyfile(partial.onlyfile_path.as_deref())?;
 
