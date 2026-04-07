@@ -8,8 +8,15 @@ use super::dag::{ExecutionNode, ExecutionPlan};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InvocationTarget {
-    GlobalTask(String),
-    NamespacedTask { namespace: String, task: String },
+    GlobalTask {
+        task: String,
+        args: Vec<String>,
+    },
+    NamespacedTask {
+        namespace: String,
+        task: String,
+        args: Vec<String>,
+    },
 }
 
 /// Builds an execution plan for the requested CLI target.
@@ -25,15 +32,14 @@ pub fn build_execution_plan(document: &Onlyfile, cli: &CliInput) -> Result<Execu
     let mut nodes = Vec::new();
     let mut visiting = Vec::new();
     let mut visited = HashSet::new();
-    let overrides = cli.parameter_overrides.clone();
-
     match target {
-        InvocationTarget::GlobalTask(task) => {
+        InvocationTarget::GlobalTask { task, args } => {
             let resolved = select_global_task(document, &task)?.ok_or_else(|| {
                 OnlyError::parse(format!(
                     "task '{task}' is not available for this environment"
                 ))
             })?;
+            let overrides = merge_parameter_inputs(args, &cli.parameter_overrides, resolved)?;
             visit_task(
                 document,
                 None,
@@ -44,7 +50,11 @@ pub fn build_execution_plan(document: &Onlyfile, cli: &CliInput) -> Result<Execu
                 &mut nodes,
             )?;
         }
-        InvocationTarget::NamespacedTask { namespace, task } => {
+        InvocationTarget::NamespacedTask {
+            namespace,
+            task,
+            args,
+        } => {
             let namespace_ref = find_namespace(document, &namespace)?;
             let resolved = select_task_in_namespace(namespace_ref, &task)?.ok_or_else(|| {
                 OnlyError::parse(format!(
@@ -52,6 +62,7 @@ pub fn build_execution_plan(document: &Onlyfile, cli: &CliInput) -> Result<Execu
                     namespace, task
                 ))
             })?;
+            let overrides = merge_parameter_inputs(args, &cli.parameter_overrides, resolved)?;
             visit_task(
                 document,
                 Some(namespace_ref),
@@ -71,27 +82,40 @@ pub fn build_execution_plan(document: &Onlyfile, cli: &CliInput) -> Result<Execu
 }
 
 fn resolve_target(document: &Onlyfile, cli: &CliInput) -> Result<InvocationTarget> {
-    match (&cli.task, &cli.subtask) {
-        (Some(namespace_or_task), Some(task)) => Ok(InvocationTarget::NamespacedTask {
-            namespace: namespace_or_task.clone(),
-            task: task.clone(),
-        }),
-        (Some(name), None) => {
+    match cli.positionals.as_slice() {
+        [] => Err(OnlyError::parse(
+            "no task selected; provide a global task or namespace task target",
+        )),
+        [name] => {
             if find_namespace(document, name).is_ok() {
                 return Ok(InvocationTarget::NamespacedTask {
                     namespace: name.clone(),
                     task: "default".into(),
+                    args: Vec::new(),
                 });
             }
 
-            Ok(InvocationTarget::GlobalTask(name.clone()))
+            Ok(InvocationTarget::GlobalTask {
+                task: name.clone(),
+                args: Vec::new(),
+            })
         }
-        (None, None) => Err(OnlyError::parse(
-            "no task selected; provide a global task or namespace task target",
-        )),
-        (None, Some(_)) => Err(OnlyError::parse(
-            "invalid CLI target; subtask cannot be provided without a task or namespace",
-        )),
+        [first, second, rest @ ..] => {
+            if find_namespace(document, first).is_ok() {
+                return Ok(InvocationTarget::NamespacedTask {
+                    namespace: first.clone(),
+                    task: second.clone(),
+                    args: rest.to_vec(),
+                });
+            }
+
+            Ok(InvocationTarget::GlobalTask {
+                task: first.clone(),
+                args: std::iter::once(second.clone())
+                    .chain(rest.iter().cloned())
+                    .collect(),
+            })
+        }
     }
 }
 
@@ -290,6 +314,30 @@ fn bind_parameters(
     }
 
     Ok(parameters)
+}
+
+fn merge_parameter_inputs(
+    positional_args: Vec<String>,
+    named_overrides: &[(String, String)],
+    task: &TaskDefinition,
+) -> Result<Vec<(String, String)>> {
+    if positional_args.len() > task.signature.parameters.len() {
+        return Err(OnlyError::parse(format!(
+            "too many arguments for task '{}'; expected at most {}, got {}",
+            task.signature.name,
+            task.signature.parameters.len(),
+            positional_args.len()
+        )));
+    }
+
+    let mut merged = Vec::new();
+    for (index, value) in positional_args.into_iter().enumerate() {
+        let parameter = &task.signature.parameters[index];
+        merged.push((parameter.name.clone(), value));
+    }
+
+    merged.extend(named_overrides.iter().cloned());
+    Ok(merged)
 }
 
 fn is_verbose_enabled(document: &Onlyfile) -> bool {

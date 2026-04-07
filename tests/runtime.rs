@@ -16,8 +16,7 @@ fn runs_successful_plan() {
         &CliInput {
             onlyfile_path: None,
             print_discovered_path: false,
-            task: Some("hello".into()),
-            subtask: None,
+            positionals: vec!["hello".into()],
             parameter_overrides: vec![],
         },
     )
@@ -41,8 +40,7 @@ fn propagates_command_failure() {
         &CliInput {
             onlyfile_path: None,
             print_discovered_path: false,
-            task: Some("fail".into()),
-            subtask: None,
+            positionals: vec!["fail".into()],
             parameter_overrides: vec![],
         },
     )
@@ -69,8 +67,7 @@ fn binds_default_parameter_values() {
         &CliInput {
             onlyfile_path: None,
             print_discovered_path: false,
-            task: Some("hello".into()),
-            subtask: None,
+            positionals: vec!["hello".into()],
             parameter_overrides: vec![],
         },
     )
@@ -94,8 +91,7 @@ fn applies_cli_parameter_overrides() {
         &CliInput {
             onlyfile_path: None,
             print_discovered_path: false,
-            task: Some("hello".into()),
-            subtask: None,
+            positionals: vec!["hello".into()],
             parameter_overrides: vec![("name".into(), "alice".into())],
         },
     )
@@ -119,8 +115,7 @@ fn rejects_missing_required_parameter() {
         &CliInput {
             onlyfile_path: None,
             print_discovered_path: false,
-            task: Some("hello".into()),
-            subtask: None,
+            positionals: vec!["hello".into()],
             parameter_overrides: vec![],
         },
     )
@@ -143,8 +138,7 @@ fn rejects_unknown_parameter_override() {
         &CliInput {
             onlyfile_path: None,
             print_discovered_path: false,
-            task: Some("hello".into()),
-            subtask: None,
+            positionals: vec!["hello".into()],
             parameter_overrides: vec![("other".into(), "alice".into())],
         },
     )
@@ -170,8 +164,7 @@ fn rejects_duplicate_parameter_overrides() {
         &CliInput {
             onlyfile_path: None,
             print_discovered_path: false,
-            task: Some("hello".into()),
-            subtask: None,
+            positionals: vec!["hello".into()],
             parameter_overrides: vec![
                 ("name".into(), "alice".into()),
                 ("name".into(), "bob".into()),
@@ -198,13 +191,61 @@ hello():
         &CliInput {
             onlyfile_path: None,
             print_discovered_path: false,
-            task: Some("hello".into()),
-            subtask: None,
+            positionals: vec!["hello".into()],
             parameter_overrides: vec![],
         },
     )
     .expect("plan should build");
 
     let code = run_plan(&plan).expect("verbose runtime should succeed");
+    assert_eq!(code, ExitCode::SUCCESS);
+}
+
+#[test]
+fn binds_positional_arguments_for_global_task() {
+    let document = parse_onlyfile(
+        "run(task):
+    test \"{{task}}\" = \"hello\"
+",
+    )
+    .expect("document should parse");
+
+    let plan = build_execution_plan(
+        &document,
+        &CliInput {
+            onlyfile_path: None,
+            print_discovered_path: false,
+            positionals: vec!["run".into(), "hello".into()],
+            parameter_overrides: vec![],
+        },
+    )
+    .expect("plan should build");
+
+    let code = run_plan(&plan).expect("runtime should succeed");
+    assert_eq!(code, ExitCode::SUCCESS);
+}
+
+#[test]
+fn binds_positional_arguments_for_namespaced_task() {
+    let document = parse_onlyfile(
+        "[frontend]
+build(profile):
+    test \"{{profile}}\" = \"prod\"
+",
+    )
+    .expect("document should parse");
+
+    let plan = build_execution_plan(
+        &document,
+        &CliInput {
+            onlyfile_path: None,
+            print_discovered_path: false,
+            positionals: vec!["frontend".into(), "build".into(), "prod".into()],
+            parameter_overrides: vec![],
+        },
+    )
+    .expect("plan should build");
+
+    let code = run_plan(&plan).expect("runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
 }

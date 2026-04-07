@@ -8,8 +8,7 @@ use crate::diagnostic::error::{OnlyError, Result};
 pub struct CliInput {
     pub onlyfile_path: Option<PathBuf>,
     pub print_discovered_path: bool,
-    pub task: Option<String>,
-    pub subtask: Option<String>,
+    pub positionals: Vec<String>,
     pub parameter_overrides: Vec<(String, String)>,
 }
 
@@ -32,8 +31,12 @@ impl CliInput {
         Ok(Self {
             onlyfile_path: matches.get_one::<String>("onlyfile").map(PathBuf::from),
             print_discovered_path: matches.get_flag("print-discovered-path"),
-            task: matches.get_one::<String>("task").cloned(),
-            subtask: matches.get_one::<String>("subtask").cloned(),
+            positionals: matches
+                .get_many::<String>("positionals")
+                .into_iter()
+                .flatten()
+                .cloned()
+                .collect(),
             parameter_overrides,
         })
     }
@@ -80,6 +83,7 @@ mod tests {
             .expect("clap should parse valid override");
 
         let cli = CliInput::from_matches(matches).expect("override should normalize");
+        assert_eq!(cli.positionals, vec!["task".to_owned()]);
         assert_eq!(
             cli.parameter_overrides,
             vec![("name".into(), "value".into())]

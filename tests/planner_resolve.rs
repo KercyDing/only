@@ -21,8 +21,7 @@ default() & install & bootstrap:
         &CliInput {
             onlyfile_path: None,
             print_discovered_path: false,
-            task: Some("frontend".into()),
-            subtask: None,
+            positionals: vec!["frontend".into()],
             parameter_overrides: vec![],
         },
     )
@@ -56,8 +55,7 @@ b() & a:
         &CliInput {
             onlyfile_path: None,
             print_discovered_path: false,
-            task: Some("a".into()),
-            subtask: None,
+            positionals: vec!["a".into()],
             parameter_overrides: vec![],
         },
     )
