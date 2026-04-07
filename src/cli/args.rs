@@ -1,3 +1,4 @@
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::ArgMatches;
@@ -8,7 +9,8 @@ use crate::diagnostic::error::{OnlyError, Result};
 pub struct CliInput {
     pub onlyfile_path: Option<PathBuf>,
     pub print_discovered_path: bool,
-    pub positionals: Vec<String>,
+    pub top_level_help_requested: bool,
+    pub task_path: Vec<String>,
     pub parameter_overrides: Vec<(String, String)>,
 }
 
@@ -30,16 +32,112 @@ impl CliInput {
 
         Ok(Self {
             onlyfile_path: matches.get_one::<String>("onlyfile").map(PathBuf::from),
-            print_discovered_path: matches.get_flag("print-discovered-path"),
-            positionals: matches
-                .get_many::<String>("positionals")
-                .into_iter()
-                .flatten()
-                .cloned()
-                .collect(),
+            print_discovered_path: matches.get_flag("print-path"),
+            top_level_help_requested: false,
+            task_path: vec![],
             parameter_overrides,
         })
     }
+
+    /// Extracts task path from subcommand chain.
+    ///
+    /// Args:
+    /// matches: Parsed clap matches with subcommands.
+    ///
+    /// Returns:
+    /// Self with task_path populated.
+    pub fn with_task_path(mut self, matches: ArgMatches) -> Self {
+        let mut path = Vec::new();
+        let mut current = matches;
+
+        while let Some((name, sub_matches)) = current.subcommand() {
+            path.push(name.trim_end_matches('/').to_string());
+            current = sub_matches.clone();
+        }
+
+        self.task_path = path;
+        self
+    }
+}
+
+/// Extracts global CLI options from raw argv without consuming task segments.
+///
+/// Args:
+/// args: Full process argv, including binary name.
+///
+/// Returns:
+/// Partial CLI input containing only global options needed before `Onlyfile` discovery.
+///
+/// Edge Cases:
+/// Stops parsing global options after `--` and ignores `-h` / `--help` so phase two can render
+/// dynamic task help.
+pub(crate) fn parse_global_options_from<I, T>(args: I) -> Result<CliInput>
+where
+    I: IntoIterator<Item = T>,
+    T: Into<OsString>,
+{
+    let mut onlyfile_path = None;
+    let mut print_discovered_path = false;
+    let mut top_level_help_requested = false;
+    let mut parameter_overrides = Vec::new();
+    let mut seen_task_token = false;
+    let mut iter = args.into_iter().map(Into::into);
+
+    let _ = iter.next();
+
+    while let Some(arg) = iter.next() {
+        if arg == "--" {
+            break;
+        }
+
+        let Some(text) = arg.to_str() else {
+            continue;
+        };
+
+        match text {
+            "-f" | "--file" => {
+                let value = iter.next().ok_or_else(|| {
+                    OnlyError::parse(format!("missing value for global option '{text}'"))
+                })?;
+                onlyfile_path = Some(PathBuf::from(value));
+            }
+            "-p" | "--path" => {
+                print_discovered_path = true;
+            }
+            "--set" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| OnlyError::parse("missing value for global option '--set'"))?;
+                parameter_overrides.push(parse_override(&os_string_to_string(value, "--set")?)?);
+            }
+            "-h" | "--help" => {
+                if !seen_task_token {
+                    top_level_help_requested = true;
+                }
+            }
+            _ => {
+                if let Some(value) = text.strip_prefix("--file=") {
+                    onlyfile_path = Some(PathBuf::from(value));
+                } else if let Some(value) = text.strip_prefix("--set=") {
+                    parameter_overrides.push(parse_override(value)?);
+                } else if let Some(value) = text.strip_prefix("-f") {
+                    if !value.is_empty() {
+                        onlyfile_path = Some(PathBuf::from(value));
+                    }
+                } else if !text.starts_with('-') {
+                    seen_task_token = true;
+                }
+            }
+        }
+    }
+
+    Ok(CliInput {
+        onlyfile_path,
+        print_discovered_path,
+        top_level_help_requested,
+        task_path: vec![],
+        parameter_overrides,
+    })
 }
 
 fn parse_override(item: &str) -> Result<(String, String)> {
@@ -59,34 +157,76 @@ fn parse_override(item: &str) -> Result<(String, String)> {
     Ok((name.to_owned(), value.to_owned()))
 }
 
+fn os_string_to_string(value: OsString, option: &str) -> Result<String> {
+    value
+        .into_string()
+        .map_err(|_| OnlyError::parse(format!("non-UTF-8 values are not supported for '{option}'")))
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::cli::{CliInput, app};
+    use std::path::PathBuf;
+
+    use super::parse_global_options_from;
 
     #[test]
-    fn rejects_invalid_override_syntax() {
-        let matches = app::build()
-            .try_get_matches_from(["only", "task", "--set", "broken"])
-            .expect("clap should parse raw argument shape");
+    fn keeps_task_target_available_for_phase_two() {
+        let cli =
+            parse_global_options_from(["only", "test"]).expect("phase-one parsing should succeed");
 
-        let error = CliInput::from_matches(matches).expect_err("invalid override should fail");
+        assert_eq!(cli.task_path, Vec::<String>::new());
+        assert_eq!(cli.parameter_overrides, Vec::<(String, String)>::new());
+        assert!(!cli.print_discovered_path);
+        assert!(!cli.top_level_help_requested);
+        assert!(cli.onlyfile_path.is_none());
+    }
+
+    #[test]
+    fn collects_global_options_without_consuming_task_segments() {
+        let cli = parse_global_options_from([
+            "only",
+            "frontend",
+            "build",
+            "--set",
+            "profile=prod",
+            "--path",
+            "-fOnlyfile.dev",
+        ])
+        .expect("phase-one parsing should succeed");
+
+        assert_eq!(cli.onlyfile_path.unwrap(), PathBuf::from("Onlyfile.dev"));
+        assert!(cli.print_discovered_path);
+        assert!(!cli.top_level_help_requested);
         assert_eq!(
-            error.to_string(),
-            "invalid parameter override 'broken'; expected NAME=VALUE"
+            cli.parameter_overrides,
+            vec![("profile".into(), "prod".into())]
         );
     }
 
     #[test]
-    fn accepts_valid_override_syntax() {
-        let matches = app::build()
-            .try_get_matches_from(["only", "task", "--set", "name=value"])
-            .expect("clap should parse valid override");
+    fn records_top_level_help_requests() {
+        let cli = parse_global_options_from(["only", "--help"])
+            .expect("phase-one parsing should succeed");
 
-        let cli = CliInput::from_matches(matches).expect("override should normalize");
-        assert_eq!(cli.positionals, vec!["task".to_owned()]);
-        assert_eq!(
-            cli.parameter_overrides,
-            vec![("name".into(), "value".into())]
-        );
+        assert!(cli.top_level_help_requested);
+    }
+
+    #[test]
+    fn ignores_nested_help_requests_after_task_token() {
+        let cli = parse_global_options_from(["only", "dev", "--help"])
+            .expect("phase-one parsing should succeed");
+
+        assert!(!cli.top_level_help_requested);
+    }
+
+    #[test]
+    fn stops_collecting_globals_after_separator() {
+        let cli =
+            parse_global_options_from(["only", "run", "--", "--path", "--set", "profile=prod"])
+                .expect("phase-one parsing should succeed");
+
+        assert!(!cli.print_discovered_path);
+        assert!(!cli.top_level_help_requested);
+        assert!(cli.parameter_overrides.is_empty());
     }
 }

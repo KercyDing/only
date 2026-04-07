@@ -24,7 +24,7 @@ pub struct DiscoveredOnlyfile {
 pub fn discover_onlyfile(explicit_path: Option<&Path>) -> Result<DiscoveredOnlyfile> {
     let path = match explicit_path {
         Some(path) => path.to_path_buf(),
-        None => discover_in_current_dir()?,
+        None => discover_from_current_dir_or_parents()?,
     };
 
     let contents = fs::read_to_string(&path).map_err(|source| {
@@ -43,18 +43,40 @@ pub fn discover_onlyfile(explicit_path: Option<&Path>) -> Result<DiscoveredOnlyf
     })
 }
 
-fn discover_in_current_dir() -> Result<PathBuf> {
+fn discover_from_current_dir_or_parents() -> Result<PathBuf> {
     let cwd = std::env::current_dir().map_err(OnlyError::cwd)?;
 
-    for candidate in ONLYFILE_CANDIDATES {
-        let path = cwd.join(candidate);
-        if path.is_file() {
-            return Ok(path);
-        }
-    }
+    discover_from_dir(&cwd).ok_or_else(|| {
+        OnlyError::not_found("No Onlyfile found in current directory or any parent.".to_string())
+    })
+}
 
-    Err(OnlyError::not_found(format!(
-        "no Onlyfile found in {}",
-        cwd.display()
-    )))
+fn discover_from_dir(start_dir: &Path) -> Option<PathBuf> {
+    start_dir.ancestors().find_map(|directory| {
+        ONLYFILE_CANDIDATES
+            .iter()
+            .map(|candidate| directory.join(candidate))
+            .find(|path| path.is_file())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use crate::config::discover::discover_from_dir;
+
+    #[test]
+    fn discovers_onlyfile_in_parent_directory() {
+        let root = std::env::temp_dir().join(format!("only-discover-{}", std::process::id()));
+        let nested = root.join("a/b");
+        fs::create_dir_all(&nested).expect("nested dir should be created");
+        fs::write(root.join("Onlyfile"), "test():\n    true\n")
+            .expect("Onlyfile should be written");
+
+        let discovered = discover_from_dir(&nested).expect("parent Onlyfile should be found");
+        assert_eq!(discovered, root.join("Onlyfile"));
+
+        fs::remove_dir_all(&root).expect("temp tree should be removed");
+    }
 }

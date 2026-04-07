@@ -1,0 +1,36 @@
+!verbose true
+
+% Format the Rust codebase.
+fmt():
+    cargo fmt --all
+
+% Run cargo check.
+check():
+    cargo check
+    cargo fmt --all --check
+    cargo clippy --workspace -- -D warnings
+
+% Run the full test suite.
+test():
+    cargo test
+
+% Install the local only binary into Cargo's bin directory.
+install():
+    cargo install --path . --force
+
+% Run the local binary with a target task.
+run(task):
+    cargo run -- {{task}}
+
+% Run formatter, type checks, and tests.
+ci() & fmt & check & test:
+    echo "CI complete!"
+
+[dev]
+% Developer workflow.
+workflow() & fmt & test:
+    echo "dev complete!"
+
+% Run a namespaced smoke command.
+smoke(name="It's a smoke command"):
+    echo "{{name}}"

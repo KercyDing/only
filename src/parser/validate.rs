@@ -79,14 +79,14 @@ fn validate_scope_duplicates(namespace: Option<&str>, tasks: &[TaskDefinition]) 
     let mut seen_guards = HashMap::<(String, String), &TaskDefinition>::new();
 
     for task in tasks {
-        if let Some(guard_key) = guard_overlap_key(task) {
-            if let Some(previous) = seen_guards.insert(guard_key, task) {
-                return Err(OnlyError::parse(format!(
-                    "ambiguous guard: '{}' conflicts with '{}'",
-                    task.display_name(namespace),
-                    previous.display_name(namespace)
-                )));
-            }
+        if let Some(guard_key) = guard_overlap_key(task)
+            && let Some(previous) = seen_guards.insert(guard_key, task)
+        {
+            return Err(OnlyError::parse(format!(
+                "ambiguous guard: '{}' conflicts with '{}'",
+                task.display_name(namespace),
+                previous.display_name(namespace)
+            )));
         }
 
         let key = task_signature_key(task);

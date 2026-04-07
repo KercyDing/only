@@ -82,17 +82,15 @@ pub fn build_execution_plan(document: &Onlyfile, cli: &CliInput) -> Result<Execu
 }
 
 fn resolve_target(document: &Onlyfile, cli: &CliInput) -> Result<InvocationTarget> {
-    match cli.positionals.as_slice() {
+    match cli.task_path.as_slice() {
         [] => Err(OnlyError::parse(
             "no task selected; provide a global task or namespace task target",
         )),
         [name] => {
             if find_namespace(document, name).is_ok() {
-                return Ok(InvocationTarget::NamespacedTask {
-                    namespace: name.clone(),
-                    task: "default".into(),
-                    args: Vec::new(),
-                });
+                return Err(OnlyError::parse(format!(
+                    "namespace '{name}' requires a task target"
+                )));
             }
 
             Ok(InvocationTarget::GlobalTask {
@@ -187,10 +185,10 @@ fn resolve_dependency<'a>(
         return Ok(dependency_task.map(|task| (Some(dependency_namespace), task)));
     }
 
-    if let Some(current_namespace) = namespace {
-        if let Some(task) = select_task_in_namespace(current_namespace, dependency)? {
-            return Ok(Some((Some(current_namespace), task)));
-        }
+    if let Some(current_namespace) = namespace
+        && let Some(task) = select_task_in_namespace(current_namespace, dependency)?
+    {
+        return Ok(Some((Some(current_namespace), task)));
     }
 
     let global_task = select_global_task(document, dependency)?;

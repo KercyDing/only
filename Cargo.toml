@@ -20,5 +20,6 @@ name = "only"
 path = "src/main.rs"
 
 [dependencies]
-clap = { version = "4.5", features = ["std"] }
+clap = { version = "4.5", features = ["color", "std"] }
 miette = { version = "7.6", features = ["fancy"] }
+anstyle = "1.0"

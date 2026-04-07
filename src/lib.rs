@@ -1,5 +1,7 @@
 //! Core library entry points for the `only` binary and future hosts.
 
+use anstyle::{AnsiColor, Style};
+
 pub mod cli;
 pub mod config;
 pub mod diagnostic;
@@ -18,18 +20,66 @@ pub use diagnostic::error::{OnlyError, Result};
 pub use model::{Directive, Onlyfile};
 pub use planner::ExecutionPlan;
 
-/// Runs the default CLI entry point.
+/// Runs the default CLI entry point with two-phase parsing.
+///
+/// Phase 1: Parse global options (-f, -p) to discover Onlyfile.
+/// Phase 2: Build dynamic subcommands from Onlyfile and parse task.
 ///
 /// Returns:
 /// Process exit code for the current invocation.
 pub fn run() -> ExitCode {
-    match cli::parse().and_then(run_with) {
+    match run_inner() {
         Ok(code) => code,
+        Err(OnlyError::NotFound(message)) => {
+            eprintln!("Error: {message}");
+            eprintln!("{}", render_help_hint());
+            ExitCode::from(2)
+        }
         Err(error) => {
             eprintln!("{error}");
             ExitCode::from(2)
         }
     }
+}
+
+fn run_inner() -> Result<ExitCode> {
+    // Phase 1: Parse global options only
+    let partial = cli::parse_global_options()?;
+
+    if partial.top_level_help_requested {
+        println!("{}", cli::app::render_global_help().ansi());
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    // Discover Onlyfile
+    let discovered = load_onlyfile(partial.onlyfile_path.as_deref())?;
+
+    if partial.print_discovered_path {
+        println!("{}", discovered.path.display());
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    // Phase 2: Build dynamic CLI with subcommands and parse
+    let cli = cli::parse_with_onlyfile(&discovered.document)?;
+
+    if cli.task_path.is_empty() {
+        print!("{}", cli::app::render_available_tasks(&discovered.document));
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    if let [namespace_name] = cli.task_path.as_slice()
+        && let Some(namespace) = discovered
+            .document
+            .namespaces
+            .iter()
+            .find(|namespace| namespace.name == *namespace_name)
+    {
+        println!("{}", cli::app::render_namespace_help(namespace).ansi());
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    let plan = build_execution_plan(&discovered.document, &cli)?;
+    run_plan(&plan)
 }
 
 /// Runs the application with pre-parsed CLI input.
@@ -103,4 +153,16 @@ pub fn build_execution_plan(onlyfile: &Onlyfile, cli: &CliInput) -> Result<Execu
 /// Process exit code from the first failing command or overall success.
 pub fn run_plan(plan: &ExecutionPlan) -> Result<ExitCode> {
     runtime::engine::run_plan(plan)
+}
+
+fn render_help_hint() -> String {
+    let style = Style::new()
+        .fg_color(Some(AnsiColor::BrightCyan.into()))
+        .bold();
+
+    format!(
+        "Run '{}only --help{}' to view usage.",
+        style.render(),
+        style.render_reset()
+    )
 }

@@ -2,6 +2,16 @@ use std::process::ExitCode;
 
 use only::{CliInput, build_execution_plan, parse_onlyfile, run_plan};
 
+fn cli(task_path: &[&str]) -> CliInput {
+    CliInput {
+        onlyfile_path: None,
+        print_discovered_path: false,
+        top_level_help_requested: false,
+        task_path: task_path.iter().map(|s| s.to_string()).collect(),
+        parameter_overrides: vec![],
+    }
+}
+
 #[test]
 fn runs_successful_plan() {
     let document = parse_onlyfile(
@@ -11,16 +21,7 @@ fn runs_successful_plan() {
     )
     .expect("document should parse");
 
-    let plan = build_execution_plan(
-        &document,
-        &CliInput {
-            onlyfile_path: None,
-            print_discovered_path: false,
-            positionals: vec!["hello".into()],
-            parameter_overrides: vec![],
-        },
-    )
-    .expect("plan should build");
+    let plan = build_execution_plan(&document, &cli(&["hello"])).expect("plan should build");
 
     let code = run_plan(&plan).expect("runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
@@ -35,16 +36,7 @@ fn propagates_command_failure() {
     )
     .expect("document should parse");
 
-    let plan = build_execution_plan(
-        &document,
-        &CliInput {
-            onlyfile_path: None,
-            print_discovered_path: false,
-            positionals: vec!["fail".into()],
-            parameter_overrides: vec![],
-        },
-    )
-    .expect("plan should build");
+    let plan = build_execution_plan(&document, &cli(&["fail"])).expect("plan should build");
 
     let error = run_plan(&plan).expect_err("runtime should return contextual error");
     assert_eq!(
@@ -56,22 +48,13 @@ fn propagates_command_failure() {
 #[test]
 fn binds_default_parameter_values() {
     let document = parse_onlyfile(
-        "hello(name=\"world\"):
-    test \"{{name}}\" = \"world\"
-",
+        r#"hello(name="world"):
+    test "{{name}}" = "world"
+"#,
     )
     .expect("document should parse");
 
-    let plan = build_execution_plan(
-        &document,
-        &CliInput {
-            onlyfile_path: None,
-            print_discovered_path: false,
-            positionals: vec!["hello".into()],
-            parameter_overrides: vec![],
-        },
-    )
-    .expect("plan should build");
+    let plan = build_execution_plan(&document, &cli(&["hello"])).expect("plan should build");
 
     let code = run_plan(&plan).expect("runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
@@ -80,22 +63,21 @@ fn binds_default_parameter_values() {
 #[test]
 fn applies_cli_parameter_overrides() {
     let document = parse_onlyfile(
-        "hello(name=\"world\"):
-    test \"{{name}}\" = \"alice\"
-",
+        r#"hello(name="world"):
+    test "{{name}}" = "alice"
+"#,
     )
     .expect("document should parse");
 
-    let plan = build_execution_plan(
-        &document,
-        &CliInput {
-            onlyfile_path: None,
-            print_discovered_path: false,
-            positionals: vec!["hello".into()],
-            parameter_overrides: vec![("name".into(), "alice".into())],
-        },
-    )
-    .expect("plan should build");
+    let input = CliInput {
+        onlyfile_path: None,
+        print_discovered_path: false,
+        top_level_help_requested: false,
+        task_path: vec!["hello".into()],
+        parameter_overrides: vec![("name".into(), "alice".into())],
+    };
+
+    let plan = build_execution_plan(&document, &input).expect("plan should build");
 
     let code = run_plan(&plan).expect("runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
@@ -110,16 +92,8 @@ fn rejects_missing_required_parameter() {
     )
     .expect("document should parse");
 
-    let error = build_execution_plan(
-        &document,
-        &CliInput {
-            onlyfile_path: None,
-            print_discovered_path: false,
-            positionals: vec!["hello".into()],
-            parameter_overrides: vec![],
-        },
-    )
-    .expect_err("missing parameter should fail planning");
+    let error = build_execution_plan(&document, &cli(&["hello"]))
+        .expect_err("missing parameter should fail planning");
 
     assert_eq!(error.to_string(), "missing required parameter '{{name}}'");
 }
@@ -127,22 +101,22 @@ fn rejects_missing_required_parameter() {
 #[test]
 fn rejects_unknown_parameter_override() {
     let document = parse_onlyfile(
-        "hello(name=\"world\"):
+        r#"hello(name="world"):
     echo {{name}}
-",
+"#,
     )
     .expect("document should parse");
 
-    let error = build_execution_plan(
-        &document,
-        &CliInput {
-            onlyfile_path: None,
-            print_discovered_path: false,
-            positionals: vec!["hello".into()],
-            parameter_overrides: vec![("other".into(), "alice".into())],
-        },
-    )
-    .expect_err("unknown parameter should fail planning");
+    let input = CliInput {
+        onlyfile_path: None,
+        print_discovered_path: false,
+        top_level_help_requested: false,
+        task_path: vec!["hello".into()],
+        parameter_overrides: vec![("other".into(), "alice".into())],
+    };
+
+    let error = build_execution_plan(&document, &input)
+        .expect_err("unknown parameter should fail planning");
 
     assert_eq!(
         error.to_string(),
@@ -153,25 +127,25 @@ fn rejects_unknown_parameter_override() {
 #[test]
 fn rejects_duplicate_parameter_overrides() {
     let document = parse_onlyfile(
-        "hello(name=\"world\"):
+        r#"hello(name="world"):
     echo {{name}}
-",
+"#,
     )
     .expect("document should parse");
 
-    let error = build_execution_plan(
-        &document,
-        &CliInput {
-            onlyfile_path: None,
-            print_discovered_path: false,
-            positionals: vec!["hello".into()],
-            parameter_overrides: vec![
-                ("name".into(), "alice".into()),
-                ("name".into(), "bob".into()),
-            ],
-        },
-    )
-    .expect_err("duplicate override should fail planning");
+    let input = CliInput {
+        onlyfile_path: None,
+        print_discovered_path: false,
+        top_level_help_requested: false,
+        task_path: vec!["hello".into()],
+        parameter_overrides: vec![
+            ("name".into(), "alice".into()),
+            ("name".into(), "bob".into()),
+        ],
+    };
+
+    let error = build_execution_plan(&document, &input)
+        .expect_err("duplicate override should fail planning");
 
     assert_eq!(error.to_string(), "duplicate parameter override 'name'");
 }
@@ -186,16 +160,7 @@ hello():
     )
     .expect("document should parse");
 
-    let plan = build_execution_plan(
-        &document,
-        &CliInput {
-            onlyfile_path: None,
-            print_discovered_path: false,
-            positionals: vec!["hello".into()],
-            parameter_overrides: vec![],
-        },
-    )
-    .expect("plan should build");
+    let plan = build_execution_plan(&document, &cli(&["hello"])).expect("plan should build");
 
     let code = run_plan(&plan).expect("verbose runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
@@ -204,22 +169,13 @@ hello():
 #[test]
 fn binds_positional_arguments_for_global_task() {
     let document = parse_onlyfile(
-        "run(task):
-    test \"{{task}}\" = \"hello\"
-",
+        r#"run(task):
+    test "{{task}}" = "hello"
+"#,
     )
     .expect("document should parse");
 
-    let plan = build_execution_plan(
-        &document,
-        &CliInput {
-            onlyfile_path: None,
-            print_discovered_path: false,
-            positionals: vec!["run".into(), "hello".into()],
-            parameter_overrides: vec![],
-        },
-    )
-    .expect("plan should build");
+    let plan = build_execution_plan(&document, &cli(&["run", "hello"])).expect("plan should build");
 
     let code = run_plan(&plan).expect("runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
@@ -235,16 +191,8 @@ build(profile):
     )
     .expect("document should parse");
 
-    let plan = build_execution_plan(
-        &document,
-        &CliInput {
-            onlyfile_path: None,
-            print_discovered_path: false,
-            positionals: vec!["frontend".into(), "build".into(), "prod".into()],
-            parameter_overrides: vec![],
-        },
-    )
-    .expect("plan should build");
+    let plan = build_execution_plan(&document, &cli(&["frontend", "build", "prod"]))
+        .expect("plan should build");
 
     let code = run_plan(&plan).expect("runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
