@@ -1,30 +1,33 @@
-[package]
-name = "only"
+[workspace]
+members = [
+    "crates/diagnostic",
+    "crates/cli",
+    "crates/syntax",
+    "crates/semantic",
+    "crates/engine",
+    "crates/lsp",
+]
+resolver = "2"
+
+[workspace.package]
 version = "0.0.2"
 edition = "2024"
-description = "A minimalist, deterministic task runner. (Work in progress)"
 license = "MIT"
 repository = "https://github.com/KercyDing/only"
 documentation = "https://github.com/KercyDing/only"
-categories = ["command-line-utilities", "development-tools::build-utils"]
-keywords = ["onlyfile", "task", "runner", "minimalist", "cli"]
-
 readme = "README.md"
 
-[lib]
-name = "only"
-path = "src/lib.rs"
-
-[[bin]]
-name = "only"
-path = "src/main.rs"
-
-[dependencies]
-clap = { version = "4.5", features = ["color", "std"] }
-miette = { version = "7.6", features = ["fancy"] }
+[workspace.dependencies]
 anstyle = "1.0"
+clap = { version = "4.5", features = ["color", "std"] }
 deno_task_shell = "0.29"
+logos = "0.15"
+miette = { version = "7.6", features = ["fancy"] }
+rowan = "0.16"
+smol_str = "0.3"
+text-size = "1.1"
 tokio = { version = "1", features = ["rt"] }
+winnow = "0.7"
 
 [profile.release]
 opt-level = "z"

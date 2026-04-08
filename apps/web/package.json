@@ -1,0 +1,9 @@
+{
+  "name": "only-web",
+  "private": true,
+  "version": "0.0.2",
+  "type": "module",
+  "scripts": {
+    "check": "node --eval \"console.log('apps/web scaffold only')\""
+  }
+}

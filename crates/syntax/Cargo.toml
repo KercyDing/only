@@ -1,0 +1,17 @@
+[package]
+name = "only-syntax"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+documentation.workspace = true
+readme.workspace = true
+publish = false
+
+[dependencies]
+logos.workspace = true
+only-diagnostic = { path = "../diagnostic" }
+rowan.workspace = true
+smol_str.workspace = true
+text-size.workspace = true
+winnow.workspace = true

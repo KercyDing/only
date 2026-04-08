@@ -1,0 +1,15 @@
+[package]
+name = "only-semantic"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+documentation.workspace = true
+readme.workspace = true
+publish = false
+
+[dependencies]
+only-diagnostic = { path = "../diagnostic" }
+only-syntax = { path = "../syntax" }
+smol_str.workspace = true
+text-size.workspace = true

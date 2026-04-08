@@ -1,0 +1,29 @@
+[package]
+name = "only"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+documentation.workspace = true
+readme.workspace = true
+description = "A minimalist, deterministic task runner. (Work in progress)"
+categories = ["command-line-utilities", "development-tools::build-utils"]
+keywords = ["onlyfile", "task", "runner", "minimalist", "cli"]
+
+[lib]
+name = "only"
+path = "src/lib.rs"
+
+[[bin]]
+name = "only"
+path = "src/main.rs"
+
+[dependencies]
+anstyle.workspace = true
+clap.workspace = true
+deno_task_shell.workspace = true
+miette.workspace = true
+only-diagnostic = { path = "../diagnostic" }
+only-engine = { path = "../engine" }
+only-semantic = { path = "../semantic" }
+tokio.workspace = true

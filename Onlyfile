@@ -23,7 +23,7 @@ install() ? @os("windows") shell?=pwsh:
     Write-Output "Windows: cannot replace running binary. Run:`n  Copy-Item target/release/only.exe -Destination `$env:USERPROFILE\.cargo\bin\ -Force"
 
 install():
-    cargo install --path . --force
+    cargo install --path crates/cli --force
 
 % Development builds.
 [dev]
