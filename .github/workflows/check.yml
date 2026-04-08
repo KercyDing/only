@@ -1,0 +1,40 @@
+name: Check
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.91.1"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Check build
+        run: cargo check --workspace --locked
+
+      - name: Check lints
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Build binary
+        run: cargo build --workspace --bins --locked
+
+      - name: Run tests
+        run: cargo nextest run --workspace --locked

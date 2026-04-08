@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            runner: ubuntu-22.04
+            suffix: linux-amd64
+          - target: x86_64-apple-darwin
+            runner: macos-latest
+            suffix: darwin-amd64
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            suffix: darwin-arm64
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            suffix: windows-amd64
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.91.1"
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install musl-tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - name: Build release binary
+        run: cargo build --release --bin only --target ${{ matrix.target }} --locked
+
+      - name: Rename artifact (unix)
+        if: runner.os != 'Windows'
+        run: mv target/${{ matrix.target }}/release/only only-${{ matrix.suffix }}
+
+      - name: Rename artifact (windows)
+        if: runner.os == 'Windows'
+        run: mv target/${{ matrix.target }}/release/only.exe only-${{ matrix.suffix }}.exe
+
+      - name: Upload artifact (unix)
+        if: runner.os != 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}-bin
+          path: only-${{ matrix.suffix }}
+
+      - name: Upload artifact (windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}-bin
+          path: only-${{ matrix.suffix }}.exe
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: only-*
+          generate_release_notes: true
