@@ -2,9 +2,9 @@
 
 **Write tasks once. Run them everywhere — exactly the same.**
 
-Only is a modern, cross-platform, deterministic task runner built for developers who are tired of shell compatibility drama.
+Only is a modern, cross-platform, deterministic task runner designed for developers who hate shell compatibility issues.
 
-No Git Bash on Windows.  
+No Git Bash.  
 No `if os()` hacks.  
 No `platforms:` boilerplate.  
 
@@ -16,10 +16,10 @@ Just one clean `Onlyfile` that works identically on **macOS, Linux, and Windows*
 
 Create an `Onlyfile` in your project root:
 
-```text
+```Onlyfile
 !verbose true
 
-% Run formatter.
+% Format the codebase.
 fmt():
     cargo fmt --all
 
@@ -28,56 +28,96 @@ test():
     cargo test
 
 [dev]
-% Run a smoke command.
-smoke(name="hello"):
-    echo "{{name}}"
+% Build in development mode.
+dev():
+    cargo build
+
+% Build in release mode.
+rel():
+    cargo build --release
 ```
 
 Then run:
 
-```bash
-only                # list all available tasks
+```shell
+only                # list all tasks
 only fmt
 only test
-only dev            # show namespace subcommands
-only dev smoke "hello world"
+only dev smoke "world"
 ```
+
+### Advanced Example
+
+```Onlyfile
+!verbose true
+
+% Build the project
+# Windows uses PowerShell, others use default shell
+build() ? @os("windows") shell?=pwsh:
+    cargo build --release
+
+build():
+    cargo build --release
+
+% Clean build artifacts
+# Run with platform-native commands
+clean() ? @os("windows") shell?=pwsh:
+    Remove-Item -Recurse -Force target, dist -ErrorAction SilentlyContinue
+
+clean() ? @os("linux") shell=sh:
+    rm -rf target dist
+
+clean() ? @os("macos") shell?=bash:
+    rm -rf target dist
+
+clean():
+    rm -rf target dist
+
+% Run checks only if cargo is available
+check() ? @has("cargo"):
+    cargo check
+    cargo fmt --all --check
+    cargo clippy --workspace -- -D warnings
+
+check():
+    echo "cargo not found, skipping checks"
+
+% Full CI pipeline
+ci() & fmt & check & test:
+    echo "✅ CI completed successfully"
+```
+
+---
+
+## Why developers choose Only over Just and Taskfile
+
+- **True cross-platform consistency** — default `deno_task_shell` means your commands behave the same everywhere, no extra configuration needed
+- **Cleaner, more modern syntax** — function-style signatures with parameters and defaults
+- **More intuitive dependencies** — `&` for serial, `|` for parallel, with parentheses for complex flows
+- **Better out-of-the-box experience** — dynamic help, colored output, clean task listing
+
+**Just** is powerful but often requires manual shell setup on Windows.  
+**Taskfile** is solid but uses heavier YAML and still needs platform rules.
+
+**Only is ideal for personal projects, small-to-medium repositories, and developers who want simplicity and reliability** without fighting with configuration.
 
 ---
 
 ## Installation
 
-```bash
-# Cargo (recommended)
+```shell
 cargo install --git https://github.com/KercyDing/only
-
-# Or build from source
-git clone https://github.com/KercyDing/only
-cd only
-cargo install --path .
 ```
-
----
-
-## Why developers are switching
-
-- **True cross-platform consistency** — default `deno_task_shell` means your commands behave the same everywhere  
-- **Modern, readable syntax** — function-style signatures with parameters and defaults  
-- **Natural namespace subcommands** — `only dev smoke` feels like a real CLI  
-- **Beautiful out-of-the-box experience** — colored output, dynamic `--help`, clean task listing, progress indicators  
-- **Deterministic by design** — same task, same result, every time
 
 ---
 
 ## Docs
 
-Full syntax guide, advanced features, and examples → **[docs/usage.md](docs/usage.md)**
+Full syntax guide and examples → **[docs/usage.md](docs/usage.md)**
 
 ---
 
-> Project is under active development and already powering real workflows.  
-> Star the repo if you like where this is going ✨
+> Under active development and already powering real workflows.  
+> Star if you like where this is going ✨
 
-## LICENSE
-
-[MIT](LICENSE)
+[MIT License](LICENSE)
