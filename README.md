@@ -1,12 +1,15 @@
 # Only
 
+[![crates.io](https://img.shields.io/crates/v/only.svg)](https://crates.io/crates/only)
+[![license](https://img.shields.io/crates/l/only.svg)](LICENSE)
+
 **Write tasks once. Run them everywhere — exactly the same.**
 
 Only is a modern, cross-platform, deterministic task runner designed for developers who hate shell compatibility issues.
 
 No Git Bash.  
 No `if os()` hacks.  
-No `platforms:` boilerplate.  
+No `platforms:` boilerplate.
 
 Just one clean `Onlyfile` that works identically on **macOS, Linux, and Windows** — powered by `deno_task_shell` by default.
 
@@ -131,6 +134,14 @@ build():
 ---
 
 ## Installation
+
+Install the latest published release from crates.io:
+
+```shell
+cargo install only
+```
+
+Install the latest commit from GitHub:
 
 ```shell
 cargo install --git https://github.com/KercyDing/only
