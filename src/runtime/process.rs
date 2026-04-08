@@ -12,11 +12,18 @@ use crate::model::ShellKind;
 /// command: Shell command text to execute.
 /// working_dir: Directory used as the shell working directory.
 /// shell: Selected execution backend.
+/// shell_fallback: Whether to fallback to alternative shell if primary not found.
 ///
 /// Returns:
 /// Process exit code produced by the shell.
-pub fn run_command(command: &str, working_dir: &Path, shell: ShellKind) -> Result<ExitCode> {
-    match shell {
+pub fn run_command(
+    command: &str,
+    working_dir: &Path,
+    shell: ShellKind,
+    shell_fallback: bool,
+) -> Result<ExitCode> {
+    let resolved_shell = resolve_shell(shell, shell_fallback)?;
+    match resolved_shell {
         ShellKind::Deno => run_with_deno_task_shell(command, working_dir),
         ShellKind::Sh => run_with_system_shell("sh", "-c", command, working_dir),
         ShellKind::Bash => run_with_system_shell("bash", "-c", command, working_dir),
@@ -24,6 +31,105 @@ pub fn run_command(command: &str, working_dir: &Path, shell: ShellKind) -> Resul
             run_with_system_shell(power_shell_command(), "-Command", command, working_dir)
         }
         ShellKind::Pwsh => run_with_system_shell("pwsh", "-Command", command, working_dir),
+    }
+}
+
+/// Resolves the shell to use, with optional fallback.
+///
+/// Args:
+/// shell: Requested shell kind.
+/// shell_fallback: Whether to fallback to alternative shell.
+///
+/// Returns:
+/// Resolved shell kind, or error if no suitable shell found.
+fn resolve_shell(shell: ShellKind, shell_fallback: bool) -> Result<ShellKind> {
+    match shell {
+        ShellKind::Pwsh => {
+            if shell_exists("pwsh") {
+                return Ok(ShellKind::Pwsh);
+            }
+            if shell_fallback && shell_exists(power_shell_command()) {
+                return Ok(ShellKind::PowerShell);
+            }
+            if shell_fallback {
+                return Err(OnlyError::runtime(
+                    "pwsh not found and fallback to powershell failed. \
+                     Install PowerShell 7+ (pwsh) or ensure Windows PowerShell is available.",
+                ));
+            }
+            Err(OnlyError::runtime(
+                "pwsh not found. Install PowerShell 7+ or use shell?=pwsh for auto fallback.",
+            ))
+        }
+        ShellKind::Bash => {
+            if shell_exists("bash") {
+                return Ok(ShellKind::Bash);
+            }
+            if shell_fallback && shell_exists("sh") {
+                return Ok(ShellKind::Sh);
+            }
+            if shell_fallback {
+                return Err(OnlyError::runtime(
+                    "bash not found and fallback to sh failed. \
+                     Install bash or ensure sh is available.",
+                ));
+            }
+            Err(OnlyError::runtime(
+                "bash not found. Install bash or use shell?=bash for auto fallback.",
+            ))
+        }
+        ShellKind::PowerShell => {
+            if shell_exists(power_shell_command()) {
+                return Ok(ShellKind::PowerShell);
+            }
+            Err(OnlyError::runtime(
+                "powershell not found. Ensure Windows PowerShell is installed.",
+            ))
+        }
+        ShellKind::Sh => {
+            if shell_exists("sh") {
+                return Ok(ShellKind::Sh);
+            }
+            Err(OnlyError::runtime("sh not found. Ensure a POSIX shell is available."))
+        }
+        ShellKind::Deno => Ok(ShellKind::Deno),
+    }
+}
+
+/// Checks if a shell command exists in PATH.
+fn shell_exists(shell: &str) -> bool {
+    std::env::var_os("PATH").is_some_and(|paths| {
+        std::env::split_paths(&paths).any(|directory| shell_exists_in_dir(&directory, shell))
+    })
+}
+
+fn shell_exists_in_dir(directory: &std::path::Path, shell: &str) -> bool {
+    let candidate = directory.join(shell);
+    if candidate.is_file() {
+        return true;
+    }
+
+    #[cfg(windows)]
+    {
+        let has_extension = std::path::Path::new(shell).extension().is_some();
+        if has_extension {
+            return false;
+        }
+
+        let extensions = std::env::var_os("PATHEXT")
+            .and_then(|value| value.into_string().ok())
+            .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".to_string());
+
+        return extensions
+            .split(';')
+            .map(str::trim)
+            .filter(|extension| !extension.is_empty())
+            .any(|extension| directory.join(format!("{shell}{extension}")).is_file());
+    }
+
+    #[cfg(not(windows))]
+    {
+        false
     }
 }
 

@@ -18,5 +18,5 @@ pub enum ProbeKind {
     Os,
     Arch,
     Env,
-    Cmd,
+    Has,
 }

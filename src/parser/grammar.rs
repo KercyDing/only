@@ -164,7 +164,10 @@ impl<'a> Parser<'a> {
             .current_line()
             .expect("parser index should be in bounds");
         let trimmed = line.trim();
-        let Some(signature_text) = trimmed.strip_suffix(':') else {
+
+        // Remove trailing comment before checking for ':'
+        let without_comment = split_trailing_comment(trimmed);
+        let Some(signature_text) = without_comment.strip_suffix(':') else {
             return Err(self.error_current("task definition must end with ':'"));
         };
 
@@ -220,6 +223,7 @@ impl<'a> Parser<'a> {
         let mut parameters = Vec::new();
         let mut guard = None;
         let mut dependencies = Vec::new();
+        let mut shell = None;
 
         if rest.starts_with('(') {
             let (parameter_section, next_rest) = split_balanced(rest, '(', ')')
@@ -235,8 +239,29 @@ impl<'a> Parser<'a> {
         }
 
         if rest.starts_with('&') {
-            dependencies = self.parse_dependencies(rest, line_index)?;
-            rest = "";
+            let (parsed_deps, remaining) = self.parse_dependencies(rest, line_index)?;
+            dependencies = parsed_deps;
+            rest = remaining.trim_start();
+        }
+
+        let mut shell_fallback = false;
+        if rest.starts_with("shell?=") {
+            shell_fallback = true;
+            let shell_value = &rest["shell?=".len()..];
+            let shell_end = shell_value
+                .find(|c: char| c.is_whitespace())
+                .unwrap_or(shell_value.len());
+            let shell_name = &shell_value[..shell_end];
+            shell = Some(self.parse_shell_kind(shell_name, line_index)?);
+            rest = shell_value[shell_end..].trim_start();
+        } else if rest.starts_with("shell=") {
+            let shell_value = &rest["shell=".len()..];
+            let shell_end = shell_value
+                .find(|c: char| c.is_whitespace())
+                .unwrap_or(shell_value.len());
+            let shell_name = &shell_value[..shell_end];
+            shell = Some(self.parse_shell_kind(shell_name, line_index)?);
+            rest = shell_value[shell_end..].trim_start();
         }
 
         if !rest.is_empty() {
@@ -251,8 +276,24 @@ impl<'a> Parser<'a> {
             parameters,
             guard,
             dependencies,
+            shell,
+            shell_fallback,
             span: self.span_for_line(line_index, input),
         })
+    }
+
+    fn parse_shell_kind(&self, value: &str, line_index: usize) -> Result<ShellKind> {
+        match value {
+            "deno" => Ok(ShellKind::Deno),
+            "sh" => Ok(ShellKind::Sh),
+            "bash" => Ok(ShellKind::Bash),
+            "powershell" => Ok(ShellKind::PowerShell),
+            "pwsh" => Ok(ShellKind::Pwsh),
+            _ => Err(self.error_at(
+                line_index,
+                format!("invalid shell '{value}'; expected deno, sh, bash, powershell, or pwsh"),
+            )),
+        }
     }
 
     fn parse_parameters(&self, input: &str, line_index: usize) -> Result<Vec<Parameter>> {
@@ -306,7 +347,7 @@ impl<'a> Parser<'a> {
             "os" => ProbeKind::Os,
             "arch" => ProbeKind::Arch,
             "env" => ProbeKind::Env,
-            "cmd" => ProbeKind::Cmd,
+            "has" => ProbeKind::Has,
             _ => return Err(self.error_at(line_index, format!("unknown probe '{probe_name}'"))),
         };
 
@@ -332,11 +373,32 @@ impl<'a> Parser<'a> {
         ))
     }
 
-    fn parse_dependencies(&self, input: &str, line_index: usize) -> Result<Vec<String>> {
+    fn parse_dependencies<'b>(
+        &self,
+        input: &'b str,
+        line_index: usize,
+    ) -> Result<(Vec<String>, &'b str)> {
         let mut dependencies = Vec::new();
+        let mut rest = "";
 
         for raw_dependency in input.split('&').skip(1) {
             let dependency = raw_dependency.trim();
+
+            if let Some((dep_name, _after_dep)) = dependency.split_once("shell=") {
+                let dep_name = dep_name.trim();
+                if !dep_name.is_empty() {
+                    if !is_valid_dependency_name(dep_name) {
+                        return Err(self.error_at(
+                            line_index,
+                            format!("invalid dependency reference '{dep_name}'"),
+                        ));
+                    }
+                    dependencies.push(dep_name.to_owned());
+                }
+                rest = &dependency[dep_name.len()..];
+                break;
+            }
+
             if dependency.is_empty() {
                 return Err(self.error_at(line_index, "empty dependency reference"));
             }
@@ -351,7 +413,7 @@ impl<'a> Parser<'a> {
             dependencies.push(dependency.to_owned());
         }
 
-        Ok(dependencies)
+        Ok((dependencies, rest))
     }
 
     fn current_line(&self) -> Option<&'a str> {
@@ -489,14 +551,53 @@ fn parse_string_literal(input: &str) -> std::result::Result<String, &'static str
     Ok(output)
 }
 
+/// Removes trailing comment from a line, respecting string literals.
+///
+/// Args:
+/// line: The line to process.
+///
+/// Returns:
+/// The line with trailing comment removed.
+fn split_trailing_comment(line: &str) -> &str {
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for (index, ch) in line.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            if ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+
+        if ch == '"' {
+            in_string = true;
+            continue;
+        }
+
+        if ch == '#' {
+            return &line[..index].trim_end();
+        }
+    }
+
+    line
+}
+
 fn is_valid_identifier(value: &str) -> bool {
     let mut chars = value.chars();
     match chars.next() {
-        Some(ch) if ch == '_' || ch.is_ascii_alphabetic() => {}
+        Some(ch) if ch == '_' || ch == '-' || ch.is_ascii_alphabetic() => {}
         _ => return false,
     }
-
-    chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+    chars.all(|ch| ch == '_' || ch == '-' || ch.is_ascii_alphanumeric())
 }
 
 fn is_valid_namespace_name(value: &str) -> bool {
@@ -596,6 +697,35 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "line 1: invalid !shell value; expected deno, sh, bash, powershell, or pwsh"
+        );
+    }
+
+    #[test]
+    fn parses_task_level_shell_attribute() {
+        let source = "build() shell=bash:\n    echo ok\n";
+        let document = parse(source).expect("task-level shell should parse");
+        let signature = &document.global_tasks[0].signature;
+        assert_eq!(signature.name, "build");
+        assert_eq!(signature.shell, Some(ShellKind::Bash));
+    }
+
+    #[test]
+    fn parses_task_with_guard_and_shell() {
+        let source = "ls() ? @os(\"linux\") shell=sh:\n    ls -la\n";
+        let document = parse(source).expect("guard and shell should parse");
+        let signature = &document.global_tasks[0].signature;
+        assert_eq!(signature.name, "ls");
+        assert!(signature.guard.is_some());
+        assert_eq!(signature.shell, Some(ShellKind::Sh));
+    }
+
+    #[test]
+    fn rejects_invalid_task_level_shell() {
+        let error =
+            parse("build() shell=fish:\n    echo ok\n").expect_err("invalid shell should fail");
+        assert_eq!(
+            error.to_string(),
+            "line 1: invalid shell 'fish'; expected deno, sh, bash, powershell, or pwsh"
         );
     }
 }

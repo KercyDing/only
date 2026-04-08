@@ -1,0 +1,36 @@
+!verbose true
+
+% List directory contents
+ls() ? @os("linux") shell=sh:
+    ls -la
+
+ls() ? @os("macos") shell?=bash:
+    ls -la
+
+ls() ? @os("windows") shell?=pwsh:
+    Get-ChildItem -Force
+
+ls():
+    ls -la
+
+% Clean build artifacts
+clean() ? @os("windows") shell?=pwsh:
+    Remove-Item -Recurse -Force target,dist -ErrorAction SilentlyContinue
+
+clean():
+    rm -rf target dist
+
+% Build project
+build() ? @os("windows") shell?=pwsh:
+    cargo build --release
+
+build():
+    cargo build --release
+
+% Run tests
+test():
+    cargo test
+
+% Run all tasks
+all() & clean & build & test:
+    echo "✅ All tasks completed"

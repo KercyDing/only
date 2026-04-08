@@ -2,6 +2,7 @@ use anstyle::{AnsiColor as TermAnsiColor, Style as TermStyle};
 use clap::builder::StyledStr;
 use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Arg, ArgAction, Command};
+use std::collections::HashSet;
 
 use crate::model::{Namespace, Onlyfile, TaskDefinition};
 
@@ -41,7 +42,7 @@ pub fn build_global() -> Command {
 pub fn build(onlyfile: &Onlyfile) -> Command {
     let mut cmd = build_global();
 
-    for task in &onlyfile.global_tasks {
+    for task in unique_tasks(&onlyfile.global_tasks) {
         cmd = cmd.subcommand(build_task_command(task));
     }
 
@@ -72,9 +73,8 @@ pub fn render_help(onlyfile: &Onlyfile) -> StyledStr {
 /// Returns:
 /// User-facing task list with global tasks and namespaces.
 pub fn render_available_tasks(onlyfile: &Onlyfile) -> String {
-    let entries = onlyfile
-        .global_tasks
-        .iter()
+    let entries = unique_tasks(&onlyfile.global_tasks)
+        .into_iter()
         .map(|task| {
             (
                 task.signature.name.clone(),
@@ -169,7 +169,7 @@ fn build_namespace_command(namespace: &Namespace) -> Command {
         .styles(cli_styles())
         .about(namespace_summary(namespace));
 
-    for task in &namespace.tasks {
+    for task in unique_tasks(&namespace.tasks) {
         cmd = cmd.subcommand(build_task_command(task));
     }
 
@@ -197,13 +197,26 @@ fn build_task_command(task: &TaskDefinition) -> Command {
         } else {
             Arg::new(pname)
                 .index(index + 1)
-                .required(true)
+                .required(false)
                 .help("Required parameter")
         };
         cmd = cmd.arg(arg);
     }
 
     cmd
+}
+
+fn unique_tasks(tasks: &[TaskDefinition]) -> Vec<&TaskDefinition> {
+    let mut seen = HashSet::new();
+    let mut unique = Vec::new();
+
+    for task in tasks {
+        if seen.insert(task.signature.name.as_str()) {
+            unique.push(task);
+        }
+    }
+
+    unique
 }
 
 fn cli_styles() -> Styles {
@@ -219,6 +232,8 @@ fn cli_styles() -> Styles {
 
 #[cfg(test)]
 mod tests {
+    use std::panic;
+
     use clap::error::ErrorKind;
 
     use crate::parse_onlyfile;
@@ -360,5 +375,22 @@ workflow():
         assert!(listing.contains("Run tests."));
         assert!(listing.contains("dev"));
         assert!(listing.contains("Default developer workflow."));
+    }
+
+    #[test]
+    fn allows_guarded_task_variants_without_duplicate_subcommand_panic() {
+        let document = parse_onlyfile(
+            r#"probe() ? @env("PATH"):
+    true
+
+probe():
+    false
+"#,
+        )
+        .expect("document should parse");
+
+        let result = panic::catch_unwind(|| build(&document));
+
+        assert!(result.is_ok(), "building CLI should not panic");
     }
 }

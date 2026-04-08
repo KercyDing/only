@@ -37,7 +37,12 @@ pub fn run_plan(plan: &ExecutionPlan) -> Result<ExitCode> {
                 );
             }
 
-            let code = run_command(&rendered, &plan.working_dir, plan.shell)?;
+            let code = run_command(
+                &rendered,
+                &plan.working_dir,
+                node.shell.unwrap_or(plan.shell),
+                node.shell_fallback,
+            )?;
             if code != ExitCode::SUCCESS {
                 return Err(command_failed(
                     &node.qualified_name,

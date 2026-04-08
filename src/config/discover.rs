@@ -35,6 +35,14 @@ pub fn discover_onlyfile(explicit_path: Option<&Path>) -> Result<DiscoveredOnlyf
         .parent()
         .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
 
+    let base_dir = if base_dir.is_absolute() {
+        base_dir
+    } else {
+        std::env::current_dir()
+            .map_err(OnlyError::cwd)?
+            .join(&base_dir)
+    };
+
     Ok(DiscoveredOnlyfile {
         path,
         base_dir,

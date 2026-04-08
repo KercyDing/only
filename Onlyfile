@@ -14,7 +14,11 @@ check():
 test():
     cargo test
 
-% Install the local only binary into Cargo's bin directory.
+% Install the local only binary.
+install() ? @os("windows") shell?=pwsh:
+    cargo build --release
+    Write-Output "Windows: cannot replace running binary. Run:`n  Copy-Item target/release/only.exe -Destination `$env:USERPROFILE\.cargo\bin\ -Force"
+
 install():
     cargo install --path . --force
 

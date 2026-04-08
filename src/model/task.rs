@@ -1,4 +1,4 @@
-use super::{Guard, SourceSpan};
+use super::{Guard, ShellKind, SourceSpan};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskDefinition {
@@ -30,6 +30,8 @@ pub struct TaskSignature {
     pub parameters: Vec<Parameter>,
     pub guard: Option<Guard>,
     pub dependencies: Vec<String>,
+    pub shell: Option<ShellKind>,
+    pub shell_fallback: bool,
     pub span: SourceSpan,
 }
 

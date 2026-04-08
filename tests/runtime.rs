@@ -2,6 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use only::cli::app;
 use only::{CliInput, ShellKind, build_execution_plan, parse_onlyfile, run_plan, run_with};
 
 fn cli(task_path: &[&str]) -> CliInput {
@@ -238,6 +239,45 @@ build(profile):
         .expect("plan should build");
 
     let code = run_plan(&plan).expect("runtime should succeed");
+    assert_eq!(code, ExitCode::SUCCESS);
+}
+
+#[test]
+fn accepts_named_override_for_required_parameter_through_dynamic_cli() {
+    let document = parse_onlyfile(
+        r#"run(task):
+    {{task}}
+"#,
+    )
+    .expect("document should parse");
+
+    let matches = app::build(&document)
+        .try_get_matches_from(["only", "--set", "task=true", "run"])
+        .expect("dynamic CLI should accept named override without positional argument");
+    let input = CliInput::from_matches(matches.clone())
+        .expect("matches should normalize")
+        .with_task_path(matches, &document);
+
+    let plan = build_execution_plan(&document, &input).expect("plan should build");
+    let code = run_plan(&plan).expect("runtime should succeed");
+    assert_eq!(code, ExitCode::SUCCESS);
+}
+
+#[cfg(windows)]
+#[test]
+fn detects_windows_commands_via_pathext() {
+    let document = parse_onlyfile(
+        r#"probe() ? @cmd("powershell"):
+    true
+
+probe():
+    false
+"#,
+    )
+    .expect("document should parse");
+
+    let plan = build_execution_plan(&document, &cli(&["probe"])).expect("plan should build");
+    let code = run_plan(&plan).expect("guarded task should be selected");
     assert_eq!(code, ExitCode::SUCCESS);
 }
 

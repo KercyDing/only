@@ -15,4 +15,6 @@ pub struct ExecutionNode {
     pub qualified_name: String,
     pub commands: Vec<String>,
     pub parameters: Vec<(String, String)>,
+    pub shell: Option<ShellKind>,
+    pub shell_fallback: bool,
 }
