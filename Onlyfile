@@ -1,9 +1,5 @@
 !verbose true
 
-% Format the Rust codebase.
-fmt():
-    cargo fmt --all
-
 % Run cargo check.
 check():
     cargo check
@@ -11,8 +7,15 @@ check():
     cargo clippy --workspace -- -D warnings
 
 % Run the full test suite.
+test() ? @has("cargo-nextest"):
+    cargo nextest run
+
 test():
     cargo test
+
+% Run formatter, type checks, and tests.
+ci() & check & test:
+    echo "CI complete!"
 
 % Install the local only binary.
 install() ? @os("windows") shell?=pwsh:
@@ -22,19 +25,29 @@ install() ? @os("windows") shell?=pwsh:
 install():
     cargo install --path . --force
 
-% Run the local binary with a target task.
-run(task):
-    cargo run -- {{task}}
-
-% Run formatter, type checks, and tests.
-ci() & fmt & check & test:
-    echo "CI complete!"
-
+% Development builds.
 [dev]
-% Developer workflow.
-workflow() & fmt & test:
-    echo "dev complete!"
+% Build the project in development mode.
+build():
+    cargo build
 
-% Run a namespaced smoke command.
-smoke(name="It's a smoke command"):
-    echo "{{name}}"
+% Run the project in development mode.
+run():
+    cargo run
+
+% Release builds.
+[rel]
+% Build the project in release mode.
+build():
+    cargo build --release
+
+% Run the project in release mode.
+run():
+    cargo run --release
+
+% Run the release test suite.
+test() ? @has("cargo-nextest"):
+    cargo nextest run --release
+
+test():
+    cargo test --release

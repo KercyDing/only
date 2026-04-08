@@ -23,16 +23,17 @@ only -p
 ```bash
 only --help          # Show help
 only                 # List all available tasks
-only test            # Run a global task
+only check           # Run a global task
+only test            # Run the test task
 only dev             # Show namespace help
-only dev smoke       # Run a namespaced task
-only dev smoke "hello world"
+only dev build       # Run a namespaced task
+only rel run
 ```
 
 Override parameters:
 
 ```bash
-only --set name="hello world" dev smoke
+only --set name="0.0.0.0" serve
 ```
 
 ## Onlyfile Structure
@@ -46,12 +47,23 @@ An `Onlyfile` consists of:
 
 ### Doc Comments
 
-Lines starting with `%` document the following task:
+Lines starting with `%` document the following top-level declaration:
 
 ```text
 % Format the codebase.
 fmt():
     cargo fmt --all
+```
+
+The same rule applies to namespaces:
+
+```text
+% Developer workflow.
+[dev]
+
+% Run the default workflow.
+workflow():
+    cargo run
 ```
 
 ### Directives
@@ -71,15 +83,6 @@ serve(port="3000", host="127.0.0.1"):
     echo "Serving on {{host}}:{{port}}"
 ```
 
-### Variadic Parameters
-
-The last parameter can be variadic:
-
-```text
-fmt(..flags):
-    cargo fmt --all {{flags}}
-```
-
 ### Smart Shell Selection
 
 Use `shell?=` to prefer a specific shell with automatic fallback:
@@ -91,14 +94,11 @@ build() ? @os("windows") shell?=pwsh:
 
 ### Dependencies
 
-Use `&` for serial and `|` for parallel dependencies. Parentheses are supported.
+Use `&` for serial dependencies.
 
 ```text
 ci() & fmt & check & test:
     echo "CI complete"
-
-all() (build() | lint()) & test() & deploy():
-    echo "All done"
 ```
 
 ### Guards
@@ -117,29 +117,26 @@ Supported probes:
 ### Namespaces
 
 ```text
+% Development builds.
 [dev]
-workflow() & fmt & test:
-    echo "dev complete"
+build():
+    cargo build
 
-smoke(name="It's a smoke command"):
-    echo "{{name}}"
+run():
+    cargo run
 ```
 
 Run with:
 
 ```bash
-only dev workflow
-only dev smoke "hello"
+only dev build
+only dev run
 ```
 
 ### Practical Example
 
 ```text
 !verbose true
-
-% Format the Rust codebase.
-fmt():
-    cargo fmt --all
 
 % Run checks.
 check() ? @has("cargo"):
@@ -151,21 +148,37 @@ check():
     echo "Cannot found cargo."
 
 % Run tests.
+test() ? @has("cargo-nextest"):
+    cargo nextest run
+
 test():
     cargo test
 
 % Run full CI.
-ci() & fmt & check & test:
-    echo "✅ CI complete!"
+ci() & check & test:
+    echo "CI complete!"
 
+% Development builds.
 [dev]
-% Developer workflow.
-workflow() & fmt & test:
-    echo "dev complete!"
+build():
+    cargo build
 
-% Run a namespaced smoke command.
-smoke(name="It's a smoke command"):
-    echo "{{name}}"
+run():
+    cargo run
+
+% Release builds.
+[rel]
+build():
+    cargo build --release
+
+run():
+    cargo run --release
+
+test() ? @has("cargo-nextest"):
+    cargo nextest run --release
+
+test():
+    cargo test --release
 ```
 
 Usage:
@@ -173,6 +186,7 @@ Usage:
 ```bash
 only
 only ci
-only dev workflow
-only dev smoke "custom message"
+only dev build
+only rel run
+only rel test
 ```

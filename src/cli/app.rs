@@ -166,8 +166,12 @@ fn build_namespace_command(namespace: &Namespace) -> Command {
     let mut cmd = Command::new(name)
         .bin_name(format!("only {}", namespace.name))
         .disable_help_subcommand(true)
-        .styles(cli_styles())
-        .about(namespace_summary(namespace));
+        .styles(cli_styles());
+
+    if let Some(doc) = &namespace.doc {
+        let about: &'static str = Box::leak(doc.clone().into_boxed_str());
+        cmd = cmd.about(about);
+    }
 
     for task in unique_tasks(&namespace.tasks) {
         cmd = cmd.subcommand(build_task_command(task));
@@ -177,11 +181,7 @@ fn build_namespace_command(namespace: &Namespace) -> Command {
 }
 
 fn namespace_summary(namespace: &Namespace) -> String {
-    namespace
-        .tasks
-        .iter()
-        .find_map(|task| task.doc.clone())
-        .unwrap_or_else(|| "Namespace".to_string())
+    namespace.doc.clone().unwrap_or_default()
 }
 
 fn build_task_command(task: &TaskDefinition) -> Command {
@@ -374,7 +374,50 @@ workflow():
         assert!(listing.contains("test"));
         assert!(listing.contains("Run tests."));
         assert!(listing.contains("dev"));
-        assert!(listing.contains("Default developer workflow."));
+        assert!(!listing.contains("Default developer workflow."));
+    }
+
+    #[test]
+    fn renders_namespace_summary_from_namespace_doc() {
+        let document = parse_onlyfile(
+            "% Developer workflow.\n[dev]\n% Run smoke.\nsmoke():\n    echo smoke\n",
+        )
+        .expect("document should parse");
+
+        let listing = render_available_tasks(&document);
+        assert!(listing.contains("Developer workflow."));
+        assert!(!listing.contains("Run smoke."));
+    }
+
+    #[test]
+    fn omits_namespace_fallback_summary_when_doc_is_missing() {
+        let document = parse_onlyfile(
+            "[dev]
+% Run smoke.
+smoke():
+    echo smoke
+",
+        )
+        .expect("document should parse");
+
+        let help = render_namespace_help(&document.namespaces[0]).to_string();
+        assert!(help.starts_with("Usage: only dev [COMMAND]"));
+    }
+
+    #[test]
+    fn renders_namespace_help_about_from_namespace_doc() {
+        let document = parse_onlyfile(
+            "% Developer workflow.
+[dev]
+% Run smoke.
+smoke():
+    echo smoke
+",
+        )
+        .expect("document should parse");
+
+        let help = render_namespace_help(&document.namespaces[0]).to_string();
+        assert!(help.starts_with("Developer workflow."));
     }
 
     #[test]

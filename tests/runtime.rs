@@ -265,9 +265,9 @@ fn accepts_named_override_for_required_parameter_through_dynamic_cli() {
 
 #[cfg(windows)]
 #[test]
-fn detects_windows_commands_via_pathext() {
+fn detects_windows_has_probe_via_pathext() {
     let document = parse_onlyfile(
-        r#"probe() ? @cmd("powershell"):
+        r#"probe() ? @has("powershell"):
     true
 
 probe():

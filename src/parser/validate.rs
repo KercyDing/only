@@ -244,6 +244,7 @@ mod tests {
             global_tasks: vec![task("build", &[])],
             namespaces: vec![Namespace {
                 name: "build".into(),
+                doc: None,
                 span: SourceSpan::new(0, 0),
                 tasks: vec![],
             }],

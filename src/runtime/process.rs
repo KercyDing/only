@@ -90,7 +90,9 @@ fn resolve_shell(shell: ShellKind, shell_fallback: bool) -> Result<ShellKind> {
             if shell_exists("sh") {
                 return Ok(ShellKind::Sh);
             }
-            Err(OnlyError::runtime("sh not found. Ensure a POSIX shell is available."))
+            Err(OnlyError::runtime(
+                "sh not found. Ensure a POSIX shell is available.",
+            ))
         }
         ShellKind::Deno => Ok(ShellKind::Deno),
     }
@@ -120,11 +122,11 @@ fn shell_exists_in_dir(directory: &std::path::Path, shell: &str) -> bool {
             .and_then(|value| value.into_string().ok())
             .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".to_string());
 
-        return extensions
+        extensions
             .split(';')
             .map(str::trim)
             .filter(|extension| !extension.is_empty())
-            .any(|extension| directory.join(format!("{shell}{extension}")).is_file());
+            .any(|extension| directory.join(format!("{shell}{extension}")).is_file())
     }
 
     #[cfg(not(windows))]

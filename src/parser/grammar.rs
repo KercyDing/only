@@ -142,7 +142,7 @@ impl<'a> Parser<'a> {
             .error_current("unsupported directive; supported directives are !verbose and !shell"))
     }
 
-    fn parse_namespace_header(&self, trimmed: &str) -> Result<Namespace> {
+    fn parse_namespace_header(&mut self, trimmed: &str) -> Result<Namespace> {
         if !trimmed.ends_with(']') {
             return Err(self.error_current("unterminated namespace header"));
         }
@@ -154,6 +154,7 @@ impl<'a> Parser<'a> {
 
         Ok(Namespace {
             name: name.to_owned(),
+            doc: self.pending_doc.take(),
             span: self.span_for_line(self.index, trimmed),
             tasks: Vec::new(),
         })
@@ -584,7 +585,7 @@ fn split_trailing_comment(line: &str) -> &str {
         }
 
         if ch == '#' {
-            return &line[..index].trim_end();
+            return line[..index].trim_end();
         }
     }
 

@@ -19,21 +19,31 @@ Create an `Onlyfile` in your project root:
 ```Onlyfile
 !verbose true
 
-% Format the codebase.
-fmt():
-    cargo fmt --all
+% Run cargo check.
+check():
+    cargo check
+    cargo fmt --all --check
+    cargo clippy --workspace -- -D warnings
 
-% Run tests.
+% Run the full test suite.
+test() ? @has("cargo-nextest"):
+    cargo nextest run
+
 test():
     cargo test
 
+% Run formatter, type checks, and tests.
+ci() & check & test:
+    echo "CI complete!"
+
 [dev]
 % Build in development mode.
-dev():
+build():
     cargo build
 
+[rel]
 % Build in release mode.
-rel():
+build():
     cargo build --release
 ```
 
@@ -41,9 +51,21 @@ Then run:
 
 ```shell
 only                # list all tasks
-only fmt
+only check
 only test
-only dev smoke "world"
+only dev build
+only rel build
+```
+
+You can also document a namespace by placing `%` on the line immediately above it:
+
+```Onlyfile
+% Developer workflow.
+[dev]
+
+% Build in development mode.
+build():
+    cargo build
 ```
 
 ### Advanced Example
@@ -51,29 +73,7 @@ only dev smoke "world"
 ```Onlyfile
 !verbose true
 
-% Build the project
-# Windows uses PowerShell, others use default shell
-build() ? @os("windows") shell?=pwsh:
-    cargo build --release
-
-build():
-    cargo build --release
-
-% Clean build artifacts
-# Run with platform-native commands
-clean() ? @os("windows") shell?=pwsh:
-    Remove-Item -Recurse -Force target, dist -ErrorAction SilentlyContinue
-
-clean() ? @os("linux") shell=sh:
-    rm -rf target dist
-
-clean() ? @os("macos") shell?=bash:
-    rm -rf target dist
-
-clean():
-    rm -rf target dist
-
-% Run checks only if cargo is available
+% Run checks only if cargo is available.
 check() ? @has("cargo"):
     cargo check
     cargo fmt --all --check
@@ -82,9 +82,36 @@ check() ? @has("cargo"):
 check():
     echo "cargo not found, skipping checks"
 
-% Full CI pipeline
-ci() & fmt & check & test:
-    echo "✅ CI completed successfully"
+% Prefer nextest when it is installed.
+test() ? @has("cargo-nextest"):
+    cargo nextest run
+
+test():
+    cargo test
+
+% Install the local binary.
+install() ? @os("windows") shell?=pwsh:
+    cargo build --release
+    Write-Output "Windows: cannot replace running binary. Run:`n  Copy-Item target/release/only.exe -Destination `$env:USERPROFILE\.cargo\bin\ -Force"
+
+install():
+    cargo install --path . --force
+
+% Full CI pipeline.
+ci() & check & test:
+    echo "CI completed successfully"
+
+% Development builds.
+[dev]
+% Build in development mode.
+build():
+    cargo build
+
+% Release builds.
+[rel]
+% Build in release mode.
+build():
+    cargo build --release
 ```
 
 ---
@@ -93,7 +120,7 @@ ci() & fmt & check & test:
 
 - **True cross-platform consistency** — default `deno_task_shell` means your commands behave the same everywhere, no extra configuration needed
 - **Cleaner, more modern syntax** — function-style signatures with parameters and defaults
-- **More intuitive dependencies** — `&` for serial, `|` for parallel, with parentheses for complex flows
+- **Simple dependency chaining** — `&` keeps common task pipelines readable
 - **Better out-of-the-box experience** — dynamic help, colored output, clean task listing
 
 **Just** is powerful but often requires manual shell setup on Windows.  

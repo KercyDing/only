@@ -305,11 +305,11 @@ fn command_exists_in_dir(directory: &std::path::Path, command: &str) -> bool {
             .and_then(|value| value.into_string().ok())
             .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".to_string());
 
-        return extensions
+        extensions
             .split(';')
             .map(str::trim)
             .filter(|extension| !extension.is_empty())
-            .any(|extension| directory.join(format!("{command}{extension}")).is_file());
+            .any(|extension| directory.join(format!("{command}{extension}")).is_file())
     }
 
     #[cfg(not(windows))]

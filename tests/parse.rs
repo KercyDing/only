@@ -83,3 +83,16 @@ serve():
     assert_eq!(document.namespaces[1].tasks.len(), 1);
     assert_eq!(document.namespaces[1].tasks[0].signature.name, "serve");
 }
+
+#[test]
+fn does_not_assign_namespace_doc_to_first_task() {
+    let source = "% Developer workflow.\n[dev]\nsmoke():\n    echo smoke\n";
+    let document = parse_onlyfile(source).expect("namespaced tasks should parse");
+
+    assert_eq!(
+        document.namespaces[0].doc.as_deref(),
+        Some("Developer workflow.")
+    );
+    assert_eq!(document.namespaces[0].tasks[0].signature.name, "smoke");
+    assert!(document.namespaces[0].tasks[0].doc.is_none());
+}
