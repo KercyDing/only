@@ -128,6 +128,13 @@ fn strip_ansi(input: &str) -> String {
     stripped
 }
 
+fn assert_same_canonical_path(actual: &Path, expected: &Path) {
+    assert_eq!(
+        fs::canonicalize(actual).expect("actual path should canonicalize"),
+        fs::canonicalize(expected).expect("expected path should canonicalize")
+    );
+}
+
 #[test]
 fn discovers_onlyfile_from_parent_directory() {
     let _cwd_lock = cwd_lock();
@@ -140,8 +147,8 @@ fn discovers_onlyfile_from_parent_directory() {
     let _guard = CurrentDirGuard::change_to(&nested_dir);
     let discovered = discover_onlyfile(None).expect("Onlyfile should be discovered");
 
-    assert_eq!(discovered.path, onlyfile_path);
-    assert_eq!(discovered.base_dir, temp_dir.path());
+    assert_same_canonical_path(&discovered.path, &onlyfile_path);
+    assert_same_canonical_path(&discovered.base_dir, temp_dir.path());
     assert_eq!(discovered.contents, "check():\n    echo ok\n");
 }
 
