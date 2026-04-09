@@ -1,3 +1,4 @@
 /target
 .codex
 .worktrees
+.DS_Store
