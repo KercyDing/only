@@ -32,7 +32,7 @@ enum RawTokenKind {
     LBracket,
     #[token("]")]
     RBracket,
-    #[regex(r#""([^"\\]|\\["\\ntr])*""#)]
+    #[regex(r#""([^"\n]|\\.)*""#)]
     String,
     #[regex(r"[A-Za-z_-][A-Za-z0-9_-]*")]
     Ident,

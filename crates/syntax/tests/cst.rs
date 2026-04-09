@@ -59,3 +59,15 @@ fn exposes_structured_task_header_sections() {
     assert_eq!(task.shell_name().as_deref(), Some("bash"));
     assert!(task.shell_fallback());
 }
+
+#[test]
+fn preserves_multiple_install_task_variants_in_repo_onlyfile() {
+    let syntax = snapshot(include_str!("../../../Onlyfile"));
+    let install_count = syntax
+        .document()
+        .tasks()
+        .filter(|task| task.name().as_deref() == Some("install"))
+        .count();
+
+    assert_eq!(install_count, 2);
+}
