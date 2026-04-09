@@ -2,6 +2,21 @@
 
 `only` is a deterministic, cross-platform task runner driven by an `Onlyfile`.
 
+The CLI runs on top of a staged frontend pipeline:
+
+```text
+source -> syntax -> semantic -> engine -> cli
+```
+
+`only` treats `Onlyfile` as a language with distinct syntax, semantic, and execution stages. That keeps runtime behavior, diagnostics, and future tooling aligned on the same model.
+
+This repository itself is a Cargo workspace. When installing the local `only` binary from a clone
+of this repo, target the CLI package directory instead of the workspace root:
+
+```bash
+cargo install --path crates/cli --force
+```
+
 ## File Discovery
 
 By default, `only` looks for `Onlyfile` or `onlyfile` in the current directory and all parent directories until the filesystem root is reached.
@@ -29,6 +44,32 @@ only dev             # Show namespace help
 only dev build       # Run a namespaced task
 only rel run
 ```
+
+## Current Capabilities
+
+Current user-facing behavior includes:
+
+- automatic `Onlyfile` discovery from the current directory upward
+- dynamic task listing and namespace-aware help
+- directives, doc comments, namespaces, and task declarations
+- parameter defaults and `{{name}}` interpolation
+- dependency chaining with `&`
+- guards such as `@os`, `@arch`, `@env`, and `@has`
+- `shell?=` host shell preference with fallback
+- semantic validation before execution, including duplicate names and undefined references
+
+## Why This Structure Matters
+
+`only` is not built as a CLI that happens to parse a file. It is built as a language pipeline that happens to power a CLI today.
+
+That difference matters:
+
+- terminal diagnostics can stay readable without coupling parsing logic to output rendering
+- editor features can reuse syntax and semantic analysis instead of rebuilding ad hoc parsers
+- future web tooling can consume the same CST, AST, and symbol information as the CLI
+- runtime changes stay isolated in `engine` instead of leaking into parsing and validation
+
+Compared with tools centered on shell execution or YAML orchestration, this structure gives `only` more room to grow without turning the implementation into a monolith.
 
 Override parameters:
 
@@ -145,7 +186,7 @@ check() ? @has("cargo"):
     cargo clippy --workspace -- -D warnings
     
 check():
-    echo "Cannot found cargo."
+    echo "cargo not found, skipping checks"
 
 % Run tests.
 test() ? @has("cargo-nextest"):
@@ -153,6 +194,14 @@ test() ? @has("cargo-nextest"):
 
 test():
     cargo test
+
+% Install the local binary.
+install() ? @os("windows") shell?=pwsh:
+    cargo build --release
+    Write-Output "Windows: cannot replace running binary. Run:`n  Copy-Item target/release/only.exe -Destination `$env:USERPROFILE\.cargo\bin\ -Force"
+
+install():
+    cargo install --path crates/cli --force
 
 % Run full CI.
 ci() & check & test:

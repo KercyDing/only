@@ -3,19 +3,48 @@
 [![crates.io](https://img.shields.io/crates/v/only.svg)](https://crates.io/crates/only)
 [![license](https://img.shields.io/crates/l/only.svg)](LICENSE)
 
-**Write tasks once. Run them everywhere — exactly the same.**
+**One `Onlyfile`. One behavior. Every platform.**
 
-Only is a modern, cross-platform, deterministic task runner designed for developers who hate shell compatibility issues.
+Only is a cross-platform task runner built around a real task language.
 
-No Git Bash.  
-No `if os()` hacks.  
-No `platforms:` boilerplate.
+Write tasks once, keep one execution model, and get predictable results on **macOS, Linux, and Windows**.
 
-Just one clean `Onlyfile` that works identically on **macOS, Linux, and Windows** — powered by `deno_task_shell` by default.
+- **Cross-platform by default** — no Git Bash, no `if os()` hacks, no `platforms:` boilerplate
+- **A better task language** — readable task syntax with parameters, guards, namespaces, and interpolation
+- **Built for tooling** — the same core model can power execution, diagnostics, editor features, and future visual workflows
+
+```Onlyfile
+check():
+    cargo check
+
+test():
+    cargo test
+
+ci() & check & test:
+    echo "CI complete"
+```
+
+Run `only`, `only check`, or `only ci`, and you're off.
 
 ---
 
-## Quick Start
+## Why It Works 🧠
+
+`only` treats `Onlyfile` as a real language, not just a thin wrapper around shell commands.
+
+Parsing, validation, planning, and execution are kept as separate stages. That keeps terminal errors readable today and leaves room for editor tooling, language-server features, and future visual workflows without rebuilding the core model later.
+
+The execution path is intentionally simple:
+
+```text
+source -> syntax -> semantic -> engine -> cli
+```
+
+In practice, that means one source of truth for task structure, diagnostics, interpolation, dependency planning, and host integrations.
+
+---
+
+## Quick Start ⚡
 
 Create an `Onlyfile` in your project root:
 
@@ -98,7 +127,7 @@ install() ? @os("windows") shell?=pwsh:
     Write-Output "Windows: cannot replace running binary. Run:`n  Copy-Item target/release/only.exe -Destination `$env:USERPROFILE\.cargo\bin\ -Force"
 
 install():
-    cargo install --path . --force
+    cargo install --path crates/cli --force
 
 % Full CI pipeline.
 ci() & check & test:
@@ -119,43 +148,52 @@ build():
 
 ---
 
-## Why developers choose Only over Just and Taskfile
+## Why Only ✨
 
-- **True cross-platform consistency** — default `deno_task_shell` means your commands behave the same everywhere, no extra configuration needed
-- **Cleaner, more modern syntax** — function-style signatures with parameters and defaults
-- **Simple dependency chaining** — `&` keeps common task pipelines readable
-- **Better out-of-the-box experience** — dynamic help, colored output, clean task listing
+- **Actually cross-platform by default** — `deno_task_shell` keeps behavior aligned across macOS, Linux, and Windows
+- **A better task language** — function-style signatures, parameters, defaults, guards, namespaces, and interpolation stay readable
+- **Clear execution flow** — dependencies, planning, and runtime behavior are explicit instead of being buried in shell glue
+- **Better diagnostics and help** — dynamic task listing and structured validation make the terminal experience less guessy
+- **Built for tooling, not just execution** — the same pipeline can power CLI, editor features, language servers, and future visual workflows
 
-**Just** is powerful but often requires manual shell setup on Windows.  
-**Taskfile** is solid but uses heavier YAML and still needs platform rules.
+| Tool | Best fit | Core model | Portability | Tooling headroom |
+|------|----------|------------|-------------|------------------|
+| `only` | tasks that should stay simple now and grow later | task language | consistent by default | high |
+| `just` | straightforward command running | command runner | shell-sensitive in practice | medium |
+| `taskfile` | config-heavy orchestration | YAML orchestration | workable, but heavier | medium |
 
-**Only is ideal for personal projects, small-to-medium repositories, and developers who want simplicity and reliability** without fighting with configuration.
+`only` is for the case where you want both a pleasant task authoring experience and a format that can grow into real tooling without being redesigned later.
 
 ---
 
-## Installation
+## Installation 📦
 
-Install the latest published release from crates.io:
+Published release:
 
 ```shell
 cargo install only
 ```
 
-Install the latest commit from GitHub:
+Latest GitHub version:
 
 ```shell
-cargo install --git https://github.com/KercyDing/only
+cargo install --git https://github.com/KercyDing/only only
+```
+
+Local workspace:
+
+```shell
+cargo install --path crates/cli --force
 ```
 
 ---
 
-## Docs
+## Docs 📚
 
-Full syntax guide and examples → **[docs/usage.md](docs/usage.md)**
+- Usage and syntax: **[Guide](docs/usage.md)**
 
 ---
 
-> Under active development and already powering real workflows.  
-> Star if you like where this is going ✨
+> Built for everyday workflows now, with room to grow into real tooling later. If it clicks for you, a star means a lot. ⭐
 
 [MIT License](LICENSE)

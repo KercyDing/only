@@ -6,7 +6,7 @@ license.workspace = true
 repository.workspace = true
 documentation.workspace = true
 readme.workspace = true
-description = "A minimalist, deterministic task runner. (Work in progress)"
+description = "A deterministic cross-platform task runner built on a staged language pipeline."
 categories = ["command-line-utilities", "development-tools::build-utils"]
 keywords = ["onlyfile", "task", "runner", "minimalist", "cli"]
 
