@@ -6,6 +6,7 @@ use std::env;
 use std::error::Error as _;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::process::ExitCode;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -94,6 +95,37 @@ fn temp_case_dir(name: &str) -> PathBuf {
 
     fs::create_dir_all(&root).expect("temp tree should be created");
     root
+}
+
+fn cli_binary_path() -> PathBuf {
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.pop();
+    path.pop();
+    path.push("target");
+    path.push("debug");
+    path.push(if cfg!(windows) { "only.exe" } else { "only" });
+    path
+}
+
+fn strip_ansi(input: &str) -> String {
+    let mut stripped = String::with_capacity(input.len());
+    let mut chars = input.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '\u{1b}' && chars.peek() == Some(&'[') {
+            chars.next();
+            while let Some(next) = chars.next() {
+                if ('@'..='~').contains(&next) {
+                    break;
+                }
+            }
+            continue;
+        }
+
+        stripped.push(ch);
+    }
+
+    stripped
 }
 
 #[test]
@@ -511,6 +543,61 @@ fn uses_deno_task_shell_by_default() {
         &cli(&["hello"]),
     );
     assert_eq!(plan.shell.as_deref(), None);
+}
+
+#[test]
+fn verbose_cli_run_prints_task_progress_and_commands() {
+    let _cwd_lock = cwd_lock();
+    let temp_dir = TempDir::new("verbose-cli-output");
+    let onlyfile_path = temp_dir.path().join("Onlyfile");
+    fs::write(
+        &onlyfile_path,
+        r#"!verbose true
+prepare():
+    true
+
+check():
+    true
+
+ci() & prepare & check:
+    true
+"#,
+    )
+    .expect("Onlyfile should be written");
+
+    let output = Command::new(cli_binary_path())
+        .arg("ci")
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("CLI process should run");
+
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be valid utf-8");
+    let plain_stderr = strip_ansi(&stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "expected CLI to succeed, stderr was: {stderr}"
+    );
+    assert!(
+        plain_stderr.contains("[task 1/3] prepare"),
+        "expected first task progress in stderr, got: {stderr}"
+    );
+    assert!(
+        plain_stderr.contains("[task 2/3] check"),
+        "expected second task progress in stderr, got: {stderr}"
+    );
+    assert!(
+        plain_stderr.contains("[task 3/3] ci"),
+        "expected final task progress in stderr, got: {stderr}"
+    );
+    assert!(
+        plain_stderr.contains("  $ true"),
+        "expected rendered command in stderr, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("\u{1b}["),
+        "expected styled verbose output in stderr, got: {stderr}"
+    );
 }
 
 #[test]

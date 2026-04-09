@@ -677,6 +677,7 @@ dependencies = [
 name = "only-engine"
 version = "0.0.2"
 dependencies = [
+ "anstyle",
  "deno_task_shell",
  "only-semantic",
  "tokio",

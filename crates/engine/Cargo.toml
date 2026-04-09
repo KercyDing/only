@@ -9,6 +9,7 @@ readme.workspace = true
 publish = false
 
 [dependencies]
+anstyle.workspace = true
 deno_task_shell.workspace = true
 only-semantic = { path = "../semantic" }
 tokio.workspace = true
