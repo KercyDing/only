@@ -36,7 +36,7 @@ enum RawTokenKind {
     String,
     #[regex(r"[A-Za-z_-][A-Za-z0-9_-]*")]
     Ident,
-    #[regex(r"#.*")]
+    #[regex(r"#[^\n]*", allow_greedy = true)]
     Comment,
     #[regex(r"[ ]+")]
     Spaces,
