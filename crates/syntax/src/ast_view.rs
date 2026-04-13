@@ -63,6 +63,19 @@ pub struct TaskNode {
     syntax: SyntaxNode,
 }
 
+/// One dependency reference parsed from a task header.
+///
+/// Args:
+/// None.
+///
+/// Returns:
+/// Dependency text and the precise source range of that reference.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskDependencyRef {
+    pub name: SmolStr,
+    pub range: TextRange,
+}
+
 impl DocumentNode {
     /// Casts a raw rowan node into a typed document wrapper.
     ///
@@ -163,6 +176,32 @@ impl DirectiveNode {
     /// Directive range in source text coordinates.
     pub fn range(&self) -> TextRange {
         self.syntax.text_range()
+    }
+
+    /// Returns the directive keyword range including the leading `!`.
+    ///
+    /// Args:
+    /// None.
+    ///
+    /// Returns:
+    /// Range covering `!verbose` or `!shell` when present.
+    pub fn keyword_range(&self) -> Option<TextRange> {
+        let mut tokens = self
+            .syntax
+            .children_with_tokens()
+            .filter_map(|element| element.into_token())
+            .filter(|token| {
+                !matches!(
+                    token.kind(),
+                    SyntaxKind::Whitespace | SyntaxKind::Indent | SyntaxKind::Newline
+                )
+            });
+        let bang = tokens.find(|token| token.kind() == SyntaxKind::Bang)?;
+        let keyword = tokens.next()?;
+        Some(TextRange::new(
+            bang.text_range().start(),
+            keyword.text_range().end(),
+        ))
     }
 
     /// Returns the directive name token text without the leading `!`.
@@ -300,6 +339,21 @@ impl TaskNode {
         self.syntax.text_range()
     }
 
+    /// Returns the task name range from the header identifier.
+    ///
+    /// Args:
+    /// None.
+    ///
+    /// Returns:
+    /// Range covering the task name before the parameter list.
+    pub fn name_range(&self) -> Option<TextRange> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|element| element.into_token())
+            .find(|token| token.kind() == SyntaxKind::Ident)
+            .map(|token| token.text_range())
+    }
+
     /// Returns the task name from the header identifier.
     ///
     /// Args:
@@ -374,6 +428,132 @@ impl TaskNode {
     /// Dependency section text when present.
     pub fn dependencies_text(&self) -> Option<SmolStr> {
         self.header_sections().dependencies
+    }
+
+    /// Returns structured dependency references with source ranges.
+    ///
+    /// Args:
+    /// None.
+    ///
+    /// Returns:
+    /// Dependency names and ranges in source order from the task header.
+    pub fn dependency_refs(&self) -> Vec<TaskDependencyRef> {
+        let mut refs = Vec::new();
+        let mut phase = HeaderPhase::BeforeTail;
+        let mut saw_name = false;
+        let mut current_name = String::new();
+        let mut current_start = None;
+        let mut current_end = None;
+
+        let finish_current =
+            |refs: &mut Vec<TaskDependencyRef>,
+             current_name: &mut String,
+             current_start: &mut Option<text_size::TextSize>,
+             current_end: &mut Option<text_size::TextSize>| {
+                let (Some(start), Some(end)) = (*current_start, *current_end) else {
+                    current_name.clear();
+                    *current_start = None;
+                    *current_end = None;
+                    return;
+                };
+                let name = current_name.trim();
+                if !name.is_empty() {
+                    refs.push(TaskDependencyRef {
+                        name: SmolStr::new(name),
+                        range: TextRange::new(start, end),
+                    });
+                }
+                current_name.clear();
+                *current_start = None;
+                *current_end = None;
+            };
+
+        for token in self
+            .syntax
+            .children_with_tokens()
+            .filter_map(|element| element.into_token())
+        {
+            let kind = token.kind();
+            if matches!(kind, SyntaxKind::Colon | SyntaxKind::Newline) {
+                finish_current(
+                    &mut refs,
+                    &mut current_name,
+                    &mut current_start,
+                    &mut current_end,
+                );
+                break;
+            }
+
+            if !saw_name {
+                if kind == SyntaxKind::Ident {
+                    saw_name = true;
+                }
+                continue;
+            }
+
+            match &mut phase {
+                HeaderPhase::BeforeTail => match kind {
+                    SyntaxKind::LParen => phase = HeaderPhase::Params { depth: 1 },
+                    SyntaxKind::Question => phase = HeaderPhase::Guard { depth: 0 },
+                    SyntaxKind::Amp => phase = HeaderPhase::Dependencies,
+                    SyntaxKind::ShellKw | SyntaxKind::ShellFallbackKw => break,
+                    _ => {}
+                },
+                HeaderPhase::Params { depth } => match kind {
+                    SyntaxKind::LParen => *depth += 1,
+                    SyntaxKind::RParen => {
+                        *depth -= 1;
+                        if *depth == 0 {
+                            phase = HeaderPhase::BeforeTail;
+                        }
+                    }
+                    _ => {}
+                },
+                HeaderPhase::Guard { depth } => match kind {
+                    SyntaxKind::LParen => *depth += 1,
+                    SyntaxKind::RParen => {
+                        if *depth > 0 {
+                            *depth -= 1;
+                        }
+                        if *depth == 0 {
+                            phase = HeaderPhase::BeforeTail;
+                        }
+                    }
+                    _ => {}
+                },
+                HeaderPhase::Dependencies => match kind {
+                    SyntaxKind::Amp => finish_current(
+                        &mut refs,
+                        &mut current_name,
+                        &mut current_start,
+                        &mut current_end,
+                    ),
+                    SyntaxKind::ShellKw | SyntaxKind::ShellFallbackKw => {
+                        finish_current(
+                            &mut refs,
+                            &mut current_name,
+                            &mut current_start,
+                            &mut current_end,
+                        );
+                        break;
+                    }
+                    SyntaxKind::Whitespace | SyntaxKind::Indent => {}
+                    SyntaxKind::Unknown if token.text() == "," => finish_current(
+                        &mut refs,
+                        &mut current_name,
+                        &mut current_start,
+                        &mut current_end,
+                    ),
+                    _ => {
+                        current_start.get_or_insert(token.text_range().start());
+                        current_end = Some(token.text_range().end());
+                        current_name.push_str(token.text());
+                    }
+                },
+            }
+        }
+
+        refs
     }
 
     /// Returns the explicit shell name when present.
@@ -487,6 +667,14 @@ struct TaskHeaderSections {
     dependencies: Option<SmolStr>,
     shell: Option<SmolStr>,
     shell_fallback: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HeaderPhase {
+    BeforeTail,
+    Params { depth: usize },
+    Guard { depth: usize },
+    Dependencies,
 }
 
 fn non_trivia_token_texts(node: &SyntaxNode) -> impl Iterator<Item = SmolStr> + '_ {

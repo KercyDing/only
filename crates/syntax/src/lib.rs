@@ -10,7 +10,9 @@ mod syntax_snapshot;
 mod token;
 mod trivia;
 
-pub use ast_view::{DirectiveNode, DocCommentNode, DocumentNode, NamespaceNode, TaskNode};
+pub use ast_view::{
+    DirectiveNode, DocCommentNode, DocumentNode, NamespaceNode, TaskDependencyRef, TaskNode,
+};
 pub use cst::{SyntaxNode, SyntaxToken};
 pub use kind::SyntaxKind;
 pub use lex::lex;

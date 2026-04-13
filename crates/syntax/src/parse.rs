@@ -71,7 +71,8 @@ pub(crate) fn parse_tokens(tokens: &[LexToken]) -> ParseResult {
     let mut cursor = TokenCursor::new(tokens, &kinds);
 
     loop {
-        cursor.skip_trivia();
+        let trivia = cursor.skip_trivia();
+        builder.push_tokens(trivia);
 
         let Some(token) = cursor.current() else {
             break;

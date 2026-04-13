@@ -16,10 +16,12 @@ impl<'a> TokenCursor<'a> {
         }
     }
 
-    pub(crate) fn skip_trivia(&mut self) {
+    pub(crate) fn skip_trivia(&mut self) -> &'a [LexToken] {
+        let start = self.index;
         while self.current_kind().is_some_and(is_trivia) {
             self.index += 1;
         }
+        &self.tokens[start..self.index]
     }
 
     pub(crate) fn current(&self) -> Option<&'a LexToken> {

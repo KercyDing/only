@@ -58,6 +58,32 @@ fn exposes_structured_task_header_sections() {
     );
     assert_eq!(task.shell_name().as_deref(), Some("bash"));
     assert!(task.shell_fallback());
+
+    let dependency_refs = task.dependency_refs();
+    assert_eq!(dependency_refs.len(), 2);
+    assert_eq!(dependency_refs[0].name.as_str(), "install");
+    assert_eq!(dependency_refs[1].name.as_str(), "bootstrap");
+}
+
+#[test]
+fn exposes_dependency_ranges_for_hover_and_diagnostics() {
+    let source = "ci() & fmt, dev.build & test shell?=bash:\n    echo ok\n";
+    let syntax = snapshot(source);
+    let task = syntax.document().tasks().next().expect("task should exist");
+    let dependency_refs = task.dependency_refs();
+
+    assert_eq!(dependency_refs.len(), 3);
+    assert_eq!(dependency_refs[0].name.as_str(), "fmt");
+    assert_eq!(
+        &source[usize::from(dependency_refs[0].range.start())..usize::from(dependency_refs[0].range.end())],
+        "fmt"
+    );
+    assert_eq!(dependency_refs[1].name.as_str(), "dev.build");
+    assert_eq!(
+        &source[usize::from(dependency_refs[1].range.start())..usize::from(dependency_refs[1].range.end())],
+        "dev.build"
+    );
+    assert_eq!(dependency_refs[2].name.as_str(), "test");
 }
 
 #[test]

@@ -13,3 +13,5 @@ only-diagnostic = { path = "../diagnostic" }
 only-semantic = { path = "../semantic" }
 only-syntax = { path = "../syntax" }
 text-size.workspace = true
+tokio = { workspace = true, features = ["io-std", "macros", "rt-multi-thread"] }
+tower-lsp = "0.20"

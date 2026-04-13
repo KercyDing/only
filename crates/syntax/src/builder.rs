@@ -42,6 +42,19 @@ impl ParseTreeBuilder {
         self.inner.finish_node();
     }
 
+    /// Emits raw tokens directly under the current parent node.
+    ///
+    /// Args:
+    /// tokens: Token slice copied directly into the current parent.
+    ///
+    /// Returns:
+    /// None.
+    pub fn push_tokens(&mut self, tokens: &[LexToken]) {
+        for token in tokens {
+            self.inner.token(token.kind.into(), token.text.as_str());
+        }
+    }
+
     /// Finalizes the builder into a rowan root node.
     ///
     /// Args:
