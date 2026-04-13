@@ -53,7 +53,7 @@ Current user-facing behavior includes:
 - dynamic task listing and namespace-aware help
 - directives, doc comments, namespaces, and task declarations
 - parameter defaults and `{{name}}` interpolation
-- dependency chaining with `&`
+- dependency chaining with `&`, including parallel groups via `(a, b)`
 - guards such as `@os`, `@arch`, `@env`, and `@has`
 - `shell?=` host shell preference with fallback
 - semantic validation before execution, including duplicate names and undefined references
@@ -110,7 +110,7 @@ workflow():
 ### Directives
 
 ```text
-!verbose true
+!echo true
 !shell deno          # default cross-platform shell
 ```
 
@@ -141,6 +141,15 @@ Use `&` for serial dependencies.
 ci() & fmt & check & test:
     echo "CI complete"
 ```
+
+Use parentheses to run a dependency group in parallel after the previous serial stage finishes.
+
+```text
+release() & build & (package, publish):
+    echo "Release complete"
+```
+
+In that example, `build` runs first. After it succeeds, `package` and `publish` run in parallel. The `release` task runs after both finish.
 
 ### Guards
 
@@ -177,7 +186,7 @@ only dev run
 ### Practical Example
 
 ```text
-!verbose true
+!echo true
 
 % Run checks.
 check() ? @has("cargo"):
@@ -206,6 +215,10 @@ install():
 % Run full CI.
 ci() & check & test:
     echo "CI complete!"
+
+% Build first, then fan out packaging work.
+release() & build & (package, publish):
+    echo "Release complete!"
 
 % Development builds.
 [dev]

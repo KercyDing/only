@@ -1,5 +1,5 @@
 use smol_str::SmolStr;
-use text_size::TextRange;
+use text_size::{TextRange, TextSize};
 
 use crate::{SyntaxKind, SyntaxNode};
 
@@ -74,6 +74,7 @@ pub struct TaskNode {
 pub struct TaskDependencyRef {
     pub name: SmolStr,
     pub range: TextRange,
+    pub stage: usize,
 }
 
 impl DocumentNode {
@@ -184,7 +185,7 @@ impl DirectiveNode {
     /// None.
     ///
     /// Returns:
-    /// Range covering `!verbose` or `!shell` when present.
+    /// Range covering `!echo` or `!shell` when present.
     pub fn keyword_range(&self) -> Option<TextRange> {
         let mut tokens = self
             .syntax
@@ -441,32 +442,35 @@ impl TaskNode {
         let mut refs = Vec::new();
         let mut phase = HeaderPhase::BeforeTail;
         let mut saw_name = false;
+        let mut stage = 0usize;
+        let mut group_depth = 0usize;
         let mut current_name = String::new();
         let mut current_start = None;
         let mut current_end = None;
 
-        let finish_current =
-            |refs: &mut Vec<TaskDependencyRef>,
-             current_name: &mut String,
-             current_start: &mut Option<text_size::TextSize>,
-             current_end: &mut Option<text_size::TextSize>| {
-                let (Some(start), Some(end)) = (*current_start, *current_end) else {
-                    current_name.clear();
-                    *current_start = None;
-                    *current_end = None;
-                    return;
-                };
-                let name = current_name.trim();
-                if !name.is_empty() {
-                    refs.push(TaskDependencyRef {
-                        name: SmolStr::new(name),
-                        range: TextRange::new(start, end),
-                    });
-                }
+        let finish_current = |refs: &mut Vec<TaskDependencyRef>,
+                              stage: usize,
+                              current_name: &mut String,
+                              current_start: &mut Option<TextSize>,
+                              current_end: &mut Option<TextSize>| {
+            let (Some(start), Some(end)) = (*current_start, *current_end) else {
                 current_name.clear();
                 *current_start = None;
                 *current_end = None;
+                return;
             };
+            let name = current_name.trim();
+            if !name.is_empty() {
+                refs.push(TaskDependencyRef {
+                    name: SmolStr::new(name),
+                    range: TextRange::new(start, end),
+                    stage,
+                });
+            }
+            current_name.clear();
+            *current_start = None;
+            *current_end = None;
+        };
 
         for token in self
             .syntax
@@ -477,6 +481,7 @@ impl TaskNode {
             if matches!(kind, SyntaxKind::Colon | SyntaxKind::Newline) {
                 finish_current(
                     &mut refs,
+                    stage,
                     &mut current_name,
                     &mut current_start,
                     &mut current_end,
@@ -522,15 +527,45 @@ impl TaskNode {
                     _ => {}
                 },
                 HeaderPhase::Dependencies => match kind {
-                    SyntaxKind::Amp => finish_current(
-                        &mut refs,
-                        &mut current_name,
-                        &mut current_start,
-                        &mut current_end,
-                    ),
+                    SyntaxKind::Amp if group_depth == 0 => {
+                        finish_current(
+                            &mut refs,
+                            stage,
+                            &mut current_name,
+                            &mut current_start,
+                            &mut current_end,
+                        );
+                        if !refs.is_empty() {
+                            stage += 1;
+                        }
+                    }
+                    SyntaxKind::LParen => {
+                        if group_depth > 0 {
+                            current_start.get_or_insert(token.text_range().start());
+                            current_end = Some(token.text_range().end());
+                            current_name.push_str(token.text());
+                        }
+                        group_depth += 1;
+                    }
+                    SyntaxKind::RParen => {
+                        if group_depth > 1 {
+                            current_end = Some(token.text_range().end());
+                            current_name.push_str(token.text());
+                        } else {
+                            finish_current(
+                                &mut refs,
+                                stage,
+                                &mut current_name,
+                                &mut current_start,
+                                &mut current_end,
+                            );
+                        }
+                        group_depth = group_depth.saturating_sub(1);
+                    }
                     SyntaxKind::ShellKw | SyntaxKind::ShellFallbackKw => {
                         finish_current(
                             &mut refs,
+                            stage,
                             &mut current_name,
                             &mut current_start,
                             &mut current_end,
@@ -538,12 +573,15 @@ impl TaskNode {
                         break;
                     }
                     SyntaxKind::Whitespace | SyntaxKind::Indent => {}
-                    SyntaxKind::Unknown if token.text() == "," => finish_current(
-                        &mut refs,
-                        &mut current_name,
-                        &mut current_start,
-                        &mut current_end,
-                    ),
+                    SyntaxKind::Unknown if token.text() == "," && group_depth > 0 => {
+                        finish_current(
+                            &mut refs,
+                            stage,
+                            &mut current_name,
+                            &mut current_start,
+                            &mut current_end,
+                        );
+                    }
                     _ => {
                         current_start.get_or_insert(token.text_range().start());
                         current_end = Some(token.text_range().end());

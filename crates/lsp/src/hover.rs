@@ -67,7 +67,9 @@ fn directive_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspH
         let name = directive.name()?.to_string();
         let value = directive.value().map(|value| value.to_string());
         let docs = match name.as_str() {
-            "verbose" => "Enables verbose task execution output.".to_string(),
+            "echo" => {
+                "Controls runtime output. `true` shows task output normally; `false` keeps task progress but suppresses successful command output and only replays stderr when a task fails.".to_string()
+            }
             "shell" => "Sets the default shell host used for task commands.".to_string(),
             _ => return None,
         };

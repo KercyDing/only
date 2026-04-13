@@ -5,8 +5,8 @@ use only_semantic::DocumentAst;
 
 use crate::dag::expand_execution_order;
 use crate::resolve::{
-    build_execution_nodes, build_task_index, document_shell, document_verbose,
-    merge_parameter_inputs, resolve_root_task,
+    build_execution_nodes, build_task_index, document_echo, document_shell, merge_parameter_inputs,
+    resolve_root_task,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,6 +20,7 @@ pub enum Invocation<'a> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionNode {
+    pub stage: usize,
     pub name: String,
     pub commands: Vec<String>,
     pub params: Vec<PlanParam>,
@@ -37,7 +38,7 @@ pub struct PlanParam {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ExecutionPlan {
     pub nodes: Vec<ExecutionNode>,
-    pub verbose: bool,
+    pub echo: bool,
     pub shell: Option<String>,
     pub working_dir: PathBuf,
 }
@@ -145,7 +146,7 @@ pub fn try_build_execution_plan_in_dir(
 
     Ok(ExecutionPlan {
         nodes: build_execution_nodes(ordered),
-        verbose: document_verbose(document),
+        echo: document_echo(document),
         shell: document_shell(document),
         working_dir,
     })

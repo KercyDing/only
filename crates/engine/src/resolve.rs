@@ -33,11 +33,12 @@ pub(crate) fn resolve_root_task<'a>(
 }
 
 pub(crate) fn build_execution_nodes(
-    ordered: Vec<(&TaskAst, HashMap<String, String>)>,
+    ordered: Vec<(usize, &TaskAst, HashMap<String, String>)>,
 ) -> Vec<ExecutionNode> {
     ordered
         .into_iter()
-        .map(|(task, bindings)| ExecutionNode {
+        .map(|(stage, task, bindings)| ExecutionNode {
+            stage,
             name: task.qualified_name().to_string(),
             commands: task
                 .commands
@@ -76,20 +77,26 @@ pub(crate) fn select_task_variant<'a>(variants: &[&'a TaskAst]) -> Option<&'a Ta
     fallback
 }
 
-pub(crate) fn document_verbose(document: &DocumentAst) -> bool {
+pub(crate) fn document_echo(document: &DocumentAst) -> bool {
     document
         .directives
         .iter()
-        .any(|directive| matches!(directive, DirectiveAst::Verbose { value: true, .. }))
+        .fold(true, |echo, directive| match directive {
+            DirectiveAst::Echo { value, .. } => *value,
+            DirectiveAst::Shell { .. } => echo,
+        })
 }
 
 pub(crate) fn document_shell(document: &DocumentAst) -> Option<String> {
     document
         .directives
         .iter()
-        .find_map(|directive| match directive {
-            DirectiveAst::Shell { shell, .. } => Some(shell.to_string()),
-            DirectiveAst::Verbose { .. } => None,
+        .fold(None, |shell, directive| match directive {
+            DirectiveAst::Shell {
+                shell: directive_shell,
+                ..
+            } => Some(directive_shell.to_string()),
+            DirectiveAst::Echo { .. } => shell,
         })
 }
 

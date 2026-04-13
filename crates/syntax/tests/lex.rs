@@ -2,7 +2,7 @@ use only_syntax::{SyntaxKind, lex};
 
 #[test]
 fn lexes_directive_task_and_trivia() {
-    let tokens = lex("!verbose true\nbuild():\n    echo hi\n");
+    let tokens = lex("!echo true\nbuild():\n    echo hi\n");
     let kinds: Vec<_> = tokens.iter().map(|token| token.kind).collect();
 
     assert!(kinds.contains(&SyntaxKind::Bang));

@@ -10,7 +10,7 @@ pub struct DocumentAst {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DirectiveAst {
-    Verbose { value: bool, range: TextRange },
+    Echo { value: bool, range: TextRange },
     Shell { shell: SmolStr, range: TextRange },
 }
 
@@ -78,6 +78,7 @@ pub struct GuardAst {
 pub struct DependencyAst {
     pub name: SmolStr,
     pub range: TextRange,
+    pub stage: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

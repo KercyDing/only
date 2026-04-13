@@ -42,9 +42,34 @@ fn builds_namespaced_dag_order_from_semantic_ast() {
 }
 
 #[test]
-fn carries_verbose_shell_and_default_params_into_plan() {
+fn assigns_parallel_dependency_groups_to_shared_stage() {
     let compiled = compile_document(
-        "!verbose true\n\
+        "fmt():\n    cargo fmt\nlint():\n    cargo clippy\nbuild():\n    cargo build\nci() & fmt & (lint, build):\n    echo done\n",
+    );
+    let plan = build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "ci",
+            args: vec![],
+            overrides: vec![],
+        },
+    );
+
+    assert_eq!(plan.nodes.len(), 4);
+    assert_eq!(plan.nodes[0].name, "fmt");
+    assert_eq!(plan.nodes[0].stage, 0);
+    assert_eq!(plan.nodes[1].name, "lint");
+    assert_eq!(plan.nodes[1].stage, 1);
+    assert_eq!(plan.nodes[2].name, "build");
+    assert_eq!(plan.nodes[2].stage, 1);
+    assert_eq!(plan.nodes[3].name, "ci");
+    assert_eq!(plan.nodes[3].stage, 2);
+}
+
+#[test]
+fn carries_echo_shell_and_default_params_into_plan() {
+    let compiled = compile_document(
+        "!echo true\n\
          !shell bash\n\
          build(tag=\"v1\") shell?=pwsh:\n\
              echo {{tag}}\n",
@@ -58,7 +83,7 @@ fn carries_verbose_shell_and_default_params_into_plan() {
         },
     );
 
-    assert!(plan.verbose);
+    assert!(plan.echo);
     assert_eq!(plan.shell.as_deref(), Some("bash"));
     assert_eq!(plan.nodes.len(), 1);
     assert_eq!(plan.nodes[0].shell.as_deref(), Some("pwsh"));

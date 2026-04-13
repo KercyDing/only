@@ -5,6 +5,7 @@ use only::{
 use std::env;
 use std::error::Error as _;
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::process::ExitCode;
@@ -230,12 +231,12 @@ fn parses_empty_onlyfile() {
 #[test]
 fn parses_minimal_document_shape() {
     let source =
-        "!verbose false\n!shell sh\nhello():\n    echo hello\n[tools]\nfmt():\n    cargo fmt\n";
+        "!echo false\n!shell sh\nhello():\n    echo hello\n[tools]\nfmt():\n    cargo fmt\n";
     let document = parse_onlyfile(source).expect("minimal document should parse");
 
     assert!(matches!(
         document.directives[0],
-        DirectiveAst::Verbose { value: false, .. }
+        DirectiveAst::Echo { value: false, .. }
     ));
     assert!(matches!(
         document.directives[1],
@@ -272,6 +273,16 @@ fn rejects_duplicate_parameter_names() {
         error.to_string(),
         "duplicate parameter 'tag' in task 'build'"
     );
+}
+
+#[test]
+fn rejects_duplicate_directives() {
+    let source = "!echo false\n!echo true\n!shell sh\n!shell bash\nbuild():\n    echo build\n";
+    let error = parse_onlyfile(source).expect_err("duplicate directives should fail");
+    let rendered = error.to_string();
+
+    assert!(rendered.contains("duplicate directive '!echo'"));
+    assert!(rendered.contains("duplicate directive '!shell'"));
 }
 
 #[test]
@@ -333,6 +344,24 @@ fn rejects_undefined_dependency_during_parse_validation() {
 fn accepts_local_and_global_dependencies() {
     let source = "bootstrap():\n    echo bootstrap\n[frontend]\ninstall():\n    npm install\nbuild() & install & bootstrap:\n    npm run build\n";
     parse_onlyfile(source).expect("valid dependency graph should parse");
+}
+
+#[test]
+fn compiles_parallel_dependency_groups_into_shared_stage() {
+    let plan = compile_plan(
+        "fmt():\n    true\nlint():\n    true\nbuild():\n    true\nci() & fmt & (lint, build):\n    true\n",
+        &cli(&["ci"]),
+    );
+
+    assert_eq!(plan.nodes.len(), 4);
+    assert_eq!(plan.nodes[0].name, "fmt");
+    assert_eq!(plan.nodes[0].stage, 0);
+    assert_eq!(plan.nodes[1].name, "lint");
+    assert_eq!(plan.nodes[1].stage, 1);
+    assert_eq!(plan.nodes[2].name, "build");
+    assert_eq!(plan.nodes[2].stage, 1);
+    assert_eq!(plan.nodes[3].name, "ci");
+    assert_eq!(plan.nodes[3].stage, 2);
 }
 
 #[test]
@@ -504,39 +533,39 @@ fn rejects_duplicate_parameter_overrides() {
 
 #[cfg(unix)]
 #[test]
-fn runs_verbose_plan_successfully_with_sh() {
+fn runs_echo_plan_successfully_with_sh() {
     let _cwd_lock = cwd_lock();
     let plan = compile_plan(
-        "!verbose true
+        "!echo true
 !shell sh
 hello():
     true
 ",
         &cli(&["hello"]),
     );
-    assert!(plan.verbose);
+    assert!(plan.echo);
     assert_eq!(plan.shell.as_deref(), Some("sh"));
 
-    let code = run_plan(&plan).expect("verbose runtime should succeed");
+    let code = run_plan(&plan).expect("echo-enabled runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
 }
 
 #[cfg(windows)]
 #[test]
-fn runs_verbose_plan_successfully_with_powershell() {
+fn runs_echo_plan_successfully_with_powershell() {
     let _cwd_lock = cwd_lock();
     let plan = compile_plan(
-        "!verbose true
+        "!echo true
 !shell powershell
 hello():
     exit 0
 ",
         &cli(&["hello"]),
     );
-    assert!(plan.verbose);
+    assert!(plan.echo);
     assert_eq!(plan.shell.as_deref(), Some("powershell"));
 
-    let code = run_plan(&plan).expect("verbose runtime should succeed");
+    let code = run_plan(&plan).expect("echo-enabled runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
 }
 
@@ -553,21 +582,20 @@ fn uses_deno_task_shell_by_default() {
 }
 
 #[test]
-fn verbose_cli_run_prints_task_progress_and_commands() {
+fn cli_run_prints_task_progress_by_default() {
     let _cwd_lock = cwd_lock();
-    let temp_dir = TempDir::new("verbose-cli-output");
+    let temp_dir = TempDir::new("echo-cli-progress");
     let onlyfile_path = temp_dir.path().join("Onlyfile");
     fs::write(
         &onlyfile_path,
-        r#"!verbose true
-prepare():
-    true
+        r#"prepare():
+    echo "prepare out"
 
 check():
-    true
+    echo "check out"
 
 ci() & prepare & check:
-    true
+    echo "ci out"
 "#,
     )
     .expect("Onlyfile should be written");
@@ -578,13 +606,18 @@ ci() & prepare & check:
         .output()
         .expect("CLI process should run");
 
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be valid utf-8");
     let stderr = String::from_utf8(output.stderr).expect("stderr should be valid utf-8");
+    let plain_stdout = strip_ansi(&stdout);
     let plain_stderr = strip_ansi(&stderr);
     assert_eq!(
         output.status.code(),
         Some(0),
         "expected CLI to succeed, stderr was: {stderr}"
     );
+    assert!(plain_stdout.contains("[prepare] prepare out"));
+    assert!(plain_stdout.contains("[check] check out"));
+    assert!(plain_stdout.contains("[ci] ci out"));
     assert!(
         plain_stderr.contains("[task 1/3] prepare"),
         "expected first task progress in stderr, got: {stderr}"
@@ -597,14 +630,203 @@ ci() & prepare & check:
         plain_stderr.contains("[task 3/3] ci"),
         "expected final task progress in stderr, got: {stderr}"
     );
-    assert!(
-        plain_stderr.contains("  $ true"),
-        "expected rendered command in stderr, got: {stderr}"
+}
+
+#[cfg(unix)]
+#[test]
+fn echo_false_is_quiet_on_success() {
+    let _cwd_lock = cwd_lock();
+    let temp_dir = TempDir::new("echo-false-unix");
+    let onlyfile_path = temp_dir.path().join("Onlyfile");
+    fs::write(
+        &onlyfile_path,
+        r#"!echo false
+!shell sh
+prepare():
+    printf 'prepare out\n'
+    printf 'prepare err\n' >&2
+
+ci() & prepare:
+    printf 'ci out\n'
+    printf 'ci err\n' >&2
+"#,
+    )
+    .expect("Onlyfile should be written");
+
+    let output = Command::new(cli_binary_path())
+        .arg("ci")
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("CLI process should run");
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be valid utf-8");
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be valid utf-8");
+    let plain_stdout = strip_ansi(&stdout);
+    let plain_stderr = strip_ansi(&stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "expected CLI to succeed, stderr was: {stderr}"
     );
-    assert!(
-        stderr.contains("\u{1b}["),
-        "expected styled verbose output in stderr, got: {stderr}"
+    assert_eq!(plain_stdout, "");
+    assert!(plain_stderr.contains("[task 1/2] prepare"));
+    assert!(plain_stderr.contains("[task 2/2] ci"));
+    assert!(plain_stderr.contains("Success"));
+    assert!(!plain_stderr.contains("[prepare]"));
+    assert!(!plain_stderr.contains("[ci]"));
+    assert!(!plain_stderr.contains("prepare out"));
+    assert!(!plain_stderr.contains("ci out"));
+}
+
+#[cfg(unix)]
+#[test]
+fn echo_false_replays_stderr_on_failure() {
+    let _cwd_lock = cwd_lock();
+    let temp_dir = TempDir::new("echo-false-failure-unix");
+    let onlyfile_path = temp_dir.path().join("Onlyfile");
+    fs::write(
+        &onlyfile_path,
+        r#"!echo false
+!shell sh
+fail():
+    printf 'fail out\n'
+    printf 'fail err\n' >&2
+    exit 1
+"#,
+    )
+    .expect("Onlyfile should be written");
+
+    let output = Command::new(cli_binary_path())
+        .arg("fail")
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("CLI process should run");
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be valid utf-8");
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be valid utf-8");
+    let plain_stdout = strip_ansi(&stdout);
+    let plain_stderr = strip_ansi(&stderr);
+    assert_ne!(
+        output.status.code(),
+        Some(0),
+        "expected CLI to fail, stderr was: {stderr}"
     );
+    assert_eq!(plain_stdout, "");
+    assert!(plain_stderr.contains("[task 1/1] fail"));
+    assert!(plain_stderr.contains("[fail] fail err"));
+    assert!(plain_stderr.contains("Fail"));
+    assert!(plain_stderr.contains("Error:"));
+    assert!(!plain_stderr.contains("fail out"));
+}
+
+#[test]
+fn grouped_parallel_output_uses_task_prefixes() {
+    let _cwd_lock = cwd_lock();
+    let temp_dir = TempDir::new("grouped-parallel-output");
+    let onlyfile_path = temp_dir.path().join("Onlyfile");
+    fs::write(
+        &onlyfile_path,
+        r#"fmt():
+    echo "fmt start"
+    sleep 0.05
+    echo "fmt end"
+
+test():
+    echo "test start"
+    sleep 0.01
+    echo "test end"
+
+ci() & (fmt, test):
+    echo "ci end"
+"#,
+    )
+    .expect("Onlyfile should be written");
+
+    let output = Command::new(cli_binary_path())
+        .arg("ci")
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("CLI process should run");
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be valid utf-8");
+    let plain_stdout = strip_ansi(&stdout);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "expected CLI to succeed, stdout was: {stdout}"
+    );
+    assert!(plain_stdout.contains("[fmt] fmt start\n[fmt] fmt end\n"));
+    assert!(plain_stdout.contains("[test] test start\n[test] test end\n"));
+    assert!(plain_stdout.contains("[ci] ci end\n"));
+    assert!(stdout.contains("\u{1b}["));
+    assert!(
+        plain_stdout
+            .find("[fmt] fmt start")
+            .expect("fmt output should exist")
+            < plain_stdout
+                .find("[test] test start")
+                .expect("test output should exist")
+    );
+}
+
+#[test]
+fn grouped_parallel_output_streams_before_stage_completion() {
+    let _cwd_lock = cwd_lock();
+    let temp_dir = TempDir::new("grouped-parallel-streaming");
+    let onlyfile_path = temp_dir.path().join("Onlyfile");
+    fs::write(
+        &onlyfile_path,
+        r#"fmt():
+    echo "fmt start"
+    sleep 0.05
+    echo "fmt end"
+
+test():
+    sleep 0.30
+    echo "test end"
+
+ci() & (fmt, test):
+    echo "ci end"
+"#,
+    )
+    .expect("Onlyfile should be written");
+
+    let mut child = Command::new(cli_binary_path())
+        .arg("ci")
+        .current_dir(temp_dir.path())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("CLI process should spawn");
+    let stdout = child.stdout.take().expect("stdout should be piped");
+    let mut reader = BufReader::new(stdout);
+    let mut collected = String::new();
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+        let read = reader
+            .read_line(&mut line)
+            .expect("stdout should remain readable");
+        if read == 0 {
+            break;
+        }
+        collected.push_str(&line);
+        let plain = strip_ansi(&collected);
+        if plain.contains("[fmt] fmt end\n") {
+            assert!(
+                child
+                    .try_wait()
+                    .expect("child status should be readable")
+                    .is_none(),
+                "child should still be running after first task output: {plain}"
+            );
+            break;
+        }
+    }
+
+    let status = child.wait().expect("child should exit");
+    assert_eq!(status.code(), Some(0));
 }
 
 #[test]

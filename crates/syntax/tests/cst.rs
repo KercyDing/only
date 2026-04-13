@@ -3,7 +3,7 @@ use only_syntax::snapshot;
 #[test]
 fn exposes_typed_top_level_nodes() {
     let parsed = only_syntax::parse(
-        "!verbose true\n% Developer tasks.\n[dev]\nserve(port=\"3000\"):\n    echo {{port}}\n",
+        "!echo true\n% Developer tasks.\n[dev]\nserve(port=\"3000\"):\n    echo {{port}}\n",
     );
     let document = parsed.document();
 
@@ -11,7 +11,7 @@ fn exposes_typed_top_level_nodes() {
         .directives()
         .next()
         .expect("directive should exist");
-    assert_eq!(directive.name().as_deref(), Some("verbose"));
+    assert_eq!(directive.name().as_deref(), Some("echo"));
     assert_eq!(directive.value().as_deref(), Some("true"));
 
     let doc = document
@@ -62,28 +62,35 @@ fn exposes_structured_task_header_sections() {
     let dependency_refs = task.dependency_refs();
     assert_eq!(dependency_refs.len(), 2);
     assert_eq!(dependency_refs[0].name.as_str(), "install");
+    assert_eq!(dependency_refs[0].stage, 0);
     assert_eq!(dependency_refs[1].name.as_str(), "bootstrap");
+    assert_eq!(dependency_refs[1].stage, 1);
 }
 
 #[test]
 fn exposes_dependency_ranges_for_hover_and_diagnostics() {
-    let source = "ci() & fmt, dev.build & test shell?=bash:\n    echo ok\n";
+    let source = "ci() & (fmt, dev.build) & test shell?=bash:\n    echo ok\n";
     let syntax = snapshot(source);
     let task = syntax.document().tasks().next().expect("task should exist");
     let dependency_refs = task.dependency_refs();
 
     assert_eq!(dependency_refs.len(), 3);
     assert_eq!(dependency_refs[0].name.as_str(), "fmt");
+    assert_eq!(dependency_refs[0].stage, 0);
     assert_eq!(
-        &source[usize::from(dependency_refs[0].range.start())..usize::from(dependency_refs[0].range.end())],
+        &source[usize::from(dependency_refs[0].range.start())
+            ..usize::from(dependency_refs[0].range.end())],
         "fmt"
     );
     assert_eq!(dependency_refs[1].name.as_str(), "dev.build");
+    assert_eq!(dependency_refs[1].stage, 0);
     assert_eq!(
-        &source[usize::from(dependency_refs[1].range.start())..usize::from(dependency_refs[1].range.end())],
+        &source[usize::from(dependency_refs[1].range.start())
+            ..usize::from(dependency_refs[1].range.end())],
         "dev.build"
     );
     assert_eq!(dependency_refs[2].name.as_str(), "test");
+    assert_eq!(dependency_refs[2].stage, 1);
 }
 
 #[test]

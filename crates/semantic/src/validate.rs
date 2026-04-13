@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use only_diagnostic::{Diagnostic, DiagnosticCode, DiagnosticPhase, DiagnosticSeverity};
 use text_size::TextRange;
 
-use crate::{DocumentAst, SymbolIndex, TaskAst};
+use crate::{DirectiveAst, DocumentAst, SymbolIndex, TaskAst};
 
 pub(crate) fn validate_document(document: &DocumentAst, symbols: &SymbolIndex) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
@@ -32,6 +32,7 @@ pub(crate) fn validate_document(document: &DocumentAst, symbols: &SymbolIndex) -
         validate_task(task, &task_names, &mut diagnostics);
     }
 
+    report_duplicate_directives(document, &mut diagnostics);
     report_duplicate_tasks(document, &mut diagnostics);
     diagnostics
 }
@@ -126,6 +127,25 @@ fn report_duplicate_tasks(document: &DocumentAst, diagnostics: &mut Vec<Diagnost
                     previous.qualified_name()
                 ),
                 task.range,
+            ));
+        }
+    }
+}
+
+fn report_duplicate_directives(document: &DocumentAst, diagnostics: &mut Vec<Diagnostic>) {
+    let mut seen = std::collections::HashMap::<&'static str, TextRange>::new();
+
+    for directive in &document.directives {
+        let (name, range) = match directive {
+            DirectiveAst::Echo { range, .. } => ("echo", *range),
+            DirectiveAst::Shell { range, .. } => ("shell", *range),
+        };
+
+        if let Some(previous_range) = seen.insert(name, range) {
+            diagnostics.push(error(
+                "semantic.duplicate-directive",
+                format!("duplicate directive '!{name}'"),
+                previous_range.cover(range),
             ));
         }
     }

@@ -1,23 +1,23 @@
-!verbose true
+!echo false
 
-% Run cargo check.
+% Run cargo check
 check():
     cargo check
     cargo fmt --all --check
     cargo clippy --workspace -- -D warnings
 
-% Run the full test suite.
+% Run the full test suite
 test() ? @has("cargo-nextest"):
     cargo nextest run
 
 test():
     cargo test
 
-% Run formatter, type checks, and tests.
+% Run formatter, type checks, and tests
 ci() & check & test:
     echo "CI complete!"
 
-% Install the local only binary.
+% Install the local only binary
 install() ? @os("windows") shell?=pwsh:
     cargo build --release
     Write-Output "Windows: cannot replace running binary. Run:`n  Copy-Item target/release/only.exe -Destination `$env:USERPROFILE\.cargo\bin\ -Force"
@@ -25,27 +25,27 @@ install() ? @os("windows") shell?=pwsh:
 install():
     cargo install --path crates/cli --force
 
-% Development builds.
+% Development builds
 [dev]
 % Build the project in development mode.
 build():
     cargo build
 
-% Run the project in development mode.
+% Run the project in development mode
 run():
     cargo run
 
-% Release builds.
+% Release builds
 [rel]
 % Build the project in release mode.
 build():
     cargo build --release
 
-% Run the project in release mode.
+% Run the project in release mode
 run():
     cargo run --release
 
-% Run the release test suite.
+% Run the release test suite
 test() ? @has("cargo-nextest"):
     cargo nextest run --release
 

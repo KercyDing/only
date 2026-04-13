@@ -1,24 +1,35 @@
+use std::collections::HashMap;
+use std::io::Read;
 use std::path::Path;
 use std::process::ExitCode;
+use std::rc::Rc;
+use std::sync::mpsc::Sender;
 
 use crate::EngineError;
-use crate::process::{build_command_env, run_with_system_shell};
+use crate::process::{
+    OutputChunk, build_command_env, join_output_reader, run_with_system_shell, spawn_output_reader,
+};
 
 pub(crate) fn run_command(
     command: &str,
     working_dir: &Path,
     shell: &str,
     shell_fallback: bool,
+    output: Sender<OutputChunk>,
 ) -> Result<ExitCode, EngineError> {
     let resolved_shell = resolve_shell(shell, shell_fallback)?;
     match resolved_shell.as_str() {
-        "deno" => run_with_deno_task_shell(command, working_dir),
-        "sh" => run_with_system_shell("sh", "-c", command, working_dir),
-        "bash" => run_with_system_shell("bash", "-c", command, working_dir),
-        "powershell" => {
-            run_with_system_shell(power_shell_command(), "-Command", command, working_dir)
-        }
-        "pwsh" => run_with_system_shell("pwsh", "-Command", command, working_dir),
+        "deno" => run_with_deno_task_shell(command, working_dir, output),
+        "sh" => run_with_system_shell("sh", "-c", command, working_dir, output),
+        "bash" => run_with_system_shell("bash", "-c", command, working_dir, output),
+        "powershell" => run_with_system_shell(
+            power_shell_command(),
+            "-Command",
+            command,
+            working_dir,
+            output,
+        ),
+        "pwsh" => run_with_system_shell("pwsh", "-Command", command, working_dir, output),
         other => Err(EngineError::Runtime(format!("unsupported shell '{other}'"))),
     }
 }
@@ -105,11 +116,33 @@ fn shell_exists_in_dir(directory: &Path, shell: &str) -> bool {
     }
 }
 
-fn run_with_deno_task_shell(command: &str, working_dir: &Path) -> Result<ExitCode, EngineError> {
+fn run_with_deno_task_shell(
+    command: &str,
+    working_dir: &Path,
+    output: Sender<OutputChunk>,
+) -> Result<ExitCode, EngineError> {
     let parsed = deno_task_shell::parser::parse(command).map_err(|error| {
         EngineError::Runtime(format!("failed to parse command `{command}`: {error}"))
     })?;
     let env_vars = build_command_env();
+    let state = deno_task_shell::ShellState::new(
+        env_vars,
+        working_dir.to_path_buf(),
+        HashMap::<String, Rc<dyn deno_task_shell::ShellCommand>>::new(),
+        deno_task_shell::KillSignal::default(),
+    );
+    let (stdout_reader, stdout_writer) = deno_task_shell::pipe();
+    let (stderr_reader, stderr_writer) = deno_task_shell::pipe();
+    let stdout_handle = spawn_output_reader(
+        ShellPipeReaderAdapter(stdout_reader),
+        crate::process::OutputStream::Stdout,
+        output.clone(),
+    );
+    let stderr_handle = spawn_output_reader(
+        ShellPipeReaderAdapter(stderr_reader),
+        crate::process::OutputStream::Stderr,
+        output,
+    );
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -117,16 +150,28 @@ fn run_with_deno_task_shell(command: &str, working_dir: &Path) -> Result<ExitCod
     let local = tokio::task::LocalSet::new();
     let status = local.block_on(
         &runtime,
-        deno_task_shell::execute(
+        deno_task_shell::execute_with_pipes(
             parsed,
-            env_vars,
-            working_dir.to_path_buf(),
-            Default::default(),
-            deno_task_shell::KillSignal::default(),
+            state,
+            deno_task_shell::ShellPipeReader::stdin(),
+            stdout_writer,
+            stderr_writer,
         ),
     );
+    join_output_reader(stdout_handle)?;
+    join_output_reader(stderr_handle)?;
 
     Ok(ExitCode::from(status as u8))
+}
+
+struct ShellPipeReaderAdapter(deno_task_shell::ShellPipeReader);
+
+impl Read for ShellPipeReaderAdapter {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0
+            .read(buf)
+            .map_err(|error| std::io::Error::other(error.to_string()))
+    }
 }
 
 fn power_shell_command() -> &'static str {

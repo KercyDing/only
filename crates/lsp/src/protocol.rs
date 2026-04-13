@@ -13,7 +13,10 @@ use tower_lsp::lsp_types::{
 use tower_lsp::{Client, LanguageServer as LanguageServerProtocol, LspService, Server};
 
 use crate::position::{position_to_offset, range_to_lsp_range};
-use crate::{DocumentSnapshot, LspDiagnostic as HostDiagnostic, LspDiagnosticSeverity, LspDocumentSymbolKind, LspHover};
+use crate::{
+    DocumentSnapshot, LspDiagnostic as HostDiagnostic, LspDiagnosticSeverity,
+    LspDocumentSymbolKind, LspHover,
+};
 
 pub async fn run_stdio() {
     let stdin = tokio::io::stdin();
@@ -43,7 +46,10 @@ impl Backend {
     }
 
     fn apply_open(&self, params: DidOpenTextDocumentParams) {
-        let mut documents = self.documents.lock().expect("document mutex should not panic");
+        let mut documents = self
+            .documents
+            .lock()
+            .expect("document mutex should not panic");
         documents.insert(
             params.text_document.uri.to_string(),
             OpenDocument {
@@ -62,7 +68,10 @@ impl Backend {
             return;
         };
 
-        let mut documents = self.documents.lock().expect("document mutex should not panic");
+        let mut documents = self
+            .documents
+            .lock()
+            .expect("document mutex should not panic");
         documents.insert(
             text_document.uri.to_string(),
             OpenDocument {
@@ -73,7 +82,10 @@ impl Backend {
     }
 
     fn apply_close(&self, params: DidCloseTextDocumentParams) {
-        let mut documents = self.documents.lock().expect("document mutex should not panic");
+        let mut documents = self
+            .documents
+            .lock()
+            .expect("document mutex should not panic");
         documents.remove(params.text_document.uri.as_str());
     }
 
@@ -135,7 +147,10 @@ impl Backend {
     }
 
     fn snapshot_for_uri(&self, uri: &Url) -> Option<DocumentSnapshot> {
-        let documents = self.documents.lock().expect("document mutex should not panic");
+        let documents = self
+            .documents
+            .lock()
+            .expect("document mutex should not panic");
         let document = documents.get(uri.as_str())?;
         Some(DocumentSnapshot::new(
             uri.as_str(),
@@ -232,7 +247,9 @@ fn host_diagnostic_to_protocol(source: &str, diagnostic: HostDiagnostic) -> Diag
             LspDiagnosticSeverity::Info => DiagnosticSeverity::INFORMATION,
             LspDiagnosticSeverity::Hint => DiagnosticSeverity::HINT,
         }),
-        code: Some(tower_lsp::lsp_types::NumberOrString::String(diagnostic.code)),
+        code: Some(tower_lsp::lsp_types::NumberOrString::String(
+            diagnostic.code,
+        )),
         code_description: None,
         source: Some("only-lsp".to_string()),
         message: diagnostic.message,
@@ -261,7 +278,11 @@ fn hover_markdown(hover: &LspHover) -> String {
 }
 
 #[allow(deprecated)]
-fn symbol_to_information(uri: &Url, source: &str, symbol: crate::LspDocumentSymbol) -> SymbolInformation {
+fn symbol_to_information(
+    uri: &Url,
+    source: &str,
+    symbol: crate::LspDocumentSymbol,
+) -> SymbolInformation {
     SymbolInformation {
         name: symbol.name,
         kind: match symbol.kind {

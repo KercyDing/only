@@ -35,7 +35,7 @@ fn reports_undefined_dependency_and_variable() {
 #[test]
 fn lowers_directives_and_namespaced_tasks() {
     let compiled = compile_document(concat!(
-        "!verbose true\n",
+        "!echo true\n",
         "% Developer commands.\n",
         "[dev]\n",
         "% Start the app.\n",
@@ -79,6 +79,31 @@ fn resolves_local_namespace_dependencies() {
     assert_eq!(compiled.document.tasks.len(), 2);
     assert_eq!(compiled.document.tasks[1].namespace.as_deref(), Some("dev"));
     assert_eq!(compiled.document.tasks[1].dependencies[0].name, "dev.build");
+    assert_eq!(compiled.document.tasks[1].dependencies[0].stage, 0);
+}
+
+#[test]
+fn lowers_parallel_dependency_groups_into_stages() {
+    let compiled = compile_document(concat!(
+        "fmt():\n",
+        "    cargo fmt\n",
+        "lint():\n",
+        "    cargo clippy\n",
+        "build():\n",
+        "    cargo build\n",
+        "ci() & fmt & (lint, build):\n",
+        "    echo done\n",
+    ));
+
+    assert!(compiled.diagnostics.is_empty());
+    let dependencies = &compiled.document.tasks[3].dependencies;
+    assert_eq!(dependencies.len(), 3);
+    assert_eq!(dependencies[0].name, "fmt");
+    assert_eq!(dependencies[0].stage, 0);
+    assert_eq!(dependencies[1].name, "lint");
+    assert_eq!(dependencies[1].stage, 1);
+    assert_eq!(dependencies[2].name, "build");
+    assert_eq!(dependencies[2].stage, 1);
 }
 
 #[test]

@@ -1,4 +1,4 @@
-!verbose true
+!echo true
 
 % List directory contents
 ls() ? @os("linux") shell=sh:
@@ -15,10 +15,12 @@ ls():
 
 % Clean build artifacts
 clean() ? @os("windows") shell?=pwsh:
-    Remove-Item -Recurse -Force target,dist -ErrorAction SilentlyContinue
+    cargo clean
+    Remove-Item -Recurse -Force ../dist -ErrorAction SilentlyContinue
 
 clean():
-    rm -rf target dist
+    cargo clean
+    rm -rf ../dist
 
 % Build project
 build() ? @os("windows") shell?=pwsh:
@@ -31,6 +33,26 @@ build():
 test():
     cargo test
 
+% Package the built binary
+package() ? @os("windows") & build shell?=pwsh:
+    New-Item -ItemType Directory -Force ../dist | Out-Null
+    Copy-Item ../target/release/only.exe ../dist/only.exe -Force
+
+package() & build:
+    mkdir -p ../dist
+    cp ../target/release/only ../dist/only
+
+% Smoke-test the release binary
+smoke() ? @os("windows") & build shell?=pwsh:
+    ../target/release/only.exe --version
+
+smoke() & build:
+    ../target/release/only --version
+
 % Run all tasks
 all() & clean & build & test:
     echo "✅ All tasks completed"
+
+% Build once, then package and smoke-test in parallel
+release() & clean & build & (package, smoke):
+    echo "✅ Release artifacts packaged and verified"

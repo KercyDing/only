@@ -66,16 +66,16 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
 fn lower_directive(node: &DirectiveNode) -> Result<DirectiveAst, Diagnostic> {
     let range = node.range();
     match (node.name().as_deref(), node.value().as_deref()) {
-        (Some("verbose"), Some("true")) => {
-            return Ok(DirectiveAst::Verbose { value: true, range });
+        (Some("echo"), Some("true")) => {
+            return Ok(DirectiveAst::Echo { value: true, range });
         }
-        (Some("verbose"), Some("false")) => {
-            return Ok(DirectiveAst::Verbose {
+        (Some("echo"), Some("false")) => {
+            return Ok(DirectiveAst::Echo {
                 value: false,
                 range,
             });
         }
-        (Some("verbose"), Some(_)) => {
+        (Some("echo"), Some(_)) => {
             return Err(lower_error(
                 "lower.invalid-directive",
                 "failed to lower directive",
@@ -137,19 +137,14 @@ fn lower_task(
     };
 
     let dependencies = node
-        .dependencies_text()
-        .as_deref()
-        .map(|text| {
-            text.split(['&', ','])
-                .map(str::trim)
-                .filter(|part| !part.is_empty())
-                .map(|part| DependencyAst {
-                    name: SmolStr::new(part),
-                    range,
-                })
-                .collect()
+        .dependency_refs()
+        .into_iter()
+        .map(|dependency| DependencyAst {
+            name: dependency.name,
+            range: dependency.range,
+            stage: dependency.stage,
         })
-        .unwrap_or_default();
+        .collect();
 
     let commands = node
         .commands()

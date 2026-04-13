@@ -10,7 +10,7 @@ Only is a cross-platform task runner built around a real task language.
 Write tasks once, keep one execution model, and get predictable results on **macOS, Linux, and Windows**.
 
 - **Cross-platform by default** — no Git Bash, no `if os()` hacks, no `platforms:` boilerplate
-- **A better task language** — readable task syntax with parameters, guards, namespaces, and interpolation
+- **A better task language** — readable task syntax with parameters, guards, serial and parallel dependencies, namespaces, and interpolation
 - **Built for tooling** — the same core model can power execution, diagnostics, editor features, and future visual workflows
 
 ```Onlyfile
@@ -22,6 +22,9 @@ test():
 
 ci() & check & test:
     echo "CI complete"
+
+release() & build & (package, publish):
+    echo "Release done"
 ```
 
 Run `only`, `only check`, or `only ci`, and you're off.
@@ -49,7 +52,7 @@ In practice, that means one source of truth for task structure, diagnostics, int
 Create an `Onlyfile` in your project root:
 
 ```Onlyfile
-!verbose true
+!echo true
 
 % Run cargo check.
 check():
@@ -67,6 +70,10 @@ test():
 % Run formatter, type checks, and tests.
 ci() & check & test:
     echo "CI complete!"
+
+% Run release steps after build, then package and publish in parallel.
+release() & build & (package, publish):
+    echo "Release complete!"
 
 [dev]
 % Build in development mode.
@@ -103,7 +110,7 @@ build():
 ### Advanced Example
 
 ```Onlyfile
-!verbose true
+!echo true
 
 % Run checks only if cargo is available.
 check() ? @has("cargo"):
@@ -132,6 +139,10 @@ install():
 % Full CI pipeline.
 ci() & check & test:
     echo "CI completed successfully"
+
+% Build first, then package and publish together.
+release() & build & (package, publish):
+    echo "Release completed successfully"
 
 % Development builds.
 [dev]

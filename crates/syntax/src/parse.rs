@@ -194,8 +194,8 @@ fn parse_task_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem>
     let mut header_complete = false;
     let mut line_start = false;
     let mut malformed = false;
-    let mut paren_depth = 0usize;
     let mut expect_guard_at = false;
+    let mut phase = TaskHeaderPhase::BeforeTail;
 
     while let Some(kind) = input.first().copied() {
         if header_complete && line_start && starts_top_level_item(kind) {
@@ -203,32 +203,93 @@ fn parse_task_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem>
         }
 
         if !header_complete {
-            match kind {
-                SyntaxKind::LParen => {
-                    paren_depth += 1;
-                }
-                SyntaxKind::RParen => {
-                    if paren_depth == 0 {
-                        malformed = true;
-                    } else {
-                        paren_depth -= 1;
+            match &mut phase {
+                TaskHeaderPhase::BeforeTail => match kind {
+                    SyntaxKind::LParen => {
+                        phase = TaskHeaderPhase::Params { depth: 1 };
                     }
-                }
-                SyntaxKind::Question => {
-                    expect_guard_at = true;
-                }
-                SyntaxKind::At => {
-                    if expect_guard_at {
+                    SyntaxKind::Question => {
+                        phase = TaskHeaderPhase::Guard { depth: 0 };
+                        expect_guard_at = true;
+                    }
+                    SyntaxKind::Amp => {
+                        phase = TaskHeaderPhase::Dependencies {
+                            group_depth: 0,
+                            saw_group: false,
+                        };
+                    }
+                    SyntaxKind::Whitespace | SyntaxKind::Indent => {}
+                    SyntaxKind::At if expect_guard_at => {
                         expect_guard_at = false;
                     }
-                }
-                SyntaxKind::Whitespace | SyntaxKind::Indent => {}
-                _ => {
-                    if expect_guard_at {
-                        malformed = true;
+                    _ => {
+                        if expect_guard_at {
+                            malformed = true;
+                            expect_guard_at = false;
+                        }
+                    }
+                },
+                TaskHeaderPhase::Params { depth } => match kind {
+                    SyntaxKind::LParen => *depth += 1,
+                    SyntaxKind::RParen => {
+                        if *depth == 0 {
+                            malformed = true;
+                        } else {
+                            *depth -= 1;
+                            if *depth == 0 {
+                                phase = TaskHeaderPhase::BeforeTail;
+                            }
+                        }
+                    }
+                    _ => {}
+                },
+                TaskHeaderPhase::Guard { depth } => match kind {
+                    SyntaxKind::LParen => *depth += 1,
+                    SyntaxKind::RParen => {
+                        if *depth > 0 {
+                            *depth -= 1;
+                        }
+                        if *depth == 0 {
+                            phase = TaskHeaderPhase::BeforeTail;
+                        }
+                    }
+                    SyntaxKind::At if expect_guard_at => {
                         expect_guard_at = false;
                     }
-                }
+                    SyntaxKind::Whitespace | SyntaxKind::Indent => {}
+                    _ => {
+                        if expect_guard_at {
+                            malformed = true;
+                            expect_guard_at = false;
+                        }
+                    }
+                },
+                TaskHeaderPhase::Dependencies {
+                    group_depth,
+                    saw_group,
+                } => match kind {
+                    SyntaxKind::LParen => {
+                        if *group_depth > 0 {
+                            malformed = true;
+                        }
+                        *group_depth += 1;
+                        *saw_group = true;
+                    }
+                    SyntaxKind::RParen => {
+                        if *group_depth == 0 {
+                            malformed = true;
+                        } else {
+                            *group_depth -= 1;
+                        }
+                    }
+                    SyntaxKind::Question | SyntaxKind::At => malformed = true,
+                    SyntaxKind::ShellKw | SyntaxKind::ShellFallbackKw if *group_depth == 0 => {
+                        phase = TaskHeaderPhase::Shell;
+                    }
+                    SyntaxKind::Unknown if kind == SyntaxKind::Unknown => {}
+                    _ => {}
+                },
+                TaskHeaderPhase::Shell => {}
             }
         }
 
@@ -242,12 +303,12 @@ fn parse_task_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem>
         }
 
         if kind == SyntaxKind::Newline && !saw_colon {
-            malformed |= paren_depth != 0 || expect_guard_at;
+            malformed |= !phase.is_balanced() || expect_guard_at;
             break;
         }
 
         if kind == SyntaxKind::Newline && saw_colon {
-            malformed |= paren_depth != 0 || expect_guard_at;
+            malformed |= !phase.is_balanced() || expect_guard_at;
             header_complete = true;
         }
 
@@ -258,6 +319,25 @@ fn parse_task_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem>
         saw_colon,
         malformed,
     })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TaskHeaderPhase {
+    BeforeTail,
+    Params { depth: usize },
+    Guard { depth: usize },
+    Dependencies { group_depth: usize, saw_group: bool },
+    Shell,
+}
+
+impl TaskHeaderPhase {
+    fn is_balanced(self) -> bool {
+        match self {
+            TaskHeaderPhase::BeforeTail | TaskHeaderPhase::Shell => true,
+            TaskHeaderPhase::Params { depth } | TaskHeaderPhase::Guard { depth } => depth == 0,
+            TaskHeaderPhase::Dependencies { group_depth, .. } => group_depth == 0,
+        }
+    }
 }
 
 fn parse_unexpected_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem> {
