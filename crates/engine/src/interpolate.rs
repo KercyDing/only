@@ -4,6 +4,8 @@ use crate::{EngineError, PlanParam};
 
 /// Renders one command string by replacing semantic interpolation placeholders.
 ///
+/// Supports `\{\{` and `\}\}` escape sequences to produce literal `{{` and `}}`.
+///
 /// Args:
 /// command: Raw command text from the execution plan.
 /// params: Bound plan parameters available to interpolation.
@@ -25,17 +27,25 @@ pub fn interpolate(command: &str, params: &[PlanParam]) -> Result<String, Engine
     let mut rest = command;
 
     while let Some(start) = rest.find("{{") {
-        output.push_str(&rest[..start]);
+        push_literal(&mut output, &rest[..start]);
+
+        if marker_is_escaped(rest, start) {
+            output.pop();
+            output.push_str("{{");
+            rest = &rest[start + 2..];
+            continue;
+        }
+
         let placeholder = &rest[start + 2..];
         let Some(end) = placeholder.find("}}") else {
-            return Err(EngineError::Runtime(
+            return Err(EngineError::Interpolation(
                 "unterminated interpolation expression".to_string(),
             ));
         };
 
         let name = placeholder[..end].trim();
         let Some(value) = parameter_map.get(name) else {
-            return Err(EngineError::Runtime(format!(
+            return Err(EngineError::Interpolation(format!(
                 "undefined variable '{{{{{name}}}}}' in command"
             )));
         };
@@ -44,6 +54,35 @@ pub fn interpolate(command: &str, params: &[PlanParam]) -> Result<String, Engine
         rest = &placeholder[end + 2..];
     }
 
-    output.push_str(rest);
+    push_literal(&mut output, rest);
     Ok(output)
+}
+
+fn push_literal(output: &mut String, segment: &str) {
+    let mut offset = 0usize;
+
+    while let Some(rel) = segment[offset..].find("}}") {
+        let close = offset + rel;
+        output.push_str(&segment[offset..close]);
+        if marker_is_escaped(segment, close) {
+            output.pop();
+        }
+        output.push_str("}}");
+        offset = close + 2;
+    }
+
+    output.push_str(&segment[offset..]);
+}
+
+fn marker_is_escaped(text: &str, marker_start: usize) -> bool {
+    let mut slash_count = 0usize;
+    let bytes = text.as_bytes();
+    let mut index = marker_start;
+
+    while index > 0 && bytes[index - 1] == b'\\' {
+        slash_count += 1;
+        index -= 1;
+    }
+
+    slash_count % 2 == 1
 }

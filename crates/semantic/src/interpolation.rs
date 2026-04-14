@@ -9,6 +9,12 @@ pub(crate) fn scan_interpolations(text: &str) -> Vec<InterpolationAst> {
 
     while let Some(start) = text[offset..].find("{{") {
         let open = offset + start;
+
+        if marker_is_escaped(text, open) {
+            offset = open + 2;
+            continue;
+        }
+
         let Some(end_rel) = text[open + 2..].find("}}") else {
             break;
         };
@@ -22,4 +28,17 @@ pub(crate) fn scan_interpolations(text: &str) -> Vec<InterpolationAst> {
     }
 
     out
+}
+
+fn marker_is_escaped(text: &str, marker_start: usize) -> bool {
+    let mut slash_count = 0usize;
+    let bytes = text.as_bytes();
+    let mut index = marker_start;
+
+    while index > 0 && bytes[index - 1] == b'\\' {
+        slash_count += 1;
+        index -= 1;
+    }
+
+    slash_count % 2 == 1
 }

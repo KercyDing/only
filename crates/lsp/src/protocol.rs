@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::RwLock;
 
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
@@ -28,7 +28,7 @@ pub async fn run_stdio() {
 
 struct Backend {
     client: Client,
-    documents: Mutex<BTreeMap<String, OpenDocument>>,
+    documents: RwLock<BTreeMap<String, OpenDocument>>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,15 +41,15 @@ impl Backend {
     fn new(client: Client) -> Self {
         Self {
             client,
-            documents: Mutex::new(BTreeMap::new()),
+            documents: RwLock::new(BTreeMap::new()),
         }
     }
 
     fn apply_open(&self, params: DidOpenTextDocumentParams) {
         let mut documents = self
             .documents
-            .lock()
-            .expect("document mutex should not panic");
+            .write()
+            .expect("document lock should not panic");
         documents.insert(
             params.text_document.uri.to_string(),
             OpenDocument {
@@ -70,8 +70,8 @@ impl Backend {
 
         let mut documents = self
             .documents
-            .lock()
-            .expect("document mutex should not panic");
+            .write()
+            .expect("document lock should not panic");
         documents.insert(
             text_document.uri.to_string(),
             OpenDocument {
@@ -84,8 +84,8 @@ impl Backend {
     fn apply_close(&self, params: DidCloseTextDocumentParams) {
         let mut documents = self
             .documents
-            .lock()
-            .expect("document mutex should not panic");
+            .write()
+            .expect("document lock should not panic");
         documents.remove(params.text_document.uri.as_str());
     }
 
@@ -149,8 +149,8 @@ impl Backend {
     fn snapshot_for_uri(&self, uri: &Url) -> Option<DocumentSnapshot> {
         let documents = self
             .documents
-            .lock()
-            .expect("document mutex should not panic");
+            .read()
+            .expect("document lock should not panic");
         let document = documents.get(uri.as_str())?;
         Some(DocumentSnapshot::new(
             uri.as_str(),

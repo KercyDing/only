@@ -250,7 +250,8 @@ fn dependency_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<Lsp
         .tasks()
         .zip(snapshot.semantic.document.tasks.iter())
     {
-        for (index, reference) in node.dependency_refs().into_iter().enumerate() {
+        let header = node.header_info();
+        for (index, reference) in header.dependency_refs.into_iter().enumerate() {
             if !reference.range.contains(offset) {
                 continue;
             }

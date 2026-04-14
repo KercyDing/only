@@ -30,14 +30,6 @@ fn reports_duplicate_directives() {
         .map(|diagnostic| diagnostic.message.as_str())
         .collect();
 
-    assert!(
-        messages
-            .iter()
-            .any(|message| *message == "duplicate directive '!echo'")
-    );
-    assert!(
-        messages
-            .iter()
-            .any(|message| *message == "duplicate directive '!shell'")
-    );
+    assert!(messages.contains(&"duplicate directive '!echo'"));
+    assert!(messages.contains(&"duplicate directive '!shell'"));
 }

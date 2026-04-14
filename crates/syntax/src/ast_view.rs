@@ -77,6 +77,23 @@ pub struct TaskDependencyRef {
     pub stage: usize,
 }
 
+/// Structured task header data parsed from the CST token stream.
+///
+/// Args:
+/// None.
+///
+/// Returns:
+/// Parsed task header sections and dependency references.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct TaskHeaderInfo {
+    pub params: Option<SmolStr>,
+    pub guard: Option<SmolStr>,
+    pub dependencies: Option<SmolStr>,
+    pub shell: Option<SmolStr>,
+    pub shell_fallback: bool,
+    pub dependency_refs: Vec<TaskDependencyRef>,
+}
+
 impl DocumentNode {
     /// Casts a raw rowan node into a typed document wrapper.
     ///
@@ -398,222 +415,15 @@ impl TaskNode {
         (!header.is_empty()).then(|| SmolStr::new(header))
     }
 
-    /// Returns the raw parameter section inside `(...)`.
+    /// Returns the parsed task header sections and dependency references.
     ///
     /// Args:
     /// None.
     ///
     /// Returns:
-    /// Parameter section text without surrounding parentheses.
-    pub fn params_text(&self) -> Option<SmolStr> {
-        self.header_sections().params
-    }
-
-    /// Returns the raw guard expression without the leading `?`.
-    ///
-    /// Args:
-    /// None.
-    ///
-    /// Returns:
-    /// Guard section text when present.
-    pub fn guard_text(&self) -> Option<SmolStr> {
-        self.header_sections().guard
-    }
-
-    /// Returns the raw dependency section after `&`.
-    ///
-    /// Args:
-    /// None.
-    ///
-    /// Returns:
-    /// Dependency section text when present.
-    pub fn dependencies_text(&self) -> Option<SmolStr> {
-        self.header_sections().dependencies
-    }
-
-    /// Returns structured dependency references with source ranges.
-    ///
-    /// Args:
-    /// None.
-    ///
-    /// Returns:
-    /// Dependency names and ranges in source order from the task header.
-    pub fn dependency_refs(&self) -> Vec<TaskDependencyRef> {
-        let mut refs = Vec::new();
-        let mut phase = HeaderPhase::BeforeTail;
-        let mut saw_name = false;
-        let mut stage = 0usize;
-        let mut group_depth = 0usize;
-        let mut current_name = String::new();
-        let mut current_start = None;
-        let mut current_end = None;
-
-        let finish_current = |refs: &mut Vec<TaskDependencyRef>,
-                              stage: usize,
-                              current_name: &mut String,
-                              current_start: &mut Option<TextSize>,
-                              current_end: &mut Option<TextSize>| {
-            let (Some(start), Some(end)) = (*current_start, *current_end) else {
-                current_name.clear();
-                *current_start = None;
-                *current_end = None;
-                return;
-            };
-            let name = current_name.trim();
-            if !name.is_empty() {
-                refs.push(TaskDependencyRef {
-                    name: SmolStr::new(name),
-                    range: TextRange::new(start, end),
-                    stage,
-                });
-            }
-            current_name.clear();
-            *current_start = None;
-            *current_end = None;
-        };
-
-        for token in self
-            .syntax
-            .children_with_tokens()
-            .filter_map(|element| element.into_token())
-        {
-            let kind = token.kind();
-            if matches!(kind, SyntaxKind::Colon | SyntaxKind::Newline) {
-                finish_current(
-                    &mut refs,
-                    stage,
-                    &mut current_name,
-                    &mut current_start,
-                    &mut current_end,
-                );
-                break;
-            }
-
-            if !saw_name {
-                if kind == SyntaxKind::Ident {
-                    saw_name = true;
-                }
-                continue;
-            }
-
-            match &mut phase {
-                HeaderPhase::BeforeTail => match kind {
-                    SyntaxKind::LParen => phase = HeaderPhase::Params { depth: 1 },
-                    SyntaxKind::Question => phase = HeaderPhase::Guard { depth: 0 },
-                    SyntaxKind::Amp => phase = HeaderPhase::Dependencies,
-                    SyntaxKind::ShellKw | SyntaxKind::ShellFallbackKw => break,
-                    _ => {}
-                },
-                HeaderPhase::Params { depth } => match kind {
-                    SyntaxKind::LParen => *depth += 1,
-                    SyntaxKind::RParen => {
-                        *depth -= 1;
-                        if *depth == 0 {
-                            phase = HeaderPhase::BeforeTail;
-                        }
-                    }
-                    _ => {}
-                },
-                HeaderPhase::Guard { depth } => match kind {
-                    SyntaxKind::LParen => *depth += 1,
-                    SyntaxKind::RParen => {
-                        if *depth > 0 {
-                            *depth -= 1;
-                        }
-                        if *depth == 0 {
-                            phase = HeaderPhase::BeforeTail;
-                        }
-                    }
-                    _ => {}
-                },
-                HeaderPhase::Dependencies => match kind {
-                    SyntaxKind::Amp if group_depth == 0 => {
-                        finish_current(
-                            &mut refs,
-                            stage,
-                            &mut current_name,
-                            &mut current_start,
-                            &mut current_end,
-                        );
-                        if !refs.is_empty() {
-                            stage += 1;
-                        }
-                    }
-                    SyntaxKind::LParen => {
-                        if group_depth > 0 {
-                            current_start.get_or_insert(token.text_range().start());
-                            current_end = Some(token.text_range().end());
-                            current_name.push_str(token.text());
-                        }
-                        group_depth += 1;
-                    }
-                    SyntaxKind::RParen => {
-                        if group_depth > 1 {
-                            current_end = Some(token.text_range().end());
-                            current_name.push_str(token.text());
-                        } else {
-                            finish_current(
-                                &mut refs,
-                                stage,
-                                &mut current_name,
-                                &mut current_start,
-                                &mut current_end,
-                            );
-                        }
-                        group_depth = group_depth.saturating_sub(1);
-                    }
-                    SyntaxKind::ShellKw | SyntaxKind::ShellFallbackKw => {
-                        finish_current(
-                            &mut refs,
-                            stage,
-                            &mut current_name,
-                            &mut current_start,
-                            &mut current_end,
-                        );
-                        break;
-                    }
-                    SyntaxKind::Whitespace | SyntaxKind::Indent => {}
-                    SyntaxKind::Unknown if token.text() == "," && group_depth > 0 => {
-                        finish_current(
-                            &mut refs,
-                            stage,
-                            &mut current_name,
-                            &mut current_start,
-                            &mut current_end,
-                        );
-                    }
-                    _ => {
-                        current_start.get_or_insert(token.text_range().start());
-                        current_end = Some(token.text_range().end());
-                        current_name.push_str(token.text());
-                    }
-                },
-            }
-        }
-
-        refs
-    }
-
-    /// Returns the explicit shell name when present.
-    ///
-    /// Args:
-    /// None.
-    ///
-    /// Returns:
-    /// Shell name from `shell=` or `shell?=`.
-    pub fn shell_name(&self) -> Option<SmolStr> {
-        self.header_sections().shell
-    }
-
-    /// Returns whether the task uses `shell?=`.
-    ///
-    /// Args:
-    /// None.
-    ///
-    /// Returns:
-    /// `true` when the shell is a fallback shell.
-    pub fn shell_fallback(&self) -> bool {
-        self.header_sections().shell_fallback
+    /// Structured header information parsed from one token stream pass.
+    pub fn header_info(&self) -> TaskHeaderInfo {
+        parse_task_header(&self.syntax)
     }
 
     /// Iterates normalized command lines from the task body.
@@ -635,76 +445,6 @@ impl TaskNode {
             .collect::<Vec<_>>()
             .into_iter()
     }
-
-    fn header_sections(&self) -> TaskHeaderSections {
-        let Some(header) = self.header_text() else {
-            return TaskHeaderSections::default();
-        };
-        let header = header.as_str();
-        let Some(name) = self.name() else {
-            return TaskHeaderSections::default();
-        };
-        let mut rest = &header[name.len()..];
-        let mut sections = TaskHeaderSections::default();
-
-        if rest.trim_start().starts_with('(') {
-            let trimmed = rest.trim_start();
-            let Some(close) = trimmed.find(')') else {
-                return sections;
-            };
-            let params = trimmed[1..close].trim();
-            if !params.is_empty() {
-                sections.params = Some(SmolStr::new(params));
-            }
-            rest = &trimmed[close + 1..];
-        }
-
-        let trimmed = rest.trim_start();
-        if let Some(after_question) = trimmed.strip_prefix('?') {
-            let after_question = after_question.trim_start();
-            let boundary = find_section_boundary(after_question);
-            let guard = after_question[..boundary].trim();
-            if !guard.is_empty() {
-                sections.guard = Some(SmolStr::new(guard));
-            }
-            rest = &after_question[boundary..];
-        }
-
-        let trimmed = rest.trim_start();
-        if let Some(after_amp) = trimmed.strip_prefix('&') {
-            let boundary = find_shell_boundary(after_amp);
-            let dependencies = after_amp[..boundary].trim();
-            if !dependencies.is_empty() {
-                sections.dependencies = Some(SmolStr::new(dependencies));
-            }
-            rest = &after_amp[boundary..];
-        }
-
-        let trimmed = rest.trim_start();
-        if let Some(value) = trimmed.strip_prefix("shell?=") {
-            let shell = value.split_whitespace().next().unwrap_or_default().trim();
-            if !shell.is_empty() {
-                sections.shell = Some(SmolStr::new(shell));
-                sections.shell_fallback = true;
-            }
-        } else if let Some(value) = trimmed.strip_prefix("shell=") {
-            let shell = value.split_whitespace().next().unwrap_or_default().trim();
-            if !shell.is_empty() {
-                sections.shell = Some(SmolStr::new(shell));
-            }
-        }
-
-        sections
-    }
-}
-
-#[derive(Debug, Default)]
-struct TaskHeaderSections {
-    params: Option<SmolStr>,
-    guard: Option<SmolStr>,
-    dependencies: Option<SmolStr>,
-    shell: Option<SmolStr>,
-    shell_fallback: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -713,6 +453,263 @@ enum HeaderPhase {
     Params { depth: usize },
     Guard { depth: usize },
     Dependencies,
+}
+
+#[derive(Debug, Default)]
+struct PendingRef {
+    name: String,
+    start: Option<TextSize>,
+    end: Option<TextSize>,
+}
+
+impl PendingRef {
+    fn flush(&mut self, refs: &mut Vec<TaskDependencyRef>, stage: usize) {
+        if let (Some(start), Some(end)) = (self.start, self.end) {
+            let name = self.name.trim();
+            if !name.is_empty() {
+                refs.push(TaskDependencyRef {
+                    name: SmolStr::new(name),
+                    range: TextRange::new(start, end),
+                    stage,
+                });
+            }
+        }
+        self.name.clear();
+        self.start = None;
+        self.end = None;
+    }
+
+    fn extend(&mut self, token: &crate::cst::SyntaxToken) {
+        self.start.get_or_insert(token.text_range().start());
+        self.end = Some(token.text_range().end());
+        self.name.push_str(token.text());
+    }
+}
+
+fn parse_task_header(node: &SyntaxNode) -> TaskHeaderInfo {
+    let mut info = TaskHeaderInfo::default();
+    let mut phase = HeaderPhase::BeforeTail;
+    let mut saw_name = false;
+    let mut stage = 0usize;
+    let mut group_depth = 0usize;
+    let mut pending = PendingRef::default();
+    let mut collector = String::new();
+    let mut dependencies_started = false;
+    let mut shell_expecting_ident = false;
+
+    for token in node
+        .children_with_tokens()
+        .filter_map(|element| element.into_token())
+    {
+        let kind = token.kind();
+        if matches!(
+            kind,
+            SyntaxKind::Colon | SyntaxKind::Newline | SyntaxKind::Eof
+        ) {
+            pending.flush(&mut info.dependency_refs, stage);
+            flush_header_collector(&mut info, &phase, &collector, dependencies_started);
+            break;
+        }
+
+        if !saw_name {
+            if kind == SyntaxKind::Ident {
+                saw_name = true;
+            }
+            continue;
+        }
+
+        if shell_expecting_ident {
+            if kind == SyntaxKind::Ident {
+                info.shell = Some(SmolStr::new(token.text()));
+            }
+            shell_expecting_ident = false;
+            continue;
+        }
+
+        match &mut phase {
+            HeaderPhase::BeforeTail => match kind {
+                SyntaxKind::LParen => {
+                    collector.clear();
+                    phase = HeaderPhase::Params { depth: 1 };
+                }
+                SyntaxKind::Question => {
+                    collector.clear();
+                    phase = HeaderPhase::Guard { depth: 0 };
+                }
+                SyntaxKind::Amp => {
+                    collector.clear();
+                    dependencies_started = true;
+                    phase = HeaderPhase::Dependencies;
+                }
+                SyntaxKind::ShellFallbackKw => {
+                    info.shell_fallback = true;
+                    shell_expecting_ident = true;
+                }
+                SyntaxKind::ShellKw => shell_expecting_ident = true,
+                _ => {}
+            },
+            HeaderPhase::Params { depth } => match kind {
+                SyntaxKind::LParen => {
+                    *depth += 1;
+                    collector.push_str(token.text());
+                }
+                SyntaxKind::RParen => {
+                    *depth -= 1;
+                    if *depth == 0 {
+                        let trimmed = collector.trim();
+                        if !trimmed.is_empty() {
+                            info.params = Some(SmolStr::new(trimmed));
+                        }
+                        collector.clear();
+                        phase = HeaderPhase::BeforeTail;
+                    } else {
+                        collector.push_str(token.text());
+                    }
+                }
+                _ => collector.push_str(token.text()),
+            },
+            HeaderPhase::Guard { depth } => match kind {
+                SyntaxKind::LParen => {
+                    *depth += 1;
+                    collector.push_str(token.text());
+                }
+                SyntaxKind::RParen => {
+                    if *depth > 0 {
+                        *depth -= 1;
+                    }
+                    collector.push_str(token.text());
+                    if *depth == 0 {
+                        let trimmed = collector.trim();
+                        if !trimmed.is_empty() {
+                            info.guard = Some(SmolStr::new(trimmed));
+                        }
+                        collector.clear();
+                        phase = HeaderPhase::BeforeTail;
+                    }
+                }
+                SyntaxKind::Amp => {
+                    let trimmed = collector.trim();
+                    if !trimmed.is_empty() {
+                        info.guard = Some(SmolStr::new(trimmed));
+                    }
+                    collector.clear();
+                    dependencies_started = true;
+                    phase = HeaderPhase::Dependencies;
+                }
+                SyntaxKind::ShellFallbackKw => {
+                    let trimmed = collector.trim();
+                    if !trimmed.is_empty() {
+                        info.guard = Some(SmolStr::new(trimmed));
+                    }
+                    collector.clear();
+                    info.shell_fallback = true;
+                    shell_expecting_ident = true;
+                    phase = HeaderPhase::BeforeTail;
+                }
+                SyntaxKind::ShellKw => {
+                    let trimmed = collector.trim();
+                    if !trimmed.is_empty() {
+                        info.guard = Some(SmolStr::new(trimmed));
+                    }
+                    collector.clear();
+                    shell_expecting_ident = true;
+                    phase = HeaderPhase::BeforeTail;
+                }
+                _ => collector.push_str(token.text()),
+            },
+            HeaderPhase::Dependencies => match kind {
+                SyntaxKind::Amp if group_depth == 0 => {
+                    pending.flush(&mut info.dependency_refs, stage);
+                    if !info.dependency_refs.is_empty() {
+                        stage += 1;
+                    }
+                    if !collector.trim().is_empty() {
+                        if !info.dependencies.as_deref().unwrap_or_default().is_empty() {
+                            collector.push(' ');
+                        }
+                        collector.push('&');
+                    }
+                }
+                SyntaxKind::LParen => {
+                    if group_depth > 0 {
+                        pending.extend(&token);
+                    }
+                    group_depth += 1;
+                    collector.push_str(token.text());
+                }
+                SyntaxKind::RParen => {
+                    if group_depth > 1 {
+                        pending.extend(&token);
+                    } else {
+                        pending.flush(&mut info.dependency_refs, stage);
+                    }
+                    group_depth = group_depth.saturating_sub(1);
+                    collector.push_str(token.text());
+                }
+                SyntaxKind::ShellFallbackKw if group_depth == 0 => {
+                    pending.flush(&mut info.dependency_refs, stage);
+                    let trimmed = collector.trim();
+                    if !trimmed.is_empty() {
+                        info.dependencies = Some(SmolStr::new(trimmed));
+                    }
+                    collector.clear();
+                    info.shell_fallback = true;
+                    shell_expecting_ident = true;
+                    phase = HeaderPhase::BeforeTail;
+                }
+                SyntaxKind::ShellKw if group_depth == 0 => {
+                    pending.flush(&mut info.dependency_refs, stage);
+                    let trimmed = collector.trim();
+                    if !trimmed.is_empty() {
+                        info.dependencies = Some(SmolStr::new(trimmed));
+                    }
+                    collector.clear();
+                    shell_expecting_ident = true;
+                    phase = HeaderPhase::BeforeTail;
+                }
+                SyntaxKind::Whitespace | SyntaxKind::Indent => {
+                    collector.push_str(token.text());
+                }
+                SyntaxKind::Unknown if token.text() == "," && group_depth > 0 => {
+                    pending.flush(&mut info.dependency_refs, stage);
+                    collector.push_str(token.text());
+                }
+                _ => {
+                    pending.extend(&token);
+                    collector.push_str(token.text());
+                }
+            },
+        }
+    }
+
+    if info.dependencies.is_none() {
+        let trimmed = collector.trim();
+        if dependencies_started && !trimmed.is_empty() {
+            info.dependencies = Some(SmolStr::new(trimmed));
+        }
+    }
+
+    info
+}
+
+fn flush_header_collector(
+    info: &mut TaskHeaderInfo,
+    phase: &HeaderPhase,
+    collector: &str,
+    dependencies_started: bool,
+) {
+    let trimmed = collector.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+
+    match phase {
+        HeaderPhase::Guard { .. } => info.guard = Some(SmolStr::new(trimmed)),
+        HeaderPhase::Dependencies if dependencies_started => {
+            info.dependencies = Some(SmolStr::new(trimmed))
+        }
+        _ => {}
+    }
 }
 
 fn non_trivia_token_texts(node: &SyntaxNode) -> impl Iterator<Item = SmolStr> + '_ {
@@ -725,19 +722,4 @@ fn non_trivia_token_texts(node: &SyntaxNode) -> impl Iterator<Item = SmolStr> + 
             )
         })
         .map(|token| SmolStr::new(token.text()))
-}
-
-fn find_section_boundary(input: &str) -> usize {
-    input
-        .find(" &")
-        .or_else(|| input.find(" shell?="))
-        .or_else(|| input.find(" shell="))
-        .unwrap_or(input.len())
-}
-
-fn find_shell_boundary(input: &str) -> usize {
-    input
-        .find(" shell?=")
-        .or_else(|| input.find(" shell="))
-        .unwrap_or(input.len())
 }

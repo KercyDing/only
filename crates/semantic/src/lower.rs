@@ -66,36 +66,41 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
 fn lower_directive(node: &DirectiveNode) -> Result<DirectiveAst, Diagnostic> {
     let range = node.range();
     match (node.name().as_deref(), node.value().as_deref()) {
-        (Some("echo"), Some("true")) => {
-            return Ok(DirectiveAst::Echo { value: true, range });
-        }
-        (Some("echo"), Some("false")) => {
-            return Ok(DirectiveAst::Echo {
-                value: false,
-                range,
-            });
-        }
-        (Some("echo"), Some(_)) => {
-            return Err(lower_error(
-                "lower.invalid-directive",
-                "failed to lower directive",
-                range,
-            ));
-        }
-        (Some("shell"), Some(shell)) => {
-            return Ok(DirectiveAst::Shell {
-                shell: SmolStr::new(shell),
-                range,
-            });
-        }
-        _ => {}
+        (Some("echo"), Some("true")) => Ok(DirectiveAst::Echo { value: true, range }),
+        (Some("echo"), Some("false")) => Ok(DirectiveAst::Echo {
+            value: false,
+            range,
+        }),
+        (Some("echo"), Some(value)) => Err(lower_error(
+            "lower.invalid-directive",
+            &format!("invalid echo value '{value}': expected 'true' or 'false'"),
+            range,
+        )),
+        (Some("echo"), None) => Err(lower_error(
+            "lower.invalid-directive",
+            "directive '!echo' requires a value",
+            range,
+        )),
+        (Some("shell"), Some(shell)) => Ok(DirectiveAst::Shell {
+            shell: SmolStr::new(shell),
+            range,
+        }),
+        (Some("shell"), None) => Err(lower_error(
+            "lower.invalid-directive",
+            "directive '!shell' requires a value",
+            range,
+        )),
+        (Some(name), _) => Err(lower_error(
+            "lower.invalid-directive",
+            &format!("unknown directive '!{name}'"),
+            range,
+        )),
+        (None, _) => Err(lower_error(
+            "lower.invalid-directive",
+            "failed to lower directive",
+            range,
+        )),
     }
-
-    Err(lower_error(
-        "lower.invalid-directive",
-        "failed to lower directive",
-        range,
-    ))
 }
 
 fn lower_doc_comment(node: &DocCommentNode) -> Option<SmolStr> {
@@ -124,20 +129,21 @@ fn lower_task(
     let name = node
         .name()
         .ok_or_else(|| lower_error("lower.invalid-task", "failed to lower task", range))?;
+    let header = node.header_info();
 
-    let params = node
-        .params_text()
+    let params = header
+        .params
         .as_deref()
         .map(parse_params)
         .unwrap_or_default();
 
-    let guard = match node.guard_text().as_deref() {
+    let guard = match header.guard.as_deref() {
         Some(text) => Some(parse_guard(text, range)?),
         None => None,
     };
 
-    let dependencies = node
-        .dependency_refs()
+    let dependencies = header
+        .dependency_refs
         .into_iter()
         .map(|dependency| DependencyAst {
             name: dependency.name,
@@ -161,8 +167,8 @@ fn lower_task(
         params,
         guard,
         dependencies,
-        shell: node.shell_name(),
-        shell_fallback: node.shell_fallback(),
+        shell: header.shell,
+        shell_fallback: header.shell_fallback,
         commands,
         range,
     })

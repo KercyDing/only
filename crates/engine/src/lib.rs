@@ -1,6 +1,7 @@
 mod dag;
 mod error;
 mod interpolate;
+mod path_lookup;
 mod planner;
 mod probe;
 mod process;

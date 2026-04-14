@@ -49,17 +49,15 @@ fn exposes_structured_task_header_sections() {
         "build(tag=\"v1\") ? @env(\"CI\") & install & bootstrap shell?=bash:\n    echo {{tag}}\n",
     );
     let task = syntax.document().tasks().next().expect("task should exist");
+    let header = task.header_info();
 
-    assert_eq!(task.params_text().as_deref(), Some("tag=\"v1\""));
-    assert_eq!(task.guard_text().as_deref(), Some("@env(\"CI\")"));
-    assert_eq!(
-        task.dependencies_text().as_deref(),
-        Some("install & bootstrap")
-    );
-    assert_eq!(task.shell_name().as_deref(), Some("bash"));
-    assert!(task.shell_fallback());
+    assert_eq!(header.params.as_deref(), Some("tag=\"v1\""));
+    assert_eq!(header.guard.as_deref(), Some("@env(\"CI\")"));
+    assert_eq!(header.dependencies.as_deref(), Some("install & bootstrap"));
+    assert_eq!(header.shell.as_deref(), Some("bash"));
+    assert!(header.shell_fallback);
 
-    let dependency_refs = task.dependency_refs();
+    let dependency_refs = header.dependency_refs;
     assert_eq!(dependency_refs.len(), 2);
     assert_eq!(dependency_refs[0].name.as_str(), "install");
     assert_eq!(dependency_refs[0].stage, 0);
@@ -72,7 +70,7 @@ fn exposes_dependency_ranges_for_hover_and_diagnostics() {
     let source = "ci() & (fmt, dev.build) & test shell?=bash:\n    echo ok\n";
     let syntax = snapshot(source);
     let task = syntax.document().tasks().next().expect("task should exist");
-    let dependency_refs = task.dependency_refs();
+    let dependency_refs = task.header_info().dependency_refs;
 
     assert_eq!(dependency_refs.len(), 3);
     assert_eq!(dependency_refs[0].name.as_str(), "fmt");

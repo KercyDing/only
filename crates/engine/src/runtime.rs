@@ -57,10 +57,6 @@ fn execute_stage(
     default_shell: Option<&str>,
     echo: bool,
 ) -> Result<(), EngineError> {
-    if !echo {
-        return execute_quiet_stage(stage_nodes, working_dir, default_shell);
-    }
-
     let stage_len = stage_nodes.len();
     let (event_tx, event_rx) = mpsc::channel::<StageEvent>();
 
@@ -79,140 +75,125 @@ fn execute_stage(
         }
         drop(event_tx);
 
-        let mut buffers = vec![Vec::<OutputChunk>::new(); stage_len];
-        let mut finished = vec![false; stage_len];
-        let mut task_errors = (0..stage_len)
-            .map(|_| None)
-            .collect::<Vec<Option<EngineError>>>();
-        let mut current_index = 0usize;
-        let mut finished_count = 0usize;
-        let mut first_error = None;
-
-        while finished_count < stage_len {
-            match event_rx.recv() {
-                Ok(StageEvent::Output { task_index, chunk }) => {
-                    if !echo && matches!(chunk.stream, OutputStream::Stdout) {
-                        continue;
-                    }
-                    if task_index == current_index {
-                        print_output_chunk(&stage_nodes[task_index].name, &chunk)?;
-                    } else {
-                        buffers[task_index].push(chunk);
-                    }
-                }
-                Ok(StageEvent::Finished { task_index, error }) => {
-                    finished[task_index] = true;
-                    task_errors[task_index] = error;
-                    finished_count += 1;
-
-                    while current_index < stage_len {
-                        flush_task_buffer(
-                            &stage_nodes[current_index].name,
-                            &mut buffers[current_index],
-                        )?;
-                        if !finished[current_index] {
-                            break;
-                        }
-                        if first_error.is_none() {
-                            first_error = task_errors[current_index].take();
-                        }
-                        current_index += 1;
-                    }
-                }
-                Err(_) => break,
-            }
+        if echo {
+            run_echo_event_loop(&event_rx, stage_nodes, stage_len)?;
+        } else {
+            run_quiet_event_loop(&event_rx, stage_nodes, stage_len)?;
         }
 
-        for handle in handles {
-            match handle.join() {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) => {
-                    if first_error.is_none() {
-                        first_error = Some(error);
-                    }
-                }
-                Err(payload) => std::panic::resume_unwind(payload),
-            }
-        }
-
-        match first_error {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
+        collect_thread_results(handles)
     })
 }
 
-fn execute_quiet_stage(
+fn run_echo_event_loop(
+    event_rx: &mpsc::Receiver<StageEvent>,
     stage_nodes: &[ExecutionNode],
-    working_dir: &std::path::Path,
-    default_shell: Option<&str>,
+    stage_len: usize,
 ) -> Result<(), EngineError> {
-    let stage_len = stage_nodes.len();
-    let (event_tx, event_rx) = mpsc::channel::<StageEvent>();
+    let mut buffers = vec![Vec::<OutputChunk>::new(); stage_len];
+    let mut finished = vec![false; stage_len];
+    let mut task_errors = (0..stage_len)
+        .map(|_| None)
+        .collect::<Vec<Option<EngineError>>>();
+    let mut current_index = 0usize;
+    let mut finished_count = 0usize;
+    let mut first_error = None;
 
-    thread::scope(|scope| {
-        let mut handles = Vec::new();
-
-        for (index, node) in stage_nodes.iter().cloned().enumerate() {
-            let working_dir = working_dir.to_path_buf();
-            let shell = default_shell.map(str::to_string);
-            let event_tx = event_tx.clone();
-            handles.push(
-                scope.spawn(move || {
-                    run_node(index, &node, &working_dir, shell.as_deref(), event_tx)
-                }),
-            );
-        }
-        drop(event_tx);
-
-        let mut stderr_buffers = vec![Vec::<OutputChunk>::new(); stage_len];
-        let mut task_errors = (0..stage_len)
-            .map(|_| None)
-            .collect::<Vec<Option<EngineError>>>();
-        let mut finished_count = 0usize;
-        let mut first_error = None;
-
-        while finished_count < stage_len {
-            match event_rx.recv() {
-                Ok(StageEvent::Output { task_index, chunk }) => {
-                    if matches!(chunk.stream, OutputStream::Stderr) {
-                        stderr_buffers[task_index].push(chunk);
-                    }
+    while finished_count < stage_len {
+        match event_rx.recv() {
+            Ok(StageEvent::Output { task_index, chunk }) => {
+                if task_index == current_index {
+                    print_output_chunk(&stage_nodes[task_index].name, &chunk)?;
+                } else {
+                    buffers[task_index].push(chunk);
                 }
-                Ok(StageEvent::Finished { task_index, error }) => {
-                    task_errors[task_index] = error;
-                    finished_count += 1;
-                }
-                Err(_) => break,
             }
-        }
+            Ok(StageEvent::Finished { task_index, error }) => {
+                finished[task_index] = true;
+                task_errors[task_index] = error;
+                finished_count += 1;
 
-        for handle in handles {
-            match handle.join() {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) => {
+                while current_index < stage_len {
+                    flush_task_buffer(
+                        &stage_nodes[current_index].name,
+                        &mut buffers[current_index],
+                    )?;
+                    if !finished[current_index] {
+                        break;
+                    }
                     if first_error.is_none() {
-                        first_error = Some(error);
+                        first_error = task_errors[current_index].take();
                     }
+                    current_index += 1;
                 }
-                Err(payload) => std::panic::resume_unwind(payload),
             }
+            Err(_) => break,
         }
+    }
 
-        if first_error.is_none() {
-            first_error = task_errors.into_iter().flatten().next();
-        }
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
 
-        if let Some(error) = first_error {
-            for (index, buffer) in stderr_buffers.iter_mut().enumerate() {
-                flush_task_buffer(&stage_nodes[index].name, buffer)?;
+fn run_quiet_event_loop(
+    event_rx: &mpsc::Receiver<StageEvent>,
+    stage_nodes: &[ExecutionNode],
+    stage_len: usize,
+) -> Result<(), EngineError> {
+    let mut stderr_buffers = vec![Vec::<OutputChunk>::new(); stage_len];
+    let mut task_errors = (0..stage_len)
+        .map(|_| None)
+        .collect::<Vec<Option<EngineError>>>();
+    let mut finished_count = 0usize;
+
+    while finished_count < stage_len {
+        match event_rx.recv() {
+            Ok(StageEvent::Output { task_index, chunk }) => {
+                if matches!(chunk.stream, OutputStream::Stderr) {
+                    stderr_buffers[task_index].push(chunk);
+                }
             }
-            eprintln!("{}", render_status("Fail", TermAnsiColor::BrightRed));
-            return Err(error);
+            Ok(StageEvent::Finished { task_index, error }) => {
+                task_errors[task_index] = error;
+                finished_count += 1;
+            }
+            Err(_) => break,
         }
+    }
 
-        Ok(())
-    })
+    let first_error = task_errors.into_iter().flatten().next();
+    if let Some(error) = first_error {
+        for (index, buffer) in stderr_buffers.iter_mut().enumerate() {
+            flush_task_buffer(&stage_nodes[index].name, buffer)?;
+        }
+        eprintln!("{}", render_status("Fail", TermAnsiColor::BrightRed));
+        return Err(error);
+    }
+
+    Ok(())
+}
+
+fn collect_thread_results(
+    handles: Vec<thread::ScopedJoinHandle<'_, Result<(), EngineError>>>,
+) -> Result<(), EngineError> {
+    let mut first_error = None;
+    for handle in handles {
+        match handle.join() {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+            Err(payload) => std::panic::resume_unwind(payload),
+        }
+    }
+    match first_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 fn run_node(

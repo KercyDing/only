@@ -6,6 +6,7 @@ use std::rc::Rc;
 use std::sync::mpsc::Sender;
 
 use crate::EngineError;
+use crate::path_lookup::command_exists_in_path;
 use crate::process::{
     OutputChunk, build_command_env, join_output_reader, run_with_system_shell, spawn_output_reader,
 };
@@ -30,89 +31,53 @@ pub(crate) fn run_command(
             output,
         ),
         "pwsh" => run_with_system_shell("pwsh", "-Command", command, working_dir, output),
-        other => Err(EngineError::Runtime(format!("unsupported shell '{other}'"))),
+        other => Err(EngineError::UnsupportedShell(other.to_string())),
     }
 }
 
 fn resolve_shell(shell: &str, shell_fallback: bool) -> Result<String, EngineError> {
     match shell {
         "pwsh" => {
-            if shell_exists("pwsh") {
+            if command_exists_in_path("pwsh") {
                 return Ok("pwsh".to_string());
             }
-            if shell_fallback && shell_exists(power_shell_command()) {
+            if shell_fallback && command_exists_in_path(power_shell_command()) {
                 return Ok("powershell".to_string());
             }
-            Err(EngineError::Runtime(
+            Err(EngineError::ShellNotFound(
                 "pwsh not found. Install PowerShell 7+ or use shell?=pwsh for auto fallback."
                     .to_string(),
             ))
         }
         "bash" => {
-            if shell_exists("bash") {
+            if command_exists_in_path("bash") {
                 return Ok("bash".to_string());
             }
-            if shell_fallback && shell_exists("sh") {
+            if shell_fallback && command_exists_in_path("sh") {
                 return Ok("sh".to_string());
             }
-            Err(EngineError::Runtime(
+            Err(EngineError::ShellNotFound(
                 "bash not found. Install bash or use shell?=bash for auto fallback.".to_string(),
             ))
         }
         "powershell" => {
-            if shell_exists(power_shell_command()) {
+            if command_exists_in_path(power_shell_command()) {
                 return Ok("powershell".to_string());
             }
-            Err(EngineError::Runtime(
+            Err(EngineError::ShellNotFound(
                 "powershell not found. Ensure Windows PowerShell is installed.".to_string(),
             ))
         }
         "sh" => {
-            if shell_exists("sh") {
+            if command_exists_in_path("sh") {
                 return Ok("sh".to_string());
             }
-            Err(EngineError::Runtime(
+            Err(EngineError::ShellNotFound(
                 "sh not found. Ensure a POSIX shell is available.".to_string(),
             ))
         }
         "deno" => Ok("deno".to_string()),
         other => Ok(other.to_string()),
-    }
-}
-
-fn shell_exists(shell: &str) -> bool {
-    std::env::var_os("PATH").is_some_and(|paths| {
-        std::env::split_paths(&paths).any(|directory| shell_exists_in_dir(&directory, shell))
-    })
-}
-
-fn shell_exists_in_dir(directory: &Path, shell: &str) -> bool {
-    let candidate = directory.join(shell);
-    if candidate.is_file() {
-        return true;
-    }
-
-    #[cfg(windows)]
-    {
-        let has_extension = Path::new(shell).extension().is_some();
-        if has_extension {
-            return false;
-        }
-
-        let extensions = std::env::var_os("PATHEXT")
-            .and_then(|value| value.into_string().ok())
-            .unwrap_or_else(|| ".COM;.EXE;.BAT;.CMD".to_string());
-
-        extensions
-            .split(';')
-            .map(str::trim)
-            .filter(|extension| !extension.is_empty())
-            .any(|extension| directory.join(format!("{shell}{extension}")).is_file())
-    }
-
-    #[cfg(not(windows))]
-    {
-        false
     }
 }
 

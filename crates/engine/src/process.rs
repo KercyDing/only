@@ -59,7 +59,7 @@ pub(crate) fn run_with_system_shell(
     join_output_reader(stdout_handle)?;
     join_output_reader(stderr_handle)?;
 
-    Ok(ExitCode::from(status.code().unwrap_or(1) as u8))
+    Ok(exit_code_from_status(status))
 }
 
 pub(crate) fn build_command_env() -> HashMap<OsString, OsString> {
@@ -112,4 +112,20 @@ pub(crate) fn join_output_reader(
             "task output reader thread panicked".to_string(),
         )),
     }
+}
+
+fn exit_code_from_status(status: std::process::ExitStatus) -> ExitCode {
+    if let Some(code) = status.code() {
+        return ExitCode::from(code as u8);
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(signal) = status.signal() {
+            return ExitCode::from((128 + signal) as u8);
+        }
+    }
+
+    ExitCode::from(1)
 }

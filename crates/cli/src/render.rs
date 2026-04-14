@@ -225,15 +225,13 @@ pub fn render_help_hint() -> String {
 }
 
 fn build_namespace_command(document: &DocumentAst, namespace: &NamespaceAst) -> Command {
-    let name: &'static str = Box::leak(namespace.name.to_string().into_boxed_str());
-    let mut cmd = Command::new(name)
+    let mut cmd = Command::new(namespace.name.to_string())
         .bin_name(format!("only {}", namespace.name))
         .disable_help_subcommand(true)
         .styles(cli_styles());
 
     if let Some(doc) = &namespace.doc {
-        let about: &'static str = Box::leak(doc.to_string().into_boxed_str());
-        cmd = cmd.about(about);
+        cmd = cmd.about(doc.to_string());
     }
 
     for task in unique_tasks(namespace_tasks(document, namespace.name.as_str())) {
@@ -257,16 +255,19 @@ fn build_task_command(task: &TaskAst) -> Command {
         .as_ref()
         .map(ToString::to_string)
         .unwrap_or_default();
-    let name: &'static str = Box::leak(task.name.to_string().into_boxed_str());
-    let mut cmd = Command::new(name).styles(cli_styles()).about(about);
+    let mut cmd = Command::new(task.name.to_string())
+        .styles(cli_styles())
+        .about(about);
 
     for (index, param) in task.params.iter().enumerate() {
-        let pname: &'static str = Box::leak(param.name.to_string().into_boxed_str());
         let arg = if let Some(default) = &param.default_value {
             let help = format!("Parameter (default: {default})");
-            Arg::new(pname).index(index + 1).required(false).help(help)
+            Arg::new(param.name.to_string())
+                .index(index + 1)
+                .required(false)
+                .help(help)
         } else {
-            Arg::new(pname)
+            Arg::new(param.name.to_string())
                 .index(index + 1)
                 .required(false)
                 .help("Required parameter")

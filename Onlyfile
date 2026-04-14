@@ -1,4 +1,4 @@
-!echo false
+!echo true
 
 % Run cargo check
 check():

@@ -32,8 +32,24 @@ pub enum SyntaxKind {
     Error,
 }
 
+impl SyntaxKind {
+    const MAX: u16 = SyntaxKind::Error as u16;
+}
+
 impl From<SyntaxKind> for RowanSyntaxKind {
     fn from(value: SyntaxKind) -> Self {
         RowanSyntaxKind(value as u16)
+    }
+}
+
+impl From<RowanSyntaxKind> for SyntaxKind {
+    fn from(raw: RowanSyntaxKind) -> Self {
+        if raw.0 <= Self::MAX {
+            // SAFETY: SyntaxKind is #[repr(u16)] and raw.0 is within the
+            // valid discriminant range [0, MAX].
+            unsafe { std::mem::transmute::<u16, SyntaxKind>(raw.0) }
+        } else {
+            SyntaxKind::Unknown
+        }
     }
 }
