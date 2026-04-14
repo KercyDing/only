@@ -1,13 +1,15 @@
 use crate::args::{CliInput, parse_global_options, parse_with_onlyfile};
-use crate::compile::{compile_for_cli_input_in_dir, ensure_no_error_diagnostics};
+use crate::compile::{
+    CliCompileResult, compile_for_cli_input_in_dir, ensure_no_error_diagnostics, resolve_target,
+};
 use crate::discover::discover_onlyfile;
 use crate::error::{OnlyError, Result};
 use crate::render::{
     render_available_tasks, render_error_message, render_global_help, render_help_hint,
     render_namespace_help,
 };
-use only_engine::ExecutionPlan;
-use only_semantic::DocumentAst;
+use only_engine::{ExecutionPlan, render_command, select_root_task_variant};
+use only_semantic::{DocumentAst, GuardAst, TaskAst};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -75,6 +77,7 @@ pub fn run_with(cli: CliInput) -> Result<ExitCode> {
     }
 
     let compiled = compile_for_cli_input_in_dir(&discovered.contents, &cli, discovered.base_dir)?;
+    render_preview_if_enabled(&compiled, &cli)?;
     only_engine::run_plan(&compiled.plan).map_err(|error| OnlyError::runtime(error.to_string()))
 }
 
@@ -150,6 +153,58 @@ pub fn run_plan(plan: &ExecutionPlan) -> Result<ExitCode> {
     only_engine::run_plan(plan).map_err(|error| OnlyError::runtime(error.to_string()))
 }
 
+fn render_preview_if_enabled(compiled: &CliCompileResult, cli: &CliInput) -> Result<()> {
+    if !compiled.plan.preview {
+        return Ok(());
+    }
+
+    let (target, _) = resolve_target(&compiled.compiled, cli)?;
+    let variant = select_root_task_variant(&compiled.compiled.document, &target)
+        .map_err(|error| OnlyError::runtime(error.to_string()))?;
+    eprintln!("{}", render_plan_preview(&compiled.plan, variant)?);
+    Ok(())
+}
+
+fn render_plan_preview(plan: &ExecutionPlan, variant: &TaskAst) -> Result<String> {
+    let mut output = String::from("Preview:\n");
+    output.push_str("  variant: ");
+    output.push_str(&render_task_variant(variant));
+    output.push('\n');
+    output.push_str("  commands:\n");
+
+    for node in &plan.nodes {
+        for command in &node.commands {
+            let rendered = render_command(command, &node.params)
+                .map_err(|error| OnlyError::runtime(error.to_string()))?;
+            output.push_str("    [");
+            output.push_str(&node.name);
+            output.push_str("] ");
+            output.push_str(&rendered);
+            output.push('\n');
+        }
+    }
+
+    Ok(output.trim_end().to_string())
+}
+
+fn render_task_variant(task: &TaskAst) -> String {
+    let mut variant = match &task.namespace {
+        Some(namespace) => format!("{namespace}.{}", task.signature()),
+        None => task.signature().to_string(),
+    };
+
+    if let Some(guard) = &task.guard {
+        variant.push_str(" ? ");
+        variant.push_str(&render_guard(guard));
+    }
+
+    variant
+}
+
+fn render_guard(guard: &GuardAst) -> String {
+    format!("@{}(\"{}\")", guard.kind, guard.argument)
+}
+
 fn run_inner() -> Result<ExitCode> {
     let partial = parse_global_options()?;
 
@@ -192,5 +247,6 @@ fn run_inner() -> Result<ExitCode> {
     }
 
     let compiled = compile_for_cli_input_in_dir(&discovered.contents, &cli, discovered.base_dir)?;
+    render_preview_if_enabled(&compiled, &cli)?;
     only_engine::run_plan(&compiled.plan).map_err(|error| OnlyError::runtime(error.to_string()))
 }

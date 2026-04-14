@@ -26,7 +26,8 @@ pub fn compile_for_cli(source: &str) -> CliCompileResult {
     let task_name = compiled
         .document
         .tasks
-        .first()
+        .iter()
+        .find(|task| !task.is_helper())
         .map(|task| task.qualified_name().to_string())
         .unwrap_or_default();
     let plan = build_execution_plan(
@@ -101,7 +102,10 @@ pub fn compile_for_cli_input_in_dir(
     })
 }
 
-fn resolve_target(compiled: &SemanticSnapshot, cli: &CliInput) -> Result<(String, Vec<String>)> {
+pub(crate) fn resolve_target(
+    compiled: &SemanticSnapshot,
+    cli: &CliInput,
+) -> Result<(String, Vec<String>)> {
     let namespaces = compiled
         .document
         .namespaces

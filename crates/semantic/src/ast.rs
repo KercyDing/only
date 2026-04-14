@@ -11,6 +11,7 @@ pub struct DocumentAst {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DirectiveAst {
     Echo { value: bool, range: TextRange },
+    Preview { value: bool, range: TextRange },
     Shell { shell: SmolStr, range: TextRange },
 }
 
@@ -59,6 +60,17 @@ impl TaskAst {
         );
         signature.push(')');
         SmolStr::from(signature)
+    }
+
+    /// Returns whether the task is a helper task hidden from normal CLI listings.
+    ///
+    /// Args:
+    /// None.
+    ///
+    /// Returns:
+    /// `true` when the task name starts with `_`.
+    pub fn is_helper(&self) -> bool {
+        self.name.starts_with('_')
     }
 }
 

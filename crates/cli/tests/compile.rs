@@ -8,6 +8,13 @@ fn compiles_in_memory_source_without_fs() {
 }
 
 #[test]
+fn skips_helper_task_when_picking_default_in_memory_target() {
+    let compiled = compile_for_cli("_prepare():\n    echo helper\ncheck():\n    echo ok\n");
+    assert!(compiled.diagnostics.is_empty());
+    assert_eq!(compiled.plan.nodes[0].name, "check");
+}
+
+#[test]
 fn compiles_namespaced_first_task_into_plan() {
     let compiled = compile_for_cli("[dev]\nserve():\n    echo ok\n");
     assert!(compiled.diagnostics.is_empty());
@@ -53,6 +60,25 @@ fn compiles_selected_global_task_with_named_override() {
     assert_eq!(
         compiled.plan.nodes[0].params[0].value.as_deref(),
         Some("release")
+    );
+}
+
+#[test]
+fn rejects_direct_invocation_of_helper_task_for_semantic_cli_compile() {
+    let cli = CliInput {
+        onlyfile_path: None,
+        print_discovered_path: false,
+        top_level_help_requested: false,
+        top_level_version_requested: false,
+        task_path: vec!["_prepare".into()],
+        parameter_overrides: vec![],
+    };
+    let error = compile_for_cli_input("_prepare():\n    echo helper\n", &cli)
+        .expect_err("helper target should fail semantic CLI compile");
+
+    assert_eq!(
+        error.to_string(),
+        "helper task '_prepare' cannot be invoked directly"
     );
 }
 

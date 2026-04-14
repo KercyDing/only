@@ -51,11 +51,12 @@ Current user-facing behavior includes:
 
 - automatic `Onlyfile` discovery from the current directory upward
 - dynamic task listing and namespace-aware help
-- directives, doc comments, namespaces, and task declarations
+- directives, doc comments, namespaces, helper tasks, and task declarations
 - parameter defaults and `{{name}}` interpolation
 - dependency chaining with `&`, including parallel groups via `(a, b)`
 - guards such as `@os`, `@arch`, `@env`, and `@has`
 - `shell?=` host shell preference with fallback
+- `!preview true|false` command previews before execution
 - semantic validation before execution, including duplicate names and undefined references
 
 ## Why This Structure Matters
@@ -111,8 +112,13 @@ workflow():
 
 ```text
 !echo true
+!preview false
 !shell deno          # default cross-platform shell
 ```
+
+- `!echo true|false` controls whether task output is streamed on success
+- `!preview true|false` prints the selected task variant and rendered commands before execution
+- `!shell <name>` sets the default shell for tasks in the file
 
 ### Tasks and Parameters
 
@@ -122,6 +128,16 @@ build():
 
 serve(port="3000", host="127.0.0.1"):
     echo "Serving on {{host}}:{{port}}"
+```
+
+Task names beginning with `_` are helper tasks. They can be used as dependencies, but cannot be invoked directly and are hidden from normal task listings.
+
+```text
+_prepare():
+    cargo fmt --all --check
+
+ci() & _prepare:
+    cargo test
 ```
 
 ### Smart Shell Selection
@@ -187,6 +203,7 @@ only dev run
 
 ```text
 !echo true
+!preview true
 
 % Run checks.
 check() ? @has("cargo"):
@@ -204,9 +221,12 @@ test() ? @has("cargo-nextest"):
 test():
     cargo test
 
-% Install the local binary.
-install() ? @os("windows") shell?=pwsh:
+% Internal helper reused by install on Windows.
+_release_build():
     cargo build --release
+
+% Install the local binary.
+install() ? @os("windows") & _release_build shell?=pwsh:
     Write-Output "Windows: cannot replace running binary. Run:`n  Copy-Item target/release/only.exe -Destination `$env:USERPROFILE\.cargo\bin\ -Force"
 
 install():

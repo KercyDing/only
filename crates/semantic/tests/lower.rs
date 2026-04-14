@@ -1,6 +1,17 @@
 use only_semantic::compile_document;
 
 #[test]
+fn lowers_preview_directive() {
+    let compiled = compile_document("!preview true\nbuild():\n    echo ok\n");
+
+    assert!(compiled.diagnostics.is_empty());
+    assert!(matches!(
+        compiled.document.directives[0],
+        only_semantic::DirectiveAst::Preview { value: true, .. }
+    ));
+}
+
+#[test]
 fn lowers_task_header_and_commands_into_ast() {
     let compiled = compile_document("build(tag=\"v1\"):\n    echo {{tag}}\n");
     let task = &compiled.document.tasks[0];

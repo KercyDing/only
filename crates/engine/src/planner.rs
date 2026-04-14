@@ -1,12 +1,12 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use only_semantic::DocumentAst;
+use only_semantic::{DocumentAst, TaskAst};
 
 use crate::dag::expand_execution_order;
 use crate::resolve::{
-    build_execution_nodes, build_task_index, document_echo, document_shell, merge_parameter_inputs,
-    resolve_root_task,
+    build_execution_nodes, build_task_index, document_echo, document_preview, document_shell,
+    merge_parameter_inputs, resolve_root_task, resolve_root_task_in_document,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -39,6 +39,7 @@ pub struct PlanParam {
 pub struct ExecutionPlan {
     pub nodes: Vec<ExecutionNode>,
     pub echo: bool,
+    pub preview: bool,
     pub shell: Option<String>,
     pub working_dir: PathBuf,
 }
@@ -46,6 +47,7 @@ pub struct ExecutionPlan {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PlanError {
     UnknownTask(String),
+    HelperTask(String),
     TaskUnavailable(String),
     MissingRequiredParameter(String),
     UnknownParameter {
@@ -65,6 +67,9 @@ impl fmt::Display for PlanError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::UnknownTask(task) => write!(f, "task '{task}' is not defined"),
+            Self::HelperTask(task) => {
+                write!(f, "helper task '{task}' cannot be invoked directly")
+            }
             Self::TaskUnavailable(task) => {
                 write!(f, "task '{task}' is not available for this environment")
             }
@@ -147,7 +152,23 @@ pub fn try_build_execution_plan_in_dir(
     Ok(ExecutionPlan {
         nodes: build_execution_nodes(ordered),
         echo: document_echo(document),
+        preview: document_preview(document),
         shell: document_shell(document),
         working_dir,
     })
+}
+
+/// Resolves the concrete root task variant selected for the current environment.
+///
+/// Args:
+/// document: Semantic AST used by the runtime.
+/// target: Fully qualified task target.
+///
+/// Returns:
+/// The selected root task variant or a planner error when unavailable.
+pub fn select_root_task_variant<'a>(
+    document: &'a DocumentAst,
+    target: &str,
+) -> Result<&'a TaskAst, PlanError> {
+    resolve_root_task_in_document(document, target)
 }

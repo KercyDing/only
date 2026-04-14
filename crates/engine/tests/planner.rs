@@ -255,6 +255,76 @@ fn selects_guarded_dependency_variant_for_current_environment() {
 }
 
 #[test]
+fn rejects_direct_invocation_of_helper_task() {
+    let compiled = compile_document("_prepare():\n    echo helper\n");
+    let error = try_build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "_prepare",
+            args: vec![],
+            overrides: vec![],
+        },
+    )
+    .expect_err("helper task should not be invokable directly");
+
+    assert_eq!(
+        error.to_string(),
+        "helper task '_prepare' cannot be invoked directly"
+    );
+}
+
+#[test]
+fn allows_helper_task_as_dependency() {
+    let compiled =
+        compile_document("_prepare():\n    echo helper\nci() & _prepare:\n    echo ci\n");
+    let plan = try_build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "ci",
+            args: vec![],
+            overrides: vec![],
+        },
+    )
+    .expect("helper dependency should remain usable");
+
+    assert_eq!(plan.nodes.len(), 2);
+    assert_eq!(plan.nodes[0].name, "_prepare");
+    assert_eq!(plan.nodes[1].name, "ci");
+}
+
+#[test]
+fn carries_preview_directive_into_plan() {
+    let compiled = compile_document("!preview true\nhello():\n    echo ok\n");
+    let plan = try_build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "hello",
+            args: vec![],
+            overrides: vec![],
+        },
+    )
+    .expect("preview directive should compile into plan");
+
+    assert!(plan.preview);
+}
+
+#[test]
+fn leaves_preview_disabled_by_default() {
+    let compiled = compile_document("hello():\n    echo ok\n");
+    let plan = try_build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "hello",
+            args: vec![],
+            overrides: vec![],
+        },
+    )
+    .expect("plan should build without preview directive");
+
+    assert!(!plan.preview);
+}
+
+#[test]
 fn reports_unavailable_root_task_for_current_environment() {
     let other_os = if std::env::consts::OS == "windows" {
         "linux"

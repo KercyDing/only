@@ -86,7 +86,7 @@ pub fn render_help(document: &DocumentAst) -> StyledStr {
 /// Returns:
 /// User-facing task list with global tasks and namespaces.
 pub fn render_available_tasks(document: &DocumentAst) -> String {
-    let entries = unique_tasks(global_tasks(document))
+    let entries = unique_tasks(global_tasks(document).filter(|task| !task.is_helper()))
         .into_iter()
         .map(|task| {
             (
@@ -257,7 +257,8 @@ fn build_task_command(task: &TaskAst) -> Command {
         .unwrap_or_default();
     let mut cmd = Command::new(task.name.to_string())
         .styles(cli_styles())
-        .about(about);
+        .about(about)
+        .hide(task.is_helper());
 
     for (index, param) in task.params.iter().enumerate() {
         let arg = if let Some(default) = &param.default_value {
@@ -518,6 +519,27 @@ smoke():
 
         let help = render_namespace_help(&document, &document.namespaces[0]).to_string();
         assert!(help.starts_with("Developer workflow."));
+    }
+
+    #[test]
+    fn hides_helper_tasks_from_rendered_outputs() {
+        let document = parse_onlyfile(
+            "% Run tests.\n_test_helper():\n    cargo test\ntest():\n    cargo test\n\n[dev]\n_workflow():\n    echo hidden\nworkflow():\n    echo ok\n",
+        )
+        .expect("document should parse");
+
+        let listing = render_available_tasks(&document);
+        assert!(listing.contains("test"));
+        assert!(!listing.contains("_test_helper"));
+        assert!(!listing.contains("_workflow"));
+
+        let root_help = render_help(&document).to_string();
+        assert!(root_help.contains("test"));
+        assert!(!root_help.contains("_test_helper"));
+
+        let namespace_help = render_namespace_help(&document, &document.namespaces[0]).to_string();
+        assert!(namespace_help.contains("workflow"));
+        assert!(!namespace_help.contains("_workflow"));
     }
 
     #[test]

@@ -1033,6 +1033,70 @@ fn run_with_rejects_error_diagnostics_before_execution() {
 }
 
 #[test]
+fn rejects_direct_helper_task_execution_via_run_with() {
+    let _cwd_lock = cwd_lock();
+    let root = temp_case_dir("only-runtime-helper-task");
+    let onlyfile_path = root.join("Onlyfile");
+    fs::write(&onlyfile_path, "_prepare():\n    echo helper\n")
+        .expect("Onlyfile should be written");
+
+    let input = CliInput {
+        onlyfile_path: Some(onlyfile_path),
+        print_discovered_path: false,
+        top_level_help_requested: false,
+        top_level_version_requested: false,
+        task_path: vec!["_prepare".into()],
+        parameter_overrides: vec![],
+    };
+
+    let error = run_with(input).expect_err("helper task should not execute directly");
+    assert_eq!(
+        error.to_string(),
+        "helper task '_prepare' cannot be invoked directly"
+    );
+
+    fs::remove_dir_all(root).expect("temp tree should be removed");
+}
+
+#[cfg(unix)]
+#[test]
+fn preview_prints_selected_variant_and_commands_before_execution() {
+    let _cwd_lock = cwd_lock();
+    let temp_dir = TempDir::new("preview-cli-unix");
+    let onlyfile_path = temp_dir.path().join("Onlyfile");
+    let current_os = std::env::consts::OS;
+    let other_os = if current_os == "windows" {
+        "linux"
+    } else {
+        "windows"
+    };
+    fs::write(
+        &onlyfile_path,
+        format!(
+            "!preview true\nprobe() ? @os(\"{current_os}\"):\n    printf 'guarded\\n'\nprobe() ? @os(\"{other_os}\"):\n    printf 'skipped\\n'\nprobe():\n    printf 'fallback\\n'\n"
+        ),
+    )
+    .expect("Onlyfile should be written");
+
+    let output = Command::new(cli_binary_path())
+        .arg("probe")
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("CLI process should run");
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be valid utf-8");
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be valid utf-8");
+    let plain_stdout = strip_ansi(&stdout);
+    let plain_stderr = strip_ansi(&stderr);
+
+    assert_eq!(output.status.code(), Some(0), "stderr was: {stderr}");
+    assert!(plain_stderr.contains("Preview:"));
+    assert!(plain_stderr.contains(&format!("variant: probe() ? @os(\"{current_os}\")")));
+    assert!(plain_stderr.contains("[probe] printf 'guarded"));
+    assert!(plain_stdout.contains("[probe] guarded"));
+}
+
+#[test]
 fn exposes_workspace_cli_version() {
     assert_eq!(version_string(), env!("CARGO_PKG_VERSION"));
 }

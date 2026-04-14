@@ -1,4 +1,9 @@
 !echo true
+!preview false
+
+% Internal helper for release builds
+_release_build():
+    cargo build --release
 
 % Run cargo check
 check():
@@ -18,8 +23,7 @@ ci() & check & test:
     echo "CI complete!"
 
 % Install the local only binary
-install() ? @os("windows") shell?=pwsh:
-    cargo build --release
+install() ? @os("windows") & _release_build shell?=pwsh:
     Write-Output "Windows: cannot replace running binary. Run:`n  Copy-Item target/release/only.exe -Destination `$env:USERPROFILE\.cargo\bin\ -Force"
 
 install():

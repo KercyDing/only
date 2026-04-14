@@ -10,17 +10,22 @@ Only is a cross-platform task runner built around a real task language.
 Write tasks once, keep one execution model, and get predictable results on **macOS, Linux, and Windows**.
 
 - **Cross-platform by default** — no Git Bash, no `if os()` hacks, no `platforms:` boilerplate
-- **A better task language** — readable task syntax with parameters, guards, serial and parallel dependencies, namespaces, and interpolation
+- **A better task language** — readable task syntax with parameters, guards, serial and parallel dependencies, helper tasks, directives, namespaces, and interpolation
 - **Built for tooling** — the same core model can power execution, diagnostics, editor features, and future visual workflows
 
 ```Onlyfile
+!preview true
+
+_prepare():
+    cargo fmt --all --check
+
 check():
     cargo check
 
 test():
     cargo test
 
-ci() & check & test:
+ci() & _prepare & check & test:
     echo "CI complete"
 
 release() & build & (package, publish):
@@ -53,6 +58,11 @@ Create an `Onlyfile` in your project root:
 
 ```Onlyfile
 !echo true
+!preview false
+
+% Internal helper for release builds.
+_release_build():
+    cargo build --release
 
 % Run cargo check.
 check():
@@ -111,6 +121,7 @@ build():
 
 ```Onlyfile
 !echo true
+!preview true
 
 % Run checks only if cargo is available.
 check() ? @has("cargo"):
@@ -128,9 +139,12 @@ test() ? @has("cargo-nextest"):
 test():
     cargo test
 
-% Install the local binary.
-install() ? @os("windows") shell?=pwsh:
+% Internal helper reused by install on Windows.
+_release_build():
     cargo build --release
+
+% Install the local binary.
+install() ? @os("windows") & _release_build shell?=pwsh:
     Write-Output "Windows: cannot replace running binary. Run:`n  Copy-Item target/release/only.exe -Destination `$env:USERPROFILE\.cargo\bin\ -Force"
 
 install():
@@ -162,9 +176,10 @@ build():
 ## Why Only ✨
 
 - **Actually cross-platform by default** — `deno_task_shell` keeps behavior aligned across macOS, Linux, and Windows
-- **A better task language** — function-style signatures, parameters, defaults, guards, namespaces, and interpolation stay readable
+- **A better task language** — function-style signatures, parameters, defaults, guards, helper tasks, directives, namespaces, and interpolation stay readable
 - **Clear execution flow** — dependencies, planning, and runtime behavior are explicit instead of being buried in shell glue
 - **Better diagnostics and help** — dynamic task listing and structured validation make the terminal experience less guessy
+- **Safer internal workflow composition** — helper tasks stay usable as dependencies without cluttering normal CLI help
 - **Built for tooling, not just execution** — the same pipeline can power CLI, editor features, language servers, and future visual workflows
 
 | Tool | Best fit | Core model | Portability | Tooling headroom |
