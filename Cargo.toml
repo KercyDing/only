@@ -10,7 +10,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/KercyDing/only"
@@ -19,14 +19,14 @@ readme = "README.md"
 
 [workspace.dependencies]
 anstyle = "1.0"
-clap = { version = "4.5", features = ["color", "std", "string"] }
+clap = { version = "4.6", features = ["color", "std", "string"] }
 deno_task_shell = "0.29"
 logos = "0.16"
 miette = { version = "7.6", features = ["fancy"] }
 rowan = "0.16"
 smol_str = "0.3"
 text-size = "1.1"
-tokio = { version = "1", features = ["rt"] }
+tokio = { version = "1.52", features = ["rt"] }
 winnow = "1.0"
 
 [profile.release]

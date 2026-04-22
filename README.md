@@ -178,8 +178,7 @@ build():
 - **Actually cross-platform by default** — `deno_task_shell` keeps behavior aligned across macOS, Linux, and Windows
 - **A better task language** — function-style signatures, parameters, defaults, guards, helper tasks, directives, namespaces, and interpolation stay readable
 - **Clear execution flow** — dependencies, planning, and runtime behavior are explicit instead of being buried in shell glue
-- **Better diagnostics and help** — dynamic task listing and structured validation make the terminal experience less guessy
-- **Safer internal workflow composition** — helper tasks stay usable as dependencies without cluttering normal CLI help
+- **Better diagnostics and help** — dynamic task listing, structured validation, preview output, and richer editor-facing metadata make the workflow easier to understand
 - **Built for tooling, not just execution** — the same pipeline can power CLI, editor features, language servers, and future visual workflows
 
 | Tool | Best fit | Core model | Portability | Tooling headroom |

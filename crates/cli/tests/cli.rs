@@ -1063,8 +1063,11 @@ fn helper_task_help_is_available_via_cli_binary() {
     let _cwd_lock = cwd_lock();
     let temp_dir = TempDir::new("helper-help-hidden");
     let onlyfile_path = temp_dir.path().join("Onlyfile");
-    fs::write(&onlyfile_path, "_prepare(target):\n    printf '%s\\n' \"{{target}}\"\n")
-        .expect("Onlyfile should be written");
+    fs::write(
+        &onlyfile_path,
+        "_prepare(target):\n    printf '%s\\n' \"{{target}}\"\n",
+    )
+    .expect("Onlyfile should be written");
 
     let output = Command::new(cli_binary_path())
         .arg("-f")

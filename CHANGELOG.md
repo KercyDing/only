@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.3 - 2026-04-23
+
+- Rebuilt `only` as a multi-crate workspace with a clearer language pipeline.
+- Added richer CLI behavior including dynamic help, namespace support, helper tasks, preview output, and parameter overrides.
+- Added stronger execution features including guards, interpolation, echo control, and grouped parallel stages.
+- Added an LSP server with diagnostics, hover, folding ranges, and document symbols.
+- Expanded docs, examples, CI workflows, and regression coverage.
+- Fixed helper-only namespace visibility, `!preview` hover docs, verbose CLI output, and `Onlyfile` string lexing.
+
 ## 0.0.2 - 2026-04-08
 
 - First functional release of the `only` task runner.

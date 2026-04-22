@@ -50,12 +50,13 @@ only rel run
 Current user-facing behavior includes:
 
 - automatic `Onlyfile` discovery from the current directory upward
-- dynamic task listing and namespace-aware help
+- dynamic task listing, global help, and namespace help
 - directives, doc comments, namespaces, helper tasks, and task declarations
-- parameter defaults and `{{name}}` interpolation
+- parameter defaults, positional arguments, named overrides via `--set`, and `{{name}}` interpolation
 - dependency chaining with `&`, including parallel groups via `(a, b)`
 - guards such as `@os`, `@arch`, `@env`, and `@has`
 - `shell?=` host shell preference with fallback
+- `!echo true|false` output control
 - `!preview true|false` command previews before execution
 - semantic validation before execution, including duplicate names and undefined references
 
@@ -130,7 +131,7 @@ serve(port="3000", host="127.0.0.1"):
     echo "Serving on {{host}}:{{port}}"
 ```
 
-Task names beginning with `_` are helper tasks. They can be used as dependencies, but cannot be invoked directly and are hidden from normal task listings.
+Task names beginning with `_` are helper tasks. They can be used as dependencies, but cannot be invoked directly and are hidden from normal task listings. If needed, `only _task --help` still shows parameter help for the helper task.
 
 ```text
 _prepare():
@@ -199,63 +200,63 @@ only dev build
 only dev run
 ```
 
-### Practical Example
+### Repository Example
+
+This repository's root `Onlyfile` currently looks like this:
 
 ```text
 !echo true
-!preview true
+!preview false
 
-% Run checks.
-check() ? @has("cargo"):
+% Internal helper for release builds
+_release_build():
+    cargo build --release
+
+% Run cargo check
+check():
     cargo check
     cargo fmt --all --check
     cargo clippy --workspace -- -D warnings
-    
-check():
-    echo "cargo not found, skipping checks"
 
-% Run tests.
+% Run the full test suite
 test() ? @has("cargo-nextest"):
     cargo nextest run
 
 test():
     cargo test
 
-% Internal helper reused by install on Windows.
-_release_build():
-    cargo build --release
+% Run formatter, type checks, and tests
+ci() & check & test:
+    echo "CI complete!"
 
-% Install the local binary.
+% Install the local only binary
 install() ? @os("windows") & _release_build shell?=pwsh:
     Write-Output "Windows: cannot replace running binary. Run:`n  Copy-Item target/release/only.exe -Destination `$env:USERPROFILE\.cargo\bin\ -Force"
 
 install():
     cargo install --path crates/cli --force
 
-% Run full CI.
-ci() & check & test:
-    echo "CI complete!"
-
-% Build first, then fan out packaging work.
-release() & build & (package, publish):
-    echo "Release complete!"
-
-% Development builds.
+% Development builds
 [dev]
+% Build the project in development mode.
 build():
     cargo build
 
+% Run the project in development mode
 run():
     cargo run
 
-% Release builds.
+% Release builds
 [rel]
+% Build the project in release mode.
 build():
     cargo build --release
 
+% Run the project in release mode
 run():
     cargo run --release
 
+% Run the release test suite
 test() ? @has("cargo-nextest"):
     cargo nextest run --release
 
@@ -263,11 +264,12 @@ test():
     cargo test --release
 ```
 
-Usage:
+Usage in this repository:
 
 ```bash
 only
 only ci
+only install
 only dev build
 only rel run
 only rel test
