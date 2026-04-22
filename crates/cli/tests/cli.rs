@@ -1058,6 +1058,33 @@ fn rejects_direct_helper_task_execution_via_run_with() {
     fs::remove_dir_all(root).expect("temp tree should be removed");
 }
 
+#[test]
+fn helper_task_help_is_available_via_cli_binary() {
+    let _cwd_lock = cwd_lock();
+    let temp_dir = TempDir::new("helper-help-hidden");
+    let onlyfile_path = temp_dir.path().join("Onlyfile");
+    fs::write(&onlyfile_path, "_prepare(target):\n    printf '%s\\n' \"{{target}}\"\n")
+        .expect("Onlyfile should be written");
+
+    let output = Command::new(cli_binary_path())
+        .arg("-f")
+        .arg(&onlyfile_path)
+        .arg("_prepare")
+        .arg("--help")
+        .output()
+        .expect("CLI process should run");
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be valid utf-8");
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be valid utf-8");
+    let plain_stdout = strip_ansi(&stdout);
+    let plain_stderr = strip_ansi(&stderr);
+
+    assert_eq!(output.status.code(), Some(0), "stderr was: {stderr}");
+    assert!(plain_stdout.contains("Usage: only _prepare [OPTIONS] [target]"));
+    assert!(plain_stdout.contains("[target]  Required parameter"));
+    assert!(plain_stderr.is_empty(), "stderr was: {plain_stderr}");
+}
+
 #[cfg(unix)]
 #[test]
 fn preview_prints_selected_variant_and_commands_before_execution() {

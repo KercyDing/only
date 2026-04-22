@@ -59,7 +59,11 @@ pub fn build_cli(document: &DocumentAst) -> Command {
         cmd = cmd.subcommand(build_task_command(task));
     }
 
-    for namespace in &document.namespaces {
+    for namespace in document
+        .namespaces
+        .iter()
+        .filter(|namespace| namespace_has_visible_tasks(document, namespace.name.as_str()))
+    {
         cmd = cmd.subcommand(build_namespace_command(document, namespace));
     }
 
@@ -98,13 +102,19 @@ pub fn render_available_tasks(document: &DocumentAst) -> String {
                 false,
             )
         })
-        .chain(document.namespaces.iter().map(|namespace| {
-            (
-                namespace.name.to_string(),
-                namespace_summary(namespace),
-                true,
-            )
-        }))
+        .chain(
+            document
+                .namespaces
+                .iter()
+                .filter(|namespace| namespace_has_visible_tasks(document, namespace.name.as_str()))
+                .map(|namespace| {
+                    (
+                        namespace.name.to_string(),
+                        namespace_summary(namespace),
+                        true,
+                    )
+                }),
+        )
         .collect::<Vec<_>>();
 
     if entries.is_empty() {
@@ -307,6 +317,10 @@ fn namespace_tasks<'a>(
         .tasks
         .iter()
         .filter(move |task| task.namespace.as_deref() == Some(namespace))
+}
+
+fn namespace_has_visible_tasks(document: &DocumentAst, namespace: &str) -> bool {
+    namespace_tasks(document, namespace).any(|task| !task.is_helper())
 }
 
 fn cli_styles() -> Styles {
@@ -540,6 +554,26 @@ smoke():
         let namespace_help = render_namespace_help(&document, &document.namespaces[0]).to_string();
         assert!(namespace_help.contains("workflow"));
         assert!(!namespace_help.contains("_workflow"));
+    }
+
+    #[test]
+    fn omits_namespaces_that_only_contain_helper_tasks() {
+        let document = parse_onlyfile(
+            "% Visible workflow.\ncheck():\n    cargo check\n\n% Hidden namespace.\n[dev]\n_hidden():\n    echo hidden\n",
+        )
+        .expect("document should parse");
+
+        let listing = render_available_tasks(&document);
+        assert!(listing.contains("check"));
+        assert!(!listing.contains("dev"));
+        assert!(!listing.contains("Hidden namespace."));
+
+        let namespace_help = render_namespace_help(&document, &document.namespaces[0]).to_string();
+        assert!(namespace_help.contains("Hidden namespace."));
+        assert!(namespace_help.contains("Usage: only dev"));
+        assert!(namespace_help.contains("Options:"));
+        assert!(!namespace_help.contains("Commands:"));
+        assert!(!namespace_help.contains("_hidden"));
     }
 
     #[test]

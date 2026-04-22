@@ -70,6 +70,9 @@ fn directive_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspH
             "echo" => {
                 "Controls runtime output. `true` shows task output normally; `false` keeps task progress but suppresses successful command output and only replays stderr when a task fails.".to_string()
             }
+            "preview" => {
+                "Controls preview mode. `true` prints the selected task variant and commands before execution; `false` runs tasks without the preview output.".to_string()
+            }
             "shell" => "Sets the default shell host used for task commands.".to_string(),
             _ => return None,
         };
