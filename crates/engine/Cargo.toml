@@ -5,11 +5,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 documentation.workspace = true
-readme.workspace = true
-publish = false
+description = "Execution planning and runtime engine for only tasks."
 
 [dependencies]
 anstyle.workspace = true
 deno_task_shell.workspace = true
-only-semantic = { path = "../semantic" }
+only-semantic = { version = "0.0.3", path = "../semantic" }
 tokio.workspace = true

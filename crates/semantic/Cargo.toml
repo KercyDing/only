@@ -5,11 +5,10 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 documentation.workspace = true
-readme.workspace = true
-publish = false
+description = "Semantic analysis for the only task language."
 
 [dependencies]
-only-diagnostic = { path = "../diagnostic" }
-only-syntax = { path = "../syntax" }
+only-diagnostic = { version = "0.0.3", path = "../diagnostic" }
+only-syntax = { version = "0.0.3", path = "../syntax" }
 smol_str.workspace = true
 text-size.workspace = true

@@ -5,13 +5,12 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 documentation.workspace = true
-readme.workspace = true
-publish = false
+description = "Language Server Protocol support for the only task language."
 
 [dependencies]
-only-diagnostic = { path = "../diagnostic" }
-only-semantic = { path = "../semantic" }
-only-syntax = { path = "../syntax" }
+only-diagnostic = { version = "0.0.3", path = "../diagnostic" }
+only-semantic = { version = "0.0.3", path = "../semantic" }
+only-syntax = { version = "0.0.3", path = "../syntax" }
 text-size.workspace = true
 tokio = { workspace = true, features = ["io-std", "macros", "rt-multi-thread"] }
 tower-lsp = "0.20"

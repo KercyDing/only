@@ -5,8 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 documentation.workspace = true
-readme.workspace = true
-publish = false
+description = "Shared diagnostic types for the only task language."
 
 [dependencies]
 text-size.workspace = true
