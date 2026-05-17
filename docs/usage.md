@@ -7,6 +7,7 @@
 Create a file named `Onlyfile` in your project root:
 
 ```Onlyfile
+# Minimal task.
 hello():
     echo "hello from only"
 ```
@@ -37,9 +38,10 @@ only -f ./examples/Onlyfile hello
 
 ## 2. Add task descriptions
 
-Lines starting with `%` document the next task or namespace. These descriptions show up in `only` and `only --help` output.
+Use `#` for ordinary comments. Lines starting with `%` document the next task or namespace, and show up in `only` and `only --help` output.
 
 ```Onlyfile
+# Ordinary comments are ignored.
 % Format the codebase.
 fmt():
     cargo fmt --all
@@ -266,9 +268,11 @@ Directives start with `!` and apply to the whole file.
 | --- | --- | --- | --- |
 | `!echo` | `true` / `false` | `true` | Controls command output on success. Failures still surface output. |
 | `!preview` | `true` / `false` | `false` | Prints the selected task variant and rendered commands before execution. |
+| `!label` | `true` / `false` | `true` | Controls the `[task]` prefix on task output. |
 | `!shell` | shell name | `deno` | Sets the default shell for tasks without an explicit shell. |
 
 Use `!preview true` when you want to see exactly which task variant and commands will run after parameters are bound.
+Use `!label false` when you want raw command output but still want task progress lines.
 
 ## 10. Organize tasks with namespaces
 

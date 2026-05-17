@@ -1,6 +1,7 @@
 !echo true
 !preview false
 
+# This file demonstrates the full task shape.
 % Say hello with an optional name.
 hello(name="world"):
     echo "hello, {{name}}"
