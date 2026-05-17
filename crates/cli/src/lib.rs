@@ -4,6 +4,7 @@ mod compile;
 mod discover;
 mod error;
 mod render;
+mod upgrade;
 
 pub use args::CliInput;
 pub use command::{

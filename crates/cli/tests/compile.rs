@@ -28,6 +28,7 @@ fn compiles_selected_namespaced_task_with_positional_arg() {
         print_discovered_path: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
+        top_level_upgrade_requested: false,
         task_path: vec!["dev".into(), "serve".into(), "true".into()],
         parameter_overrides: vec![],
     };
@@ -49,6 +50,7 @@ fn compiles_selected_global_task_with_named_override() {
         print_discovered_path: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
+        top_level_upgrade_requested: false,
         task_path: vec!["build".into()],
         parameter_overrides: vec![("profile".into(), "release".into())],
     };
@@ -70,6 +72,7 @@ fn rejects_direct_invocation_of_helper_task_for_semantic_cli_compile() {
         print_discovered_path: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
+        top_level_upgrade_requested: false,
         task_path: vec!["_prepare".into()],
         parameter_overrides: vec![],
     };
@@ -89,6 +92,7 @@ fn rejects_namespace_without_task_target_for_semantic_cli_compile() {
         print_discovered_path: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
+        top_level_upgrade_requested: false,
         task_path: vec!["dev".into()],
         parameter_overrides: vec![],
     };
@@ -105,6 +109,7 @@ fn rejects_error_diagnostics_before_planning() {
         print_discovered_path: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
+        top_level_upgrade_requested: false,
         task_path: vec!["deploy".into()],
         parameter_overrides: vec![],
     };

@@ -218,6 +218,10 @@ fn run_inner() -> Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
 
+    if partial.top_level_upgrade_requested {
+        return crate::upgrade::run_upgrade();
+    }
+
     let discovered = load_onlyfile(partial.onlyfile_path.as_deref())?;
 
     if partial.print_discovered_path {

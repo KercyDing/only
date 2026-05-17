@@ -20,6 +20,7 @@ pub struct CliInput {
     pub print_discovered_path: bool,
     pub top_level_help_requested: bool,
     pub top_level_version_requested: bool,
+    pub top_level_upgrade_requested: bool,
     pub task_path: Vec<String>,
     pub parameter_overrides: Vec<(String, String)>,
 }
@@ -45,6 +46,7 @@ impl CliInput {
             print_discovered_path: matches.get_flag("print-path"),
             top_level_help_requested: false,
             top_level_version_requested: false,
+            top_level_upgrade_requested: matches.get_flag("upgrade") || matches.get_flag("update"),
             task_path: vec![],
             parameter_overrides,
         })
@@ -117,6 +119,7 @@ where
     let mut print_discovered_path = false;
     let mut top_level_help_requested = false;
     let mut top_level_version_requested = false;
+    let mut top_level_upgrade_requested = false;
     let mut parameter_overrides = Vec::new();
     let mut seen_task_token = false;
     let mut iter = args.into_iter().map(Into::into);
@@ -158,6 +161,11 @@ where
                     top_level_version_requested = true;
                 }
             }
+            "--upgrade" | "--update" => {
+                if !seen_task_token {
+                    top_level_upgrade_requested = true;
+                }
+            }
             _ => {
                 if let Some(value) = text.strip_prefix("--file=") {
                     onlyfile_path = Some(PathBuf::from(value));
@@ -179,6 +187,7 @@ where
         print_discovered_path,
         top_level_help_requested,
         top_level_version_requested,
+        top_level_upgrade_requested,
         task_path: vec![],
         parameter_overrides,
     })
@@ -286,6 +295,22 @@ mod tests {
     }
 
     #[test]
+    fn records_top_level_upgrade_requests() {
+        let cli = parse_global_options_from(["only", "--upgrade"])
+            .expect("phase-one parsing should succeed");
+
+        assert!(cli.top_level_upgrade_requested);
+    }
+
+    #[test]
+    fn records_top_level_update_requests() {
+        let cli = parse_global_options_from(["only", "--update"])
+            .expect("phase-one parsing should succeed");
+
+        assert!(cli.top_level_upgrade_requested);
+    }
+
+    #[test]
     fn ignores_nested_help_requests_after_task_token() {
         let cli = parse_global_options_from(["only", "dev", "--help"])
             .expect("phase-one parsing should succeed");
@@ -302,6 +327,14 @@ mod tests {
     }
 
     #[test]
+    fn ignores_nested_upgrade_requests_after_task_token() {
+        let cli = parse_global_options_from(["only", "dev", "--upgrade"])
+            .expect("phase-one parsing should succeed");
+
+        assert!(!cli.top_level_upgrade_requested);
+    }
+
+    #[test]
     fn stops_collecting_globals_after_separator() {
         let cli =
             parse_global_options_from(["only", "run", "--", "--path", "--set", "profile=prod"])
@@ -310,6 +343,7 @@ mod tests {
         assert!(!cli.print_discovered_path);
         assert!(!cli.top_level_help_requested);
         assert!(!cli.top_level_version_requested);
+        assert!(!cli.top_level_upgrade_requested);
         assert!(cli.parameter_overrides.is_empty());
     }
 }

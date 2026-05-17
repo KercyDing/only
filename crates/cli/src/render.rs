@@ -44,6 +44,18 @@ pub fn build_global_cli() -> Command {
                 .global(true)
                 .help("Override a target task parameter"),
         )
+        .arg(
+            Arg::new("upgrade")
+                .long("upgrade")
+                .action(ArgAction::SetTrue)
+                .help("Upgrade only from the latest GitHub release"),
+        )
+        .arg(
+            Arg::new("update")
+                .long("update")
+                .action(ArgAction::SetTrue)
+                .help("Alias for --upgrade"),
+        )
 }
 
 /// Builds the full dynamic CLI from a parsed semantic document.
@@ -400,6 +412,8 @@ workflow():
 
         assert!(help.contains("Usage: only [OPTIONS] [TASK] [ARGS]..."));
         assert!(help.contains("--file"));
+        assert!(help.contains("--update"));
+        assert!(help.contains("--upgrade"));
         assert!(help.contains("--version"));
     }
 
@@ -410,6 +424,19 @@ workflow():
             .expect_err("version should short-circuit parsing");
 
         assert_eq!(error.kind(), ErrorKind::DisplayVersion);
+    }
+
+    #[test]
+    fn supports_global_upgrade_flags() {
+        let upgrade = build_global_cli()
+            .try_get_matches_from(["only", "--upgrade"])
+            .expect("upgrade flag should parse");
+        let update = build_global_cli()
+            .try_get_matches_from(["only", "--update"])
+            .expect("update flag should parse");
+
+        assert!(upgrade.get_flag("upgrade"));
+        assert!(update.get_flag("update"));
     }
 
     #[test]

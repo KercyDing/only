@@ -70,6 +70,13 @@ From GitHub:
 cargo install --git https://github.com/KercyDing/only only
 ```
 
+## Update
+
+```shell
+only --upgrade
+# or: only --update
+```
+
 ## Learn more
 
 See a complete example: [examples/Onlyfile](examples/Onlyfile).

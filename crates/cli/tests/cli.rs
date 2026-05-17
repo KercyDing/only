@@ -69,6 +69,7 @@ fn cli(task_path: &[&str]) -> CliInput {
         print_discovered_path: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
+        top_level_upgrade_requested: false,
         task_path: task_path.iter().map(|part| part.to_string()).collect(),
         parameter_overrides: vec![],
     }
@@ -456,6 +457,7 @@ fn applies_cli_parameter_overrides() {
         print_discovered_path: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
+        top_level_upgrade_requested: false,
         task_path: vec!["hello".into()],
         parameter_overrides: vec![("name".into(), "true".into())],
     };
@@ -491,6 +493,7 @@ fn rejects_unknown_parameter_override() {
         print_discovered_path: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
+        top_level_upgrade_requested: false,
         task_path: vec!["hello".into()],
         parameter_overrides: vec![("other".into(), "alice".into())],
     };
@@ -516,6 +519,7 @@ fn rejects_duplicate_parameter_overrides() {
         print_discovered_path: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
+        top_level_upgrade_requested: false,
         task_path: vec!["hello".into()],
         parameter_overrides: vec![
             ("name".into(), "alice".into()),
@@ -953,6 +957,7 @@ fn runs_tasks_from_onlyfile_base_dir() {
         print_discovered_path: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
+        top_level_upgrade_requested: false,
         task_path: vec!["check".into()],
         parameter_overrides: vec![],
     };
@@ -988,6 +993,7 @@ fn run_with_selects_guarded_task_for_current_environment() {
         print_discovered_path: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
+        top_level_upgrade_requested: false,
         task_path: vec!["probe".into()],
         parameter_overrides: vec![],
     };
@@ -1022,6 +1028,7 @@ fn run_with_reports_unavailable_guarded_task() {
         print_discovered_path: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
+        top_level_upgrade_requested: false,
         task_path: vec!["probe".into()],
         parameter_overrides: vec![],
     };
@@ -1051,6 +1058,7 @@ fn run_with_rejects_error_diagnostics_before_execution() {
         print_discovered_path: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
+        top_level_upgrade_requested: false,
         task_path: vec!["deploy".into()],
         parameter_overrides: vec![],
     };
@@ -1078,6 +1086,7 @@ fn rejects_direct_helper_task_execution_via_run_with() {
         print_discovered_path: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
+        top_level_upgrade_requested: false,
         task_path: vec!["_prepare".into()],
         parameter_overrides: vec![],
     };
