@@ -12,6 +12,7 @@ pub struct DocumentAst {
 pub enum DirectiveAst {
     Echo { value: bool, range: TextRange },
     Preview { value: bool, range: TextRange },
+    Label { value: bool, range: TextRange },
     Shell { shell: SmolStr, range: TextRange },
 }
 

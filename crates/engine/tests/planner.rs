@@ -67,9 +67,10 @@ fn assigns_parallel_dependency_groups_to_shared_stage() {
 }
 
 #[test]
-fn carries_echo_shell_and_default_params_into_plan() {
+fn carries_echo_label_shell_and_default_params_into_plan() {
     let compiled = compile_document(
         "!echo true\n\
+         !label false\n\
          !shell bash\n\
          build(tag=\"v1\") shell?=pwsh:\n\
              echo {{tag}}\n",
@@ -84,6 +85,7 @@ fn carries_echo_shell_and_default_params_into_plan() {
     );
 
     assert!(plan.echo);
+    assert!(!plan.label);
     assert_eq!(plan.shell.as_deref(), Some("bash"));
     assert_eq!(plan.nodes.len(), 1);
     assert_eq!(plan.nodes[0].shell.as_deref(), Some("pwsh"));

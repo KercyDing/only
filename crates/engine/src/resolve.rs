@@ -110,7 +110,9 @@ pub(crate) fn document_echo(document: &DocumentAst) -> bool {
         .iter()
         .fold(true, |echo, directive| match directive {
             DirectiveAst::Echo { value, .. } => *value,
-            DirectiveAst::Preview { .. } | DirectiveAst::Shell { .. } => echo,
+            DirectiveAst::Preview { .. }
+            | DirectiveAst::Label { .. }
+            | DirectiveAst::Shell { .. } => echo,
         })
 }
 
@@ -120,7 +122,21 @@ pub(crate) fn document_preview(document: &DocumentAst) -> bool {
         .iter()
         .fold(false, |preview, directive| match directive {
             DirectiveAst::Preview { value, .. } => *value,
-            DirectiveAst::Echo { .. } | DirectiveAst::Shell { .. } => preview,
+            DirectiveAst::Echo { .. } | DirectiveAst::Label { .. } | DirectiveAst::Shell { .. } => {
+                preview
+            }
+        })
+}
+
+pub(crate) fn document_label(document: &DocumentAst) -> bool {
+    document
+        .directives
+        .iter()
+        .fold(true, |label, directive| match directive {
+            DirectiveAst::Label { value, .. } => *value,
+            DirectiveAst::Echo { .. }
+            | DirectiveAst::Preview { .. }
+            | DirectiveAst::Shell { .. } => label,
         })
 }
 
@@ -133,7 +149,9 @@ pub(crate) fn document_shell(document: &DocumentAst) -> Option<String> {
                 shell: directive_shell,
                 ..
             } => Some(directive_shell.to_string()),
-            DirectiveAst::Echo { .. } | DirectiveAst::Preview { .. } => shell,
+            DirectiveAst::Echo { .. }
+            | DirectiveAst::Preview { .. }
+            | DirectiveAst::Label { .. } => shell,
         })
 }
 

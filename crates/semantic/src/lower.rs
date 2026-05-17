@@ -76,6 +76,11 @@ fn lower_directive(node: &DirectiveNode) -> Result<DirectiveAst, Diagnostic> {
             value: false,
             range,
         }),
+        (Some("label"), Some("true")) => Ok(DirectiveAst::Label { value: true, range }),
+        (Some("label"), Some("false")) => Ok(DirectiveAst::Label {
+            value: false,
+            range,
+        }),
         (Some("echo"), Some(value)) => Err(lower_error(
             "lower.invalid-directive",
             &format!("invalid echo value '{value}': expected 'true' or 'false'"),
@@ -94,6 +99,16 @@ fn lower_directive(node: &DirectiveNode) -> Result<DirectiveAst, Diagnostic> {
         (Some("preview"), None) => Err(lower_error(
             "lower.invalid-directive",
             "directive '!preview' requires a value",
+            range,
+        )),
+        (Some("label"), Some(value)) => Err(lower_error(
+            "lower.invalid-directive",
+            &format!("invalid label value '{value}': expected 'true' or 'false'"),
+            range,
+        )),
+        (Some("label"), None) => Err(lower_error(
+            "lower.invalid-directive",
+            "directive '!label' requires a value",
             range,
         )),
         (Some("shell"), Some(shell)) => Ok(DirectiveAst::Shell {

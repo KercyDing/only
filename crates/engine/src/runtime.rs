@@ -41,6 +41,7 @@ pub fn run_plan(plan: &ExecutionPlan) -> Result<ExitCode, EngineError> {
             &plan.working_dir,
             plan.shell.as_deref(),
             plan.echo,
+            plan.label,
         )?;
     }
 
@@ -56,6 +57,7 @@ fn execute_stage(
     working_dir: &std::path::Path,
     default_shell: Option<&str>,
     echo: bool,
+    label: bool,
 ) -> Result<(), EngineError> {
     let stage_len = stage_nodes.len();
     let (event_tx, event_rx) = mpsc::channel::<StageEvent>();
@@ -76,9 +78,9 @@ fn execute_stage(
         drop(event_tx);
 
         if echo {
-            run_echo_event_loop(&event_rx, stage_nodes, stage_len)?;
+            run_echo_event_loop(&event_rx, stage_nodes, stage_len, label)?;
         } else {
-            run_quiet_event_loop(&event_rx, stage_nodes, stage_len)?;
+            run_quiet_event_loop(&event_rx, stage_nodes, stage_len, label)?;
         }
 
         collect_thread_results(handles)
@@ -89,6 +91,7 @@ fn run_echo_event_loop(
     event_rx: &mpsc::Receiver<StageEvent>,
     stage_nodes: &[ExecutionNode],
     stage_len: usize,
+    label: bool,
 ) -> Result<(), EngineError> {
     let mut buffers = vec![Vec::<OutputChunk>::new(); stage_len];
     let mut finished = vec![false; stage_len];
@@ -103,7 +106,7 @@ fn run_echo_event_loop(
         match event_rx.recv() {
             Ok(StageEvent::Output { task_index, chunk }) => {
                 if task_index == current_index {
-                    print_output_chunk(&stage_nodes[task_index].name, &chunk)?;
+                    print_output_chunk(&stage_nodes[task_index].name, &chunk, label)?;
                 } else {
                     buffers[task_index].push(chunk);
                 }
@@ -117,6 +120,7 @@ fn run_echo_event_loop(
                     flush_task_buffer(
                         &stage_nodes[current_index].name,
                         &mut buffers[current_index],
+                        label,
                     )?;
                     if !finished[current_index] {
                         break;
@@ -141,6 +145,7 @@ fn run_quiet_event_loop(
     event_rx: &mpsc::Receiver<StageEvent>,
     stage_nodes: &[ExecutionNode],
     stage_len: usize,
+    label: bool,
 ) -> Result<(), EngineError> {
     let mut stderr_buffers = vec![Vec::<OutputChunk>::new(); stage_len];
     let mut task_errors = (0..stage_len)
@@ -166,7 +171,7 @@ fn run_quiet_event_loop(
     let first_error = task_errors.into_iter().flatten().next();
     if let Some(error) = first_error {
         for (index, buffer) in stderr_buffers.iter_mut().enumerate() {
-            flush_task_buffer(&stage_nodes[index].name, buffer)?;
+            flush_task_buffer(&stage_nodes[index].name, buffer, label)?;
         }
         eprintln!("{}", render_status("Fail", TermAnsiColor::BrightRed));
         return Err(error);
@@ -295,23 +300,35 @@ enum StageEvent {
     },
 }
 
-fn flush_task_buffer(task_name: &str, buffer: &mut Vec<OutputChunk>) -> Result<(), EngineError> {
+fn flush_task_buffer(
+    task_name: &str,
+    buffer: &mut Vec<OutputChunk>,
+    label: bool,
+) -> Result<(), EngineError> {
     for chunk in buffer.drain(..) {
-        print_output_chunk(task_name, &chunk)?;
+        print_output_chunk(task_name, &chunk, label)?;
     }
     Ok(())
 }
 
-fn print_output_chunk(task_name: &str, chunk: &OutputChunk) -> Result<(), EngineError> {
-    let prefix_style = TermStyle::new()
-        .fg_color(Some(TermAnsiColor::BrightCyan.into()))
-        .bold();
-    let prefix = format!(
-        "{}[{}]{} ",
-        prefix_style.render(),
-        task_name,
-        prefix_style.render_reset()
-    );
+fn print_output_chunk(
+    task_name: &str,
+    chunk: &OutputChunk,
+    label: bool,
+) -> Result<(), EngineError> {
+    let prefix = if label {
+        let prefix_style = TermStyle::new()
+            .fg_color(Some(TermAnsiColor::BrightCyan.into()))
+            .bold();
+        format!(
+            "{}[{}]{} ",
+            prefix_style.render(),
+            task_name,
+            prefix_style.render_reset()
+        )
+    } else {
+        String::new()
+    };
 
     match chunk.stream {
         OutputStream::Stdout => write_prefixed(prefix.as_str(), &chunk.text, io::stdout()),

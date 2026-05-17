@@ -86,6 +86,26 @@ fn returns_preview_directive_hover_for_keyword_only() {
 }
 
 #[test]
+fn returns_label_directive_hover_for_keyword_only() {
+    let source = "!label false\n";
+    let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
+    let offset = TextSize::from(source.find("label").expect("directive should exist") as u32);
+    let value_offset =
+        TextSize::from(source.find("false").expect("directive value should exist") as u32);
+
+    let info = hover(&snapshot, offset).expect("hover should exist");
+
+    assert_eq!(info.kind, LspHoverKind::Directive);
+    assert_eq!(info.signature, "!label");
+    assert!(
+        info.docs
+            .as_deref()
+            .is_some_and(|docs| docs.contains("Current value: `false`"))
+    );
+    assert!(hover(&snapshot, value_offset).is_none());
+}
+
+#[test]
 fn returns_guard_probe_hover() {
     let source = "build() ? @os(\"macos\"):\n    echo ok\n";
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);

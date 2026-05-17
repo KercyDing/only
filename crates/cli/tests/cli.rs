@@ -230,8 +230,7 @@ fn parses_empty_onlyfile() {
 
 #[test]
 fn parses_minimal_document_shape() {
-    let source =
-        "!echo false\n!shell sh\nhello():\n    echo hello\n[tools]\nfmt():\n    cargo fmt\n";
+    let source = "!echo false\n!label false\n!shell sh\nhello():\n    echo hello\n[tools]\nfmt():\n    cargo fmt\n";
     let document = parse_onlyfile(source).expect("minimal document should parse");
 
     assert!(matches!(
@@ -240,6 +239,10 @@ fn parses_minimal_document_shape() {
     ));
     assert!(matches!(
         document.directives[1],
+        DirectiveAst::Label { value: false, .. }
+    ));
+    assert!(matches!(
+        document.directives[2],
         DirectiveAst::Shell { ref shell, .. } if shell == "sh"
     ));
     assert_eq!(
@@ -567,6 +570,36 @@ hello():
 
     let code = run_plan(&plan).expect("echo-enabled runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
+}
+
+#[test]
+fn can_hide_task_output_labels_without_affecting_progress() {
+    let _cwd_lock = cwd_lock();
+    let temp_dir = TempDir::new("label-false");
+    let onlyfile_path = temp_dir.path().join("Onlyfile");
+    fs::write(
+        &onlyfile_path,
+        "!echo true\n!label false\nhello():\n    echo hello\n",
+    )
+    .expect("Onlyfile should be written");
+
+    let output = Command::new(cli_binary_path())
+        .arg("hello")
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("CLI process should run");
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be valid utf-8");
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be valid utf-8");
+    let plain_stdout = strip_ansi(&stdout);
+    let plain_stderr = strip_ansi(&stderr);
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(plain_stdout.contains("hello"));
+    assert!(plain_stderr.contains("[task 1/1] hello"));
+    assert!(plain_stderr.contains("hello"));
+    assert!(!plain_stdout.contains("[hello]"));
+    assert!(!plain_stderr.contains("[hello]"));
 }
 
 #[test]

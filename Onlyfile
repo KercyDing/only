@@ -1,5 +1,6 @@
 !echo true
 !preview false
+!label false
 
 % Internal helper for release builds
 _release_build():

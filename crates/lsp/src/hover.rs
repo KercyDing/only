@@ -73,6 +73,9 @@ fn directive_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspH
             "preview" => {
                 "Controls preview mode. `true` prints the selected task variant and commands before execution; `false` runs tasks without the preview output.".to_string()
             }
+            "label" => {
+                "Controls task output labels. `true` prints `[task]`-style prefixes; `false` prints raw command output while keeping task progress lines.".to_string()
+            }
             "shell" => "Sets the default shell host used for task commands.".to_string(),
             _ => return None,
         };

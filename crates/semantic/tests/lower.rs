@@ -12,6 +12,17 @@ fn lowers_preview_directive() {
 }
 
 #[test]
+fn lowers_label_directive() {
+    let compiled = compile_document("!label false\nbuild():\n    echo ok\n");
+
+    assert!(compiled.diagnostics.is_empty());
+    assert!(matches!(
+        compiled.document.directives[0],
+        only_semantic::DirectiveAst::Label { value: false, .. }
+    ));
+}
+
+#[test]
 fn lowers_task_header_and_commands_into_ast() {
     let compiled = compile_document("build(tag=\"v1\"):\n    echo {{tag}}\n");
     let task = &compiled.document.tasks[0];
