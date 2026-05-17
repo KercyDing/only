@@ -66,6 +66,16 @@ fn exposes_structured_task_header_sections() {
 }
 
 #[test]
+fn exposes_exact_shell_assignment_in_task_header() {
+    let syntax = snapshot("probe() shell=powershell:\n    Write-Output ok\n");
+    let task = syntax.document().tasks().next().expect("task should exist");
+    let header = task.header_info();
+
+    assert_eq!(header.shell.as_deref(), Some("powershell"));
+    assert!(!header.shell_fallback);
+}
+
+#[test]
 fn exposes_dependency_ranges_for_hover_and_diagnostics() {
     let source = "ci() & (fmt, dev.build) & test shell?=bash:\n    echo ok\n";
     let syntax = snapshot(source);

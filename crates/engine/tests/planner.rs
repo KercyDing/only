@@ -96,6 +96,23 @@ fn carries_echo_label_shell_and_default_params_into_plan() {
 }
 
 #[test]
+fn carries_exact_task_shell_assignment_into_plan() {
+    let compiled = compile_document("probe() shell=powershell:\n    Write-Output ok\n");
+    let plan = build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "probe",
+            args: vec![],
+            overrides: vec![],
+        },
+    );
+
+    assert_eq!(plan.nodes.len(), 1);
+    assert_eq!(plan.nodes[0].shell.as_deref(), Some("powershell"));
+    assert!(!plan.nodes[0].shell_fallback);
+}
+
+#[test]
 fn binds_positional_and_named_parameter_inputs() {
     let compiled = compile_document("run(task, profile=\"dev\"):\n    echo {{task}} {{profile}}\n");
     let plan = try_build_execution_plan(

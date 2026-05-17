@@ -165,6 +165,16 @@ fn lowers_parameter_defaults_guard_and_shell() {
 }
 
 #[test]
+fn lowers_exact_task_shell_assignment() {
+    let compiled = compile_document("probe() shell=powershell:\n    Write-Output ok\n");
+
+    assert!(compiled.diagnostics.is_empty());
+    let task = &compiled.document.tasks[0];
+    assert_eq!(task.shell.as_deref(), Some("powershell"));
+    assert!(!task.shell_fallback);
+}
+
+#[test]
 fn reports_duplicate_task_definition() {
     let compiled = compile_document(concat!(
         "build(tag=\"v1\"):\n",

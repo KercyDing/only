@@ -455,6 +455,13 @@ enum HeaderPhase {
     Dependencies,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ShellExpectation {
+    None,
+    AllowEqOrName,
+    NeedName,
+}
+
 #[derive(Debug, Default)]
 struct PendingRef {
     name: String,
@@ -495,7 +502,7 @@ fn parse_task_header(node: &SyntaxNode) -> TaskHeaderInfo {
     let mut pending = PendingRef::default();
     let mut collector = String::new();
     let mut dependencies_started = false;
-    let mut shell_expecting_ident = false;
+    let mut shell_expectation = ShellExpectation::None;
 
     for token in node
         .children_with_tokens()
@@ -518,12 +525,22 @@ fn parse_task_header(node: &SyntaxNode) -> TaskHeaderInfo {
             continue;
         }
 
-        if shell_expecting_ident {
-            if kind == SyntaxKind::Ident {
-                info.shell = Some(SmolStr::new(token.text()));
+        if !matches!(shell_expectation, ShellExpectation::None) {
+            match (shell_expectation, kind) {
+                (_, SyntaxKind::Whitespace | SyntaxKind::Indent) => continue,
+                (ShellExpectation::AllowEqOrName, SyntaxKind::Eq) => {
+                    shell_expectation = ShellExpectation::NeedName;
+                    continue;
+                }
+                (_, SyntaxKind::Ident) => {
+                    info.shell = Some(SmolStr::new(token.text()));
+                    shell_expectation = ShellExpectation::None;
+                    continue;
+                }
+                _ => {
+                    shell_expectation = ShellExpectation::None;
+                }
             }
-            shell_expecting_ident = false;
-            continue;
         }
 
         match &mut phase {
@@ -543,9 +560,9 @@ fn parse_task_header(node: &SyntaxNode) -> TaskHeaderInfo {
                 }
                 SyntaxKind::ShellFallbackKw => {
                     info.shell_fallback = true;
-                    shell_expecting_ident = true;
+                    shell_expectation = ShellExpectation::NeedName;
                 }
-                SyntaxKind::ShellKw => shell_expecting_ident = true,
+                SyntaxKind::ShellKw => shell_expectation = ShellExpectation::AllowEqOrName,
                 _ => {}
             },
             HeaderPhase::Params { depth } => match kind {
@@ -603,7 +620,7 @@ fn parse_task_header(node: &SyntaxNode) -> TaskHeaderInfo {
                     }
                     collector.clear();
                     info.shell_fallback = true;
-                    shell_expecting_ident = true;
+                    shell_expectation = ShellExpectation::NeedName;
                     phase = HeaderPhase::BeforeTail;
                 }
                 SyntaxKind::ShellKw => {
@@ -612,7 +629,7 @@ fn parse_task_header(node: &SyntaxNode) -> TaskHeaderInfo {
                         info.guard = Some(SmolStr::new(trimmed));
                     }
                     collector.clear();
-                    shell_expecting_ident = true;
+                    shell_expectation = ShellExpectation::AllowEqOrName;
                     phase = HeaderPhase::BeforeTail;
                 }
                 _ => collector.push_str(token.text()),
@@ -654,7 +671,7 @@ fn parse_task_header(node: &SyntaxNode) -> TaskHeaderInfo {
                     }
                     collector.clear();
                     info.shell_fallback = true;
-                    shell_expecting_ident = true;
+                    shell_expectation = ShellExpectation::NeedName;
                     phase = HeaderPhase::BeforeTail;
                 }
                 SyntaxKind::ShellKw if group_depth == 0 => {
@@ -664,7 +681,7 @@ fn parse_task_header(node: &SyntaxNode) -> TaskHeaderInfo {
                         info.dependencies = Some(SmolStr::new(trimmed));
                     }
                     collector.clear();
-                    shell_expecting_ident = true;
+                    shell_expectation = ShellExpectation::AllowEqOrName;
                     phase = HeaderPhase::BeforeTail;
                 }
                 SyntaxKind::Whitespace | SyntaxKind::Indent => {
