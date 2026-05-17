@@ -16,19 +16,26 @@ $installDir = if ($env:ONLY_INSTALL_DIR) { $env:ONLY_INSTALL_DIR } else { Join-P
 $installPath = Join-Path $installDir "only.exe"
 
 $arch = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
-if ($arch -ne [System.Runtime.InteropServices.Architecture]::X64) {
-    Write-Host "Error: unsupported Windows architecture: $arch" -ForegroundColor Red
-    exit 1
+$binary = switch ($arch) {
+    ([System.Runtime.InteropServices.Architecture]::X64) { "only-windows-amd64.exe" }
+    ([System.Runtime.InteropServices.Architecture]::Arm64) { "only-windows-arm64.exe" }
+    default {
+        Write-Host "Error: unsupported Windows architecture: $arch" -ForegroundColor Red
+        exit 1
+    }
 }
-
-$binary = "only-windows-amd64.exe"
+$displayArch = switch ($arch) {
+    ([System.Runtime.InteropServices.Architecture]::X64) { "x64" }
+    ([System.Runtime.InteropServices.Architecture]::Arm64) { "ARM64" }
+    default { "$arch" }
+}
 if ($version -eq "latest") {
     $downloadUrl = "https://github.com/$repo/releases/latest/download/$binary"
 } else {
     $downloadUrl = "https://github.com/$repo/releases/download/$version/$binary"
 }
 
-Write-Host "Downloading only for Windows x64..." -ForegroundColor Green
+Write-Host "Downloading only for Windows $displayArch..." -ForegroundColor Green
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 
 try {

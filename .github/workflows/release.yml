@@ -18,15 +18,21 @@ jobs:
           - target: x86_64-unknown-linux-musl
             runner: ubuntu-22.04
             suffix: linux-amd64
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-22.04
+            suffix: linux-arm64
           - target: x86_64-apple-darwin
-            runner: macos-latest
+            runner: macos-15-intel
             suffix: darwin-amd64
           - target: aarch64-apple-darwin
-            runner: macos-latest
+            runner: macos-15
             suffix: darwin-arm64
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
             suffix: windows-amd64
+          - target: aarch64-pc-windows-msvc
+            runner: windows-latest
+            suffix: windows-arm64
 
     runs-on: ${{ matrix.runner }}
 
@@ -46,8 +52,14 @@ jobs:
         if: matrix.target == 'x86_64-unknown-linux-musl'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
+      - name: Install Linux ARM64 linker
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
       - name: Build release binary
         run: cargo build --release --bin only --target ${{ matrix.target }} --locked
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
 
       - name: Rename artifact (unix)
         if: runner.os != 'Windows'

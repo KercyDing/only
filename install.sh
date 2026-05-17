@@ -14,6 +14,9 @@ case "$OS" in
             x86_64 | amd64)
                 BINARY="only-linux-amd64"
                 ;;
+            arm64 | aarch64)
+                BINARY="only-linux-arm64"
+                ;;
             *)
                 echo "Error: unsupported Linux architecture: $ARCH"
                 exit 1

@@ -62,6 +62,7 @@ fn latest_download_url(binary: &str) -> String {
 fn current_platform_binary() -> Result<&'static str> {
     match env::consts::ARCH {
         "x86_64" => Ok("only-windows-amd64.exe"),
+        "aarch64" => Ok("only-windows-arm64.exe"),
         arch => Err(OnlyError::runtime(format!(
             "unsupported Windows architecture: {arch}"
         ))),
@@ -72,6 +73,7 @@ fn current_platform_binary() -> Result<&'static str> {
 fn current_platform_binary() -> Result<&'static str> {
     match (env::consts::OS, env::consts::ARCH) {
         ("linux", "x86_64") => Ok("only-linux-amd64"),
+        ("linux", "aarch64") => Ok("only-linux-arm64"),
         ("macos", "x86_64") => Ok("only-darwin-amd64"),
         ("macos", "aarch64") => Ok("only-darwin-arm64"),
         (os, arch) => Err(OnlyError::runtime(format!(
