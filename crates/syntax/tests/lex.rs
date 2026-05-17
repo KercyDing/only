@@ -19,3 +19,18 @@ fn keeps_comment_and_unknown_tokens() {
     assert!(tokens.iter().any(|token| token.kind == SyntaxKind::Comment));
     assert!(tokens.iter().any(|token| token.kind == SyntaxKind::At));
 }
+
+#[test]
+fn lexes_crlf_as_newlines_without_unknown_tokens() {
+    let tokens = lex("!echo true\r\n\r\nbuild():\r\n    echo hi\r\n");
+    let kinds: Vec<_> = tokens.iter().map(|token| token.kind).collect();
+
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::Newline)
+            .count(),
+        4
+    );
+    assert!(!kinds.contains(&SyntaxKind::Unknown));
+}

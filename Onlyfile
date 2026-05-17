@@ -25,10 +25,17 @@ ci() & check & test:
 
 % Install the local only binary
 install() ? @os("windows") & _release_build shell?=pwsh:
-    Write-Output "Windows: cannot replace running binary. Run:`n  Copy-Item target/release/only.exe -Destination `$env:USERPROFILE\.cargo\bin\ -Force"
+    New-Item -ItemType Directory -Force -Path (Join-Path $env:LOCALAPPDATA "Programs\Only") | Out-Null
+    Copy-Item target/release/only.exe -Destination (Join-Path $env:TEMP "only-install-staged.exe") -Force
+    $parentPid = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId; $shellPath = (Get-Process -Id $PID).Path; $stagedPath = Join-Path $env:TEMP "only-install-staged.exe"; $installPath = Join-Path $env:LOCALAPPDATA "Programs\Only\only.exe"; $script = "Wait-Process -Id $parentPid; Copy-Item -LiteralPath '$stagedPath' -Destination '$installPath' -Force; Remove-Item -LiteralPath '$stagedPath' -Force"; $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script)); Start-Process -WindowStyle Hidden -FilePath $shellPath -ArgumentList "-NoProfile", "-EncodedCommand", $encoded
+    Write-Output "Install will complete after this only process exits: $(Join-Path $env:LOCALAPPDATA "Programs\Only\only.exe")"
 
-install():
-    cargo install --path crates/cli --force
+install() & _release_build shell?=bash:
+    mkdir -p "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")"
+    cp target/release/only "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/only"
+    chmod +x "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/only"
+    echo "Installed only to $([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/only"
+    "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/only" --version
 
 % Development builds
 [dev]

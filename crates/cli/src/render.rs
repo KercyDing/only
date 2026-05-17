@@ -14,6 +14,7 @@ use std::collections::HashSet;
 /// Base clap command with host-level options.
 pub fn build_global_cli() -> Command {
     Command::new("only")
+        .bin_name("only")
         .about("A minimalist, deterministic task runner")
         .version(env!("CARGO_PKG_VERSION"))
         .styles(cli_styles())

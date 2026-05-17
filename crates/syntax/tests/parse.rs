@@ -12,6 +12,16 @@ fn parses_document_with_directive_task_and_namespace() {
 }
 
 #[test]
+fn parses_document_with_crlf_line_endings() {
+    let parsed = parse("!echo true\r\n\r\nbuild():\r\n    echo hi\r\n");
+    let kinds: Vec<_> = parsed.root_children().map(|node| node.kind()).collect();
+
+    assert!(kinds.contains(&SyntaxKind::Directive));
+    assert!(kinds.contains(&SyntaxKind::TaskDecl));
+    assert!(parsed.diagnostics().is_empty());
+}
+
+#[test]
 fn recovers_after_broken_task_header() {
     let parsed = parse("broken(\nnext():\n    echo next\n");
     let task_count = parsed

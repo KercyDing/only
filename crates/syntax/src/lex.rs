@@ -40,7 +40,7 @@ enum RawTokenKind {
     Comment,
     #[regex(r"[ ]+")]
     Spaces,
-    #[token("\n")]
+    #[regex(r"\r\n|\n|\r")]
     Newline,
 }
 
