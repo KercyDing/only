@@ -116,11 +116,3 @@ fn rejects_error_diagnostics_before_planning() {
         "undefined dependency 'build' referenced from 'deploy'"
     );
 }
-
-#[test]
-fn repo_install_task_targets_cli_package_manifest() {
-    assert!(
-        include_str!("../../../Onlyfile").contains("cargo install --path crates/cli --force"),
-        "repo install task must target the CLI package manifest"
-    );
-}

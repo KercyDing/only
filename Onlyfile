@@ -32,8 +32,9 @@ install() ? @os("windows") & _release_build shell?=pwsh:
 
 install() & _release_build shell?=bash:
     mkdir -p "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")"
-    cp target/release/only "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/only"
-    chmod +x "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/only"
+    cp target/release/only "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/.only-install"
+    chmod +x "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/.only-install"
+    mv -f "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/.only-install" "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/only"
     echo "Installed only to $([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/only"
     "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/only" --version
 
