@@ -8,7 +8,7 @@ documentation.workspace = true
 description = "Semantic analysis for the only task language."
 
 [dependencies]
-only-diagnostic = { version = "0.0.4", path = "../diagnostic" }
-only-syntax = { version = "0.0.4", path = "../syntax" }
+only-diagnostic = { version = "0.0.5", path = "../diagnostic" }
+only-syntax = { version = "0.0.5", path = "../syntax" }
 smol_str.workspace = true
 text-size.workspace = true

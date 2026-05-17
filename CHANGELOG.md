@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.0.5 - 2026-05-17
+
+- Added `only --update` and `only --upgrade` for GitHub release based self updates.
+- Expanded release artifacts to Linux, macOS, and Windows on x64 and ARM64.
+- Fixed self-update replacement behavior and clarified Unix install errors.
+
 ## 0.0.4 - 2026-05-17
 
 - Added the `!label` directive so command output labels can be disabled.

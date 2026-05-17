@@ -8,9 +8,9 @@ documentation.workspace = true
 description = "Language Server Protocol support for the only task language."
 
 [dependencies]
-only-diagnostic = { version = "0.0.4", path = "../diagnostic" }
-only-semantic = { version = "0.0.4", path = "../semantic" }
-only-syntax = { version = "0.0.4", path = "../syntax" }
+only-diagnostic = { version = "0.0.5", path = "../diagnostic" }
+only-semantic = { version = "0.0.5", path = "../semantic" }
+only-syntax = { version = "0.0.5", path = "../syntax" }
 text-size.workspace = true
 tokio = { workspace = true, features = ["io-std", "macros", "rt-multi-thread"] }
 tower-lsp = "0.20"
