@@ -46,6 +46,20 @@ That is the core idea: a readable task file, parameters when you need them, depe
 
 ## Install
 
+From the latest GitHub release:
+
+```shell
+curl -fsSL https://raw.githubusercontent.com/KercyDing/only/master/install.sh | sh
+```
+
+On Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/KercyDing/only/master/install.ps1 | iex
+```
+
+From crates.io:
+
 ```shell
 cargo install only
 ```
