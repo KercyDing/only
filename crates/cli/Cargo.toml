@@ -26,4 +26,5 @@ miette.workspace = true
 only-diagnostic = { version = "0.0.4", path = "../diagnostic" }
 only-engine = { version = "0.0.4", path = "../engine" }
 only-semantic = { version = "0.0.4", path = "../semantic" }
+self-replace.workspace = true
 tokio.workspace = true

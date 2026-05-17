@@ -7,12 +7,13 @@
 //! Platform-specific download and install helpers used by the CLI.
 //!
 //! Edge Cases:
-//! Windows defers replacement until the current process exits because a running executable is
-//! locked by the OS.
+//! Installed binaries replace themselves in place; ad hoc binaries copy into the install path.
 
 use crate::error::{OnlyError, Result};
+use self_replace::self_replace;
 use std::env;
 use std::fs;
+use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
 
@@ -31,10 +32,11 @@ struct UpgradePlan {
 /// None.
 ///
 /// Returns:
-/// Success when the upgrade is applied or scheduled.
+/// Success when the upgrade is applied or copied into place.
 ///
 /// Edge Cases:
-/// On Windows the final copy is run by a detached PowerShell process after this process exits.
+/// Self-update uses the running install path when available and falls back to a normal copy
+/// otherwise.
 pub(crate) fn run_upgrade() -> Result<ExitCode> {
     let plan = build_upgrade_plan()?;
     execute_upgrade(&plan)?;
@@ -44,7 +46,7 @@ pub(crate) fn run_upgrade() -> Result<ExitCode> {
 fn build_upgrade_plan() -> Result<UpgradePlan> {
     let binary = current_platform_binary()?;
     let download_url = latest_download_url(binary);
-    let install_path = default_install_path()?;
+    let install_path = upgrade_install_path()?;
     let staged_path = staged_path_for(&install_path)?;
 
     Ok(UpgradePlan {
@@ -105,6 +107,43 @@ fn default_install_path() -> Result<PathBuf> {
 }
 
 #[cfg(windows)]
+fn upgrade_install_path() -> Result<PathBuf> {
+    default_install_path()
+}
+
+#[cfg(unix)]
+fn upgrade_install_path() -> Result<PathBuf> {
+    if let Ok(current_exe) = env::current_exe()
+        && is_unix_install_path(&current_exe)
+    {
+        return Ok(current_exe);
+    }
+
+    default_install_path()
+}
+
+#[cfg(unix)]
+fn is_unix_install_path(path: &Path) -> bool {
+    if path.file_name().and_then(|name| name.to_str()) != Some("only") {
+        return false;
+    }
+
+    let Some(parent) = path.parent() else {
+        return false;
+    };
+
+    if parent == Path::new("/usr/local/bin") {
+        return true;
+    }
+
+    let Some(home) = env::var_os("HOME") else {
+        return false;
+    };
+
+    parent == PathBuf::from(home).join(".local").join("bin")
+}
+
+#[cfg(windows)]
 fn staged_path_for(_install_path: &Path) -> Result<PathBuf> {
     Ok(env::temp_dir().join(format!("only-upgrade-{}.exe", std::process::id())))
 }
@@ -137,13 +176,14 @@ fn execute_upgrade(plan: &UpgradePlan) -> Result<()> {
         return Ok(());
     }
 
+    ensure_directory_writable(install_dir, &plan.install_path)?;
     print_download_summary(plan);
     download_with_windows_tool(&plan.download_url, &plan.staged_path)?;
-    let installed_version = binary_version(&plan.staged_path)?;
 
     if current_exe_is_install_path(&plan.install_path) {
-        let powershell = find_windows_powershell()?;
-        schedule_windows_replacement(&powershell, &plan.staged_path, &plan.install_path)?;
+        self_replace(&plan.staged_path).map_err(|error| {
+            OnlyError::runtime(format!("failed to replace running binary: {error}"))
+        })?;
     } else {
         fs::copy(&plan.staged_path, &plan.install_path).map_err(|error| {
             OnlyError::io_with_path(
@@ -152,16 +192,17 @@ fn execute_upgrade(plan: &UpgradePlan) -> Result<()> {
                 error,
             )
         })?;
-        fs::remove_file(&plan.staged_path).map_err(|error| {
-            OnlyError::io_with_path(
-                "failed to remove staged binary",
-                plan.staged_path.clone(),
-                error,
-            )
-        })?;
     }
 
-    print_upgrade_done(&installed_version);
+    fs::remove_file(&plan.staged_path).map_err(|error| {
+        OnlyError::io_with_path(
+            "failed to remove staged binary",
+            plan.staged_path.clone(),
+            error,
+        )
+    })?;
+
+    print_upgrade_done(normalize_version(&latest_version));
     Ok(())
 }
 
@@ -185,19 +226,32 @@ fn execute_upgrade(plan: &UpgradePlan) -> Result<()> {
         return Ok(());
     }
 
+    ensure_directory_writable(install_dir, &plan.install_path)?;
     print_download_summary(plan);
     download_with_system_tool(&plan.download_url, &plan.staged_path)?;
-    let installed_version = binary_version(&plan.staged_path)?;
     make_executable(&plan.staged_path)?;
-    fs::rename(&plan.staged_path, &plan.install_path).map_err(|error| {
+    if current_exe_is_install_path(&plan.install_path) {
+        self_replace(&plan.staged_path).map_err(|error| {
+            OnlyError::runtime(format!("failed to replace running binary: {error}"))
+        })?;
+    } else {
+        fs::copy(&plan.staged_path, &plan.install_path).map_err(|error| {
+            OnlyError::io_with_path(
+                "failed to install upgraded binary",
+                plan.install_path.clone(),
+                error,
+            )
+        })?;
+    }
+    fs::remove_file(&plan.staged_path).map_err(|error| {
         OnlyError::io_with_path(
-            "failed to install upgraded binary",
-            plan.install_path.clone(),
+            "failed to remove staged binary",
+            plan.staged_path.clone(),
             error,
         )
     })?;
 
-    print_upgrade_done(&installed_version);
+    print_upgrade_done(normalize_version(&latest_version));
     Ok(())
 }
 
@@ -209,23 +263,6 @@ fn print_download_summary(plan: &UpgradePlan) {
 fn print_upgrade_done(installed_version: &str) {
     println!("{} -> {installed_version}", env!("CARGO_PKG_VERSION"));
     println!("Done.");
-}
-
-fn binary_version(path: &Path) -> Result<String> {
-    let output = Command::new(path)
-        .arg("--version")
-        .output()
-        .map_err(|error| {
-            OnlyError::runtime(format!("failed to read downloaded binary version: {error}"))
-        })?;
-
-    if !output.status.success() {
-        return Err(OnlyError::runtime(
-            "downloaded binary did not report its version",
-        ));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
 fn fetch_latest_version() -> Result<String> {
@@ -275,7 +312,7 @@ fn fetch_url_text(url: &str) -> Result<String> {
         return run_text_command("curl.exe", &["-fsSL", url]);
     }
 
-    let powershell = find_windows_powershell()?;
+    let powershell = windows_powershell_command()?;
     let script = format!(
         "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri {} -UseBasicParsing | Select-Object -ExpandProperty Content",
         ps_literal(url),
@@ -321,7 +358,6 @@ fn run_text_command(command: &str, args: &[&str]) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
-#[cfg(windows)]
 fn current_exe_is_install_path(install_path: &Path) -> bool {
     let Ok(current_exe) = env::current_exe() else {
         return true;
@@ -330,26 +366,11 @@ fn current_exe_is_install_path(install_path: &Path) -> bool {
     paths_equal(&current_exe, install_path)
 }
 
-#[cfg(windows)]
 fn paths_equal(left: &Path, right: &Path) -> bool {
     let left = fs::canonicalize(left).unwrap_or_else(|_| left.to_path_buf());
     let right = fs::canonicalize(right).unwrap_or_else(|_| right.to_path_buf());
     left.as_os_str().to_string_lossy().to_lowercase()
         == right.as_os_str().to_string_lossy().to_lowercase()
-}
-
-#[cfg(windows)]
-fn find_windows_powershell() -> Result<String> {
-    if command_exists("pwsh.exe") {
-        return Ok("pwsh.exe".to_string());
-    }
-    if command_exists("powershell.exe") {
-        return Ok("powershell.exe".to_string());
-    }
-
-    Err(OnlyError::runtime(
-        "PowerShell is required to download the upgrade",
-    ))
 }
 
 #[cfg(windows)]
@@ -363,7 +384,7 @@ fn download_with_windows_tool(url: &str, output: &Path) -> Result<()> {
         );
     }
 
-    let powershell = find_windows_powershell()?;
+    let powershell = windows_powershell_command()?;
     download_with_powershell(&powershell, url, output)
 }
 
@@ -387,82 +408,6 @@ fn download_with_powershell(powershell: &str, url: &str, output: &Path) -> Resul
             "failed to download only from {url}"
         )))
     }
-}
-
-#[cfg(windows)]
-fn schedule_windows_replacement(
-    powershell: &str,
-    staged: &Path,
-    install_path: &Path,
-) -> Result<()> {
-    use std::os::windows::process::CommandExt;
-
-    const CREATE_NO_WINDOW: u32 = 0x08000000;
-
-    let script = format!(
-        "$ErrorActionPreference = 'Stop'; Wait-Process -Id {}; Copy-Item -LiteralPath {} -Destination {} -Force; Remove-Item -LiteralPath {} -Force",
-        std::process::id(),
-        ps_literal_path(staged),
-        ps_literal_path(install_path),
-        ps_literal_path(staged),
-    );
-    let encoded = encode_powershell_command(&script);
-
-    Command::new(powershell)
-        .args([
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-EncodedCommand",
-        ])
-        .arg(encoded)
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn()
-        .map_err(|error| OnlyError::runtime(format!("failed to schedule upgrade: {error}")))?;
-
-    Ok(())
-}
-
-#[cfg(windows)]
-fn ps_literal_path(path: &Path) -> String {
-    ps_literal(&path.display().to_string())
-}
-
-#[cfg(windows)]
-fn ps_literal(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "''"))
-}
-
-#[cfg(windows)]
-fn encode_powershell_command(script: &str) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let bytes = script
-        .encode_utf16()
-        .flat_map(u16::to_le_bytes)
-        .collect::<Vec<_>>();
-    let mut encoded = String::with_capacity(bytes.len().div_ceil(3) * 4);
-
-    for chunk in bytes.chunks(3) {
-        let b0 = chunk[0];
-        let b1 = *chunk.get(1).unwrap_or(&0);
-        let b2 = *chunk.get(2).unwrap_or(&0);
-        let n = ((b0 as u32) << 16) | ((b1 as u32) << 8) | b2 as u32;
-
-        encoded.push(TABLE[((n >> 18) & 0x3f) as usize] as char);
-        encoded.push(TABLE[((n >> 12) & 0x3f) as usize] as char);
-        if chunk.len() > 1 {
-            encoded.push(TABLE[((n >> 6) & 0x3f) as usize] as char);
-        } else {
-            encoded.push('=');
-        }
-        if chunk.len() > 2 {
-            encoded.push(TABLE[(n & 0x3f) as usize] as char);
-        } else {
-            encoded.push('=');
-        }
-    }
-
-    encoded
 }
 
 #[cfg(unix)]
@@ -493,6 +438,53 @@ fn run_download_command(command: &str, args: &[&str], output: &Path, url: &str) 
             "failed to download only from {url}"
         )))
     }
+}
+
+fn ensure_directory_writable(path: &Path, install_path: &Path) -> Result<()> {
+    let probe = path.join(format!(".only-write-test-{}", std::process::id()));
+    match OpenOptions::new().write(true).create_new(true).open(&probe) {
+        Ok(_) => {
+            let _ = fs::remove_file(&probe);
+            Ok(())
+        }
+        Err(error) => Err(OnlyError::io_with_path(
+            install_not_writable_message(path, install_path),
+            path.to_path_buf(),
+            error,
+        )),
+    }
+}
+
+fn install_not_writable_message(path: &Path, install_path: &Path) -> &'static str {
+    if path == Path::new("/usr/local/bin") && install_path == Path::new("/usr/local/bin/only") {
+        "current install path is not writable; reinstall with sudo"
+    } else {
+        "install directory is not writable"
+    }
+}
+
+#[cfg(windows)]
+fn windows_powershell_command() -> Result<&'static str> {
+    if command_exists("pwsh.exe") {
+        return Ok("pwsh.exe");
+    }
+    if command_exists("powershell.exe") {
+        return Ok("powershell.exe");
+    }
+
+    Err(OnlyError::runtime(
+        "PowerShell is required to download the upgrade",
+    ))
+}
+
+#[cfg(windows)]
+fn ps_literal_path(path: &Path) -> String {
+    ps_literal(&path.display().to_string())
+}
+
+#[cfg(windows)]
+fn ps_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
 }
 
 #[cfg(unix)]
@@ -544,7 +536,11 @@ fn command_exists(command: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(unix)]
+    use super::is_unix_install_path;
     use super::{current_version_matches, latest_download_url, parse_latest_release_tag};
+    #[cfg(unix)]
+    use std::path::Path;
 
     #[test]
     fn builds_latest_github_download_url() {
@@ -570,5 +566,11 @@ mod tests {
             "v",
             env!("CARGO_PKG_VERSION")
         )));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn recognizes_common_unix_install_paths() {
+        assert!(is_unix_install_path(Path::new("/usr/local/bin/only")));
     }
 }
