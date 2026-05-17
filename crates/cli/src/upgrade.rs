@@ -171,7 +171,7 @@ fn execute_upgrade(plan: &UpgradePlan) -> Result<()> {
     })?;
 
     let latest_version = fetch_latest_version()?;
-    if current_version_matches(&latest_version) {
+    if compare_versions(env!("CARGO_PKG_VERSION"), &latest_version)? != VersionOrder::Older {
         println!("Already up to date.");
         return Ok(());
     }
@@ -221,7 +221,7 @@ fn execute_upgrade(plan: &UpgradePlan) -> Result<()> {
     })?;
 
     let latest_version = fetch_latest_version()?;
-    if current_version_matches(&latest_version) {
+    if compare_versions(env!("CARGO_PKG_VERSION"), &latest_version)? != VersionOrder::Older {
         println!("Already up to date.");
         return Ok(());
     }
@@ -271,12 +271,57 @@ fn fetch_latest_version() -> Result<String> {
     parse_latest_release_tag(&body)
 }
 
-fn current_version_matches(latest_version: &str) -> bool {
-    normalize_version(env!("CARGO_PKG_VERSION")) == normalize_version(latest_version)
-}
-
 fn normalize_version(version: &str) -> &str {
     version.trim().trim_start_matches('v')
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum VersionOrder {
+    Older,
+    Equal,
+    Newer,
+}
+
+fn compare_versions(current: &str, latest: &str) -> Result<VersionOrder> {
+    let current = parse_version_parts(current)?;
+    let latest = parse_version_parts(latest)?;
+
+    Ok(match current.cmp(&latest) {
+        std::cmp::Ordering::Less => VersionOrder::Older,
+        std::cmp::Ordering::Equal => VersionOrder::Equal,
+        std::cmp::Ordering::Greater => VersionOrder::Newer,
+    })
+}
+
+fn parse_version_parts(version: &str) -> Result<(u64, u64, u64)> {
+    let normalized = normalize_version(version);
+    let mut parts = normalized.split('.');
+
+    let major = parse_version_component(parts.next(), version, "major")?;
+    let minor = parse_version_component(parts.next(), version, "minor")?;
+    let patch = parse_version_component(parts.next(), version, "patch")?;
+
+    if parts.next().is_some() {
+        return Err(OnlyError::runtime(format!(
+            "unsupported release version '{version}'; expected MAJOR.MINOR.PATCH"
+        )));
+    }
+
+    Ok((major, minor, patch))
+}
+
+fn parse_version_component(component: Option<&str>, version: &str, label: &str) -> Result<u64> {
+    let Some(component) = component else {
+        return Err(OnlyError::runtime(format!(
+            "unsupported release version '{version}'; missing {label} component"
+        )));
+    };
+
+    component.parse::<u64>().map_err(|_| {
+        OnlyError::runtime(format!(
+            "unsupported release version '{version}'; invalid {label} component"
+        ))
+    })
 }
 
 fn parse_latest_release_tag(body: &str) -> Result<String> {
@@ -318,7 +363,7 @@ fn fetch_url_text(url: &str) -> Result<String> {
         ps_literal(url),
     );
     run_text_command(
-        &powershell,
+        powershell,
         &[
             "-NoProfile",
             "-ExecutionPolicy",
@@ -385,7 +430,7 @@ fn download_with_windows_tool(url: &str, output: &Path) -> Result<()> {
     }
 
     let powershell = windows_powershell_command()?;
-    download_with_powershell(&powershell, url, output)
+    download_with_powershell(powershell, url, output)
 }
 
 #[cfg(windows)]
@@ -538,7 +583,7 @@ fn command_exists(command: &str) -> bool {
 mod tests {
     #[cfg(unix)]
     use super::is_unix_install_path;
-    use super::{current_version_matches, latest_download_url, parse_latest_release_tag};
+    use super::{VersionOrder, compare_versions, latest_download_url, parse_latest_release_tag};
     #[cfg(unix)]
     use std::path::Path;
 
@@ -561,11 +606,19 @@ mod tests {
     }
 
     #[test]
-    fn matches_current_version_with_optional_v_prefix() {
-        assert!(current_version_matches(concat!(
-            "v",
-            env!("CARGO_PKG_VERSION")
-        )));
+    fn parses_version_order_with_optional_v_prefix() {
+        assert_eq!(
+            compare_versions("v1.2.3", "1.2.3").expect("versions should parse"),
+            VersionOrder::Equal
+        );
+    }
+
+    #[test]
+    fn rejects_downgrade_as_newer_local_version() {
+        assert_eq!(
+            compare_versions("1.2.4", "1.2.3").expect("versions should parse"),
+            VersionOrder::Newer
+        );
     }
 
     #[cfg(unix)]
