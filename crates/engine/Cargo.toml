@@ -10,5 +10,5 @@ description = "Execution planning and runtime engine for only tasks."
 [dependencies]
 anstyle.workspace = true
 deno_task_shell.workspace = true
-only-semantic = { version = "0.0.3", path = "../semantic" }
+only-semantic = { version = "0.0.4", path = "../semantic" }
 tokio.workspace = true

@@ -9,7 +9,7 @@ description = "Syntax parsing and CST construction for the only task language."
 
 [dependencies]
 logos.workspace = true
-only-diagnostic = { version = "0.0.3", path = "../diagnostic" }
+only-diagnostic = { version = "0.0.4", path = "../diagnostic" }
 rowan.workspace = true
 smol_str.workspace = true
 text-size.workspace = true

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.4 - 2026-05-17
+
+- Added the `!label` directive so command output labels can be disabled.
+- Refreshed README, usage docs, and examples with the current directive and comment behavior.
+- Tuned release profile settings to reduce binary size.
+- Updated crate publish metadata and refreshed Cargo dependencies.
+
 ## 0.0.3 - 2026-04-23
 
 - Rebuilt `only` as a multi-crate workspace with a clearer language pipeline.
