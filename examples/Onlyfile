@@ -1,72 +1,49 @@
 !echo true
-!preview true
+!preview false
 
-% List directory contents
-ls() ? @os("linux") shell=sh:
-    ls -la
+% Say hello with an optional name.
+hello(name="world"):
+    echo "hello, {{name}}"
 
-ls() ? @os("macos") shell?=bash:
-    ls -la
+% Start a local service with configurable bind settings.
+serve(port="3000", host="127.0.0.1"):
+    echo "Serving on http://{{host}}:{{port}}"
 
-ls() ? @os("windows") shell?=pwsh:
-    Get-ChildItem -Force
+% Format the workspace.
+fmt():
+    cargo fmt --all --check
 
-ls():
-    ls -la
+% Check the workspace.
+check():
+    cargo check --workspace
+    cargo clippy --workspace -- -D warnings
 
-% Clean build artifacts
-clean() ? @os("windows") shell?=pwsh:
-    cargo clean
-    Remove-Item -Recurse -Force ../dist -ErrorAction SilentlyContinue
+% Run tests with nextest when it is installed.
+test() ? @has("cargo-nextest"):
+    cargo nextest run
 
-clean():
-    cargo clean
-    rm -rf ../dist
+test():
+    cargo test --workspace
 
-% Hidden helper tasks can be reused as dependencies without appearing in help output.
-_prepare_dist() ? @os("windows") shell?=pwsh:
-    New-Item -ItemType Directory -Force ../dist | Out-Null
-
-_prepare_dist():
-    mkdir -p ../dist
-
-% Build project
-build() ? @os("windows") shell?=pwsh:
-    cargo build --release
-
+% Build the release binary.
 build():
     cargo build --release
 
-% Run tests
-test():
-    cargo test
+% Hidden helper used by release packaging tasks.
+_prepare_dist():
+    mkdir -p ../dist
 
-% Package the built binary
+% Package the release binary.
 package() ? @os("windows") & build & _prepare_dist shell?=pwsh:
     Copy-Item ../target/release/only.exe ../dist/only.exe -Force
 
 package() & build & _prepare_dist:
     cp ../target/release/only ../dist/only
 
-% Smoke-test the release binary
-smoke() ? @os("windows") & build shell?=pwsh:
-    ../target/release/only.exe --version
+% Run the normal local verification workflow.
+ci() & fmt & check & test:
+    echo "CI complete"
 
-smoke() & build:
-    ../target/release/only --version
-
-% Run all tasks
-all() & clean & build & test:
-    echo "✅ All tasks completed"
-
-% Build once, then package and smoke-test in parallel
-release() & clean & build & (package, smoke):
-    echo "✅ Release artifacts packaged and verified"
-
-% Lightweight preview demo for helper task selection.
-_demo_prepare():
-    printf 'demo helper\n'
-
-% Demonstrate preview output and helper-task dependencies.
-demo() & _demo_prepare:
-    printf 'demo run\n'
+% Build and package after CI passes.
+release() & ci & package:
+    echo "Release ready in dist/"

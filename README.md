@@ -3,21 +3,15 @@
 [![crates.io](https://img.shields.io/crates/v/only.svg)](https://crates.io/crates/only)
 [![license](https://img.shields.io/crates/l/only.svg)](LICENSE)
 
-**One `Onlyfile`. One behavior. Every platform.**
+**One `Onlyfile`. Same behavior everywhere.**
 
-Only is a cross-platform task runner built around a real task language.
+`only` is a small task runner for projects that need to work the same on macOS, Linux, and Windows.
 
-Write tasks once, keep one execution model, and get predictable results on **macOS, Linux, and Windows**.
-
-- **Cross-platform by default** — no Git Bash, no `if os()` hacks, no `platforms:` boilerplate
-- **A better task language** — readable task syntax with parameters, guards, serial and parallel dependencies, helper tasks, directives, namespaces, and interpolation
-- **Built for tooling** — the same core model can power execution, diagnostics, editor features, and future visual workflows
+Write this once:
 
 ```Onlyfile
-!preview true
-
-_prepare():
-    cargo fmt --all --check
+serve(port="3000", host="127.0.0.1"):
+    echo "Serving on {{host}}:{{port}}"
 
 check():
     cargo check
@@ -25,200 +19,48 @@ check():
 test():
     cargo test
 
-ci() & _prepare & check & test:
-    echo "CI complete"
-
-release() & build & (package, publish):
-    echo "Release done"
-```
-
-Run `only`, `only check`, or `only ci`, and you're off.
-
----
-
-## Why It Works 🧠
-
-`only` treats `Onlyfile` as a real language, not just a thin wrapper around shell commands.
-
-Parsing, validation, planning, and execution are kept as separate stages. That keeps terminal errors readable today and leaves room for editor tooling, language-server features, and future visual workflows without rebuilding the core model later.
-
-The execution path is intentionally simple:
-
-```text
-source -> syntax -> semantic -> engine -> cli
-```
-
-In practice, that means one source of truth for task structure, diagnostics, interpolation, dependency planning, and host integrations.
-
----
-
-## Quick Start ⚡
-
-Create an `Onlyfile` in your project root:
-
-```Onlyfile
-!echo true
-!preview false
-
-% Internal helper for release builds.
-_release_build():
-    cargo build --release
-
-% Run cargo check.
-check():
-    cargo check
-    cargo fmt --all --check
-    cargo clippy --workspace -- -D warnings
-
-% Run the full test suite.
-test() ? @has("cargo-nextest"):
-    cargo nextest run
-
-test():
-    cargo test
-
-% Run formatter, type checks, and tests.
 ci() & check & test:
-    echo "CI complete!"
-
-% Run release steps after build, then package and publish in parallel.
-release() & build & (package, publish):
-    echo "Release complete!"
-
-[dev]
-% Build in development mode.
-build():
-    cargo build
-
-[rel]
-% Build in release mode.
-build():
-    cargo build --release
+    echo "done"
 ```
 
-Then run:
+Run it like this:
 
 ```shell
-only                # list all tasks
-only check
-only test
-only dev build
-only rel build
+only
+only serve
+only serve 8080
+only --set host=0.0.0.0 serve 8080
+only ci
 ```
 
-You can also document a namespace by placing `%` on the line immediately above it:
+That is the core idea: a readable task file, parameters when you need them, dependencies when tasks grow, and no per-platform shell surprises.
 
-```Onlyfile
-% Developer workflow.
-[dev]
+## Why not just/taskfile?
 
-% Build in development mode.
-build():
-    cargo build
-```
+| Tool | Good for | Tradeoff |
+| --- | --- | --- |
+| `just` | simple command aliases | still depends a lot on the user's shell |
+| `taskfile` | bigger YAML workflows | more config than many projects need |
+| `only` | small tasks that may grow into tooling | a real task syntax instead of plain shell or YAML |
 
-### Advanced Example
-
-```Onlyfile
-!echo true
-!preview true
-
-% Run checks only if cargo is available.
-check() ? @has("cargo"):
-    cargo check
-    cargo fmt --all --check
-    cargo clippy --workspace -- -D warnings
-
-check():
-    echo "cargo not found, skipping checks"
-
-% Prefer nextest when it is installed.
-test() ? @has("cargo-nextest"):
-    cargo nextest run
-
-test():
-    cargo test
-
-% Internal helper reused by install on Windows.
-_release_build():
-    cargo build --release
-
-% Install the local binary.
-install() ? @os("windows") & _release_build shell?=pwsh:
-    Write-Output "Windows: cannot replace running binary. Run:`n  Copy-Item target/release/only.exe -Destination `$env:USERPROFILE\.cargo\bin\ -Force"
-
-install():
-    cargo install --path crates/cli --force
-
-% Full CI pipeline.
-ci() & check & test:
-    echo "CI completed successfully"
-
-% Build first, then package and publish together.
-release() & build & (package, publish):
-    echo "Release completed successfully"
-
-% Development builds.
-[dev]
-% Build in development mode.
-build():
-    cargo build
-
-% Release builds.
-[rel]
-% Build in release mode.
-build():
-    cargo build --release
-```
-
----
-
-## Why Only ✨
-
-- **Actually cross-platform by default** — `deno_task_shell` keeps behavior aligned across macOS, Linux, and Windows
-- **A better task language** — function-style signatures, parameters, defaults, guards, helper tasks, directives, namespaces, and interpolation stay readable
-- **Clear execution flow** — dependencies, planning, and runtime behavior are explicit instead of being buried in shell glue
-- **Better diagnostics and help** — dynamic task listing, structured validation, preview output, and richer editor-facing metadata make the workflow easier to understand
-- **Built for tooling, not just execution** — the same pipeline can power CLI, editor features, language servers, and future visual workflows
-
-| Tool | Best fit | Core model | Portability | Tooling headroom |
-|------|----------|------------|-------------|------------------|
-| `only` | tasks that should stay simple now and grow later | task language | consistent by default | high |
-| `just` | straightforward command running | command runner | shell-sensitive in practice | medium |
-| `taskfile` | config-heavy orchestration | YAML orchestration | workable, but heavier | medium |
-
-`only` is for the case where you want both a pleasant task authoring experience and a format that can grow into real tooling without being redesigned later.
-
----
-
-## Installation 📦
-
-Published release:
+## Install
 
 ```shell
 cargo install only
 ```
 
-Latest GitHub version:
+From GitHub:
 
 ```shell
 cargo install --git https://github.com/KercyDing/only only
 ```
 
-Local workspace:
+## Learn more
 
-```shell
-cargo install --path crates/cli --force
-```
+See a complete example: [examples/Onlyfile](examples/Onlyfile).
 
----
+See the full guide: [docs/usage.md](docs/usage.md).
 
-## Docs 📚
+## LICENSE
 
-- Usage and syntax: **[Guide](docs/usage.md)**
-
----
-
-> Built for everyday workflows now, with room to grow into real tooling later. If it clicks for you, a star means a lot. ⭐
-
-[MIT License](LICENSE)
+[MIT](LICENSE)
