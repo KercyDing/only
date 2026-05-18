@@ -77,6 +77,10 @@ only --upgrade
 # or: only --update
 ```
 
+## VSCode extension support
+
+The [Onlyfile extension](https://marketplace.visualstudio.com/items?itemName=kercyding.onlyfile) provides syntax highlighting and `only-lsp` integration for diagnostics, hover, document symbols, and folding.
+
 ## Learn more
 
 See a complete example: [examples/Onlyfile](examples/Onlyfile).
