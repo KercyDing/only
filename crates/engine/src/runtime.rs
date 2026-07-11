@@ -7,7 +7,7 @@ use std::thread;
 use crate::error::command_failed;
 use crate::interpolate::interpolate;
 use crate::process::{OutputChunk, OutputStream};
-use crate::shell::run_command;
+use crate::shell::{run_command, run_command_inherit};
 use crate::{EngineError, ExecutionNode, ExecutionPlan};
 
 /// Runs a pre-built execution plan.
@@ -18,6 +18,33 @@ use crate::{EngineError, ExecutionNode, ExecutionPlan};
 /// Returns:
 /// Success when all execution nodes complete successfully.
 pub fn run_plan(plan: &ExecutionPlan) -> Result<ExitCode, EngineError> {
+    run_plan_with_options(plan, RuntimeOptions::default())
+}
+
+/// Runtime options that affect only the task host, not command semantics.
+///
+/// Args:
+/// None.
+///
+/// Returns:
+/// Host display options used while executing an already-built plan.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RuntimeOptions {
+    pub quiet: bool,
+}
+
+/// Runs a pre-built execution plan with host display options.
+///
+/// Args:
+/// plan: Dependency-expanded execution plan.
+/// options: Host-side display options.
+///
+/// Returns:
+/// Success when all execution nodes complete successfully.
+pub fn run_plan_with_options(
+    plan: &ExecutionPlan,
+    options: RuntimeOptions,
+) -> Result<ExitCode, EngineError> {
     let total_tasks = plan.nodes.len();
     let mut task_index = 0usize;
 
@@ -29,24 +56,20 @@ pub fn run_plan(plan: &ExecutionPlan) -> Result<ExitCode, EngineError> {
         }
         let stage_nodes = &plan.nodes[stage_start..task_index];
 
-        for (offset, node) in stage_nodes.iter().enumerate() {
-            eprintln!(
-                "{}",
-                render_task_progress(stage_start + offset + 1, total_tasks, &node.name)
-            );
+        if !options.quiet {
+            for (offset, node) in stage_nodes.iter().enumerate() {
+                eprintln!(
+                    "{}",
+                    render_task_progress(stage_start + offset + 1, total_tasks, &node.name)
+                );
+            }
         }
 
-        execute_stage(
-            stage_nodes,
-            &plan.working_dir,
-            plan.shell.as_deref(),
-            plan.echo,
-            plan.label,
-        )?;
-    }
-
-    if !plan.echo {
-        eprintln!("{}", render_status("Success", TermAnsiColor::BrightGreen));
+        if stage_nodes.len() == 1 {
+            run_node_inherit(&stage_nodes[0], &plan.working_dir, plan.shell.as_deref())?;
+        } else {
+            execute_stage(stage_nodes, &plan.working_dir, plan.shell.as_deref())?;
+        }
     }
 
     Ok(ExitCode::SUCCESS)
@@ -56,8 +79,6 @@ fn execute_stage(
     stage_nodes: &[ExecutionNode],
     working_dir: &std::path::Path,
     default_shell: Option<&str>,
-    echo: bool,
-    label: bool,
 ) -> Result<(), EngineError> {
     let stage_len = stage_nodes.len();
     let (event_tx, event_rx) = mpsc::channel::<StageEvent>();
@@ -77,21 +98,15 @@ fn execute_stage(
         }
         drop(event_tx);
 
-        if echo {
-            run_echo_event_loop(&event_rx, stage_nodes, stage_len, label)?;
-        } else {
-            run_quiet_event_loop(&event_rx, stage_nodes, stage_len, label)?;
-        }
+        run_ordered_output_event_loop(&event_rx, stage_len)?;
 
         collect_thread_results(handles)
     })
 }
 
-fn run_echo_event_loop(
+fn run_ordered_output_event_loop(
     event_rx: &mpsc::Receiver<StageEvent>,
-    stage_nodes: &[ExecutionNode],
     stage_len: usize,
-    label: bool,
 ) -> Result<(), EngineError> {
     let mut buffers = vec![Vec::<OutputChunk>::new(); stage_len];
     let mut finished = vec![false; stage_len];
@@ -106,7 +121,7 @@ fn run_echo_event_loop(
         match event_rx.recv() {
             Ok(StageEvent::Output { task_index, chunk }) => {
                 if task_index == current_index {
-                    print_output_chunk(&stage_nodes[task_index].name, &chunk, label)?;
+                    print_output_chunk(&chunk)?;
                 } else {
                     buffers[task_index].push(chunk);
                 }
@@ -117,11 +132,7 @@ fn run_echo_event_loop(
                 finished_count += 1;
 
                 while current_index < stage_len {
-                    flush_task_buffer(
-                        &stage_nodes[current_index].name,
-                        &mut buffers[current_index],
-                        label,
-                    )?;
+                    flush_task_buffer(&mut buffers[current_index])?;
                     if !finished[current_index] {
                         break;
                     }
@@ -139,45 +150,6 @@ fn run_echo_event_loop(
         Some(error) => Err(error),
         None => Ok(()),
     }
-}
-
-fn run_quiet_event_loop(
-    event_rx: &mpsc::Receiver<StageEvent>,
-    stage_nodes: &[ExecutionNode],
-    stage_len: usize,
-    label: bool,
-) -> Result<(), EngineError> {
-    let mut stderr_buffers = vec![Vec::<OutputChunk>::new(); stage_len];
-    let mut task_errors = (0..stage_len)
-        .map(|_| None)
-        .collect::<Vec<Option<EngineError>>>();
-    let mut finished_count = 0usize;
-
-    while finished_count < stage_len {
-        match event_rx.recv() {
-            Ok(StageEvent::Output { task_index, chunk }) => {
-                if matches!(chunk.stream, OutputStream::Stderr) {
-                    stderr_buffers[task_index].push(chunk);
-                }
-            }
-            Ok(StageEvent::Finished { task_index, error }) => {
-                task_errors[task_index] = error;
-                finished_count += 1;
-            }
-            Err(_) => break,
-        }
-    }
-
-    let first_error = task_errors.into_iter().flatten().next();
-    if let Some(error) = first_error {
-        for (index, buffer) in stderr_buffers.iter_mut().enumerate() {
-            flush_task_buffer(&stage_nodes[index].name, buffer, label)?;
-        }
-        eprintln!("{}", render_status("Fail", TermAnsiColor::BrightRed));
-        return Err(error);
-    }
-
-    Ok(())
 }
 
 fn collect_thread_results(
@@ -288,6 +260,32 @@ fn run_node(
     Ok(())
 }
 
+fn run_node_inherit(
+    node: &ExecutionNode,
+    working_dir: &std::path::Path,
+    default_shell: Option<&str>,
+) -> Result<(), EngineError> {
+    let total_commands = node.commands.len();
+
+    for (index, command) in node.commands.iter().enumerate() {
+        let rendered = interpolate(command, &node.params)?;
+        let shell = node.shell.as_deref().or(default_shell).unwrap_or("deno");
+        let code = run_command_inherit(&rendered, working_dir, shell, node.shell_fallback)?;
+
+        if code != ExitCode::SUCCESS {
+            return Err(command_failed(
+                &node.name,
+                index + 1,
+                total_commands,
+                &rendered,
+                code,
+            ));
+        }
+    }
+
+    Ok(())
+}
+
 #[derive(Debug)]
 enum StageEvent {
     Output {
@@ -300,57 +298,23 @@ enum StageEvent {
     },
 }
 
-fn flush_task_buffer(
-    task_name: &str,
-    buffer: &mut Vec<OutputChunk>,
-    label: bool,
-) -> Result<(), EngineError> {
+fn flush_task_buffer(buffer: &mut Vec<OutputChunk>) -> Result<(), EngineError> {
     for chunk in buffer.drain(..) {
-        print_output_chunk(task_name, &chunk, label)?;
+        print_output_chunk(&chunk)?;
     }
     Ok(())
 }
 
-fn print_output_chunk(
-    task_name: &str,
-    chunk: &OutputChunk,
-    label: bool,
-) -> Result<(), EngineError> {
-    let prefix = if label {
-        let prefix_style = TermStyle::new()
-            .fg_color(Some(TermAnsiColor::BrightCyan.into()))
-            .bold();
-        format!(
-            "{}[{}]{} ",
-            prefix_style.render(),
-            task_name,
-            prefix_style.render_reset()
-        )
-    } else {
-        String::new()
-    };
-
+fn print_output_chunk(chunk: &OutputChunk) -> Result<(), EngineError> {
     match chunk.stream {
-        OutputStream::Stdout => write_prefixed(prefix.as_str(), &chunk.text, io::stdout()),
-        OutputStream::Stderr => write_prefixed(prefix.as_str(), &chunk.text, io::stderr()),
+        OutputStream::Stdout => write_output(&chunk.text, io::stdout()),
+        OutputStream::Stderr => write_output(&chunk.text, io::stderr()),
     }
 }
 
-fn write_prefixed(prefix: &str, content: &str, mut writer: impl Write) -> Result<(), EngineError> {
-    for segment in content.split_inclusive('\n') {
-        if segment.is_empty() {
-            continue;
-        }
-        write!(writer, "{prefix}{segment}").map_err(|error| {
-            EngineError::Runtime(format!("failed to write task output: {error}"))
-        })?;
-    }
-
-    if !content.is_empty() && !content.ends_with('\n') {
-        writeln!(writer).map_err(|error| {
-            EngineError::Runtime(format!("failed to write task output: {error}"))
-        })?;
-    }
+fn write_output(content: &str, mut writer: impl Write) -> Result<(), EngineError> {
+    write!(writer, "{content}")
+        .map_err(|error| EngineError::Runtime(format!("failed to write task output: {error}")))?;
 
     writer
         .flush()
@@ -367,7 +331,7 @@ fn render_task_progress(task_index: usize, total_tasks: usize, task_name: &str) 
         .bold();
 
     format!(
-        "{}[task {}/{}]{} {}{}{}",
+        "{}[{}/{}]{} {}{}{}",
         label_style.render(),
         task_index,
         total_tasks,
@@ -376,9 +340,4 @@ fn render_task_progress(task_index: usize, total_tasks: usize, task_name: &str) 
         task_name,
         task_style.render_reset()
     )
-}
-
-fn render_status(label: &str, color: TermAnsiColor) -> String {
-    let style = TermStyle::new().fg_color(Some(color.into())).bold();
-    format!("{}{}{}", style.render(), label, style.render_reset())
 }

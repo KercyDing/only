@@ -62,6 +62,31 @@ pub(crate) fn run_with_system_shell(
     Ok(exit_code_from_status(status))
 }
 
+pub(crate) fn run_with_system_shell_inherit(
+    program: &str,
+    arg: &str,
+    command: &str,
+    working_dir: &Path,
+) -> Result<ExitCode, EngineError> {
+    let mut process = Command::new(program);
+    process
+        .current_dir(working_dir)
+        .arg(arg)
+        .arg(command)
+        .envs(build_command_env())
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+
+    let status = process.status().map_err(|source| EngineError::Io {
+        message: "failed to run shell command",
+        path: program.to_string(),
+        source,
+    })?;
+
+    Ok(exit_code_from_status(status))
+}
+
 pub(crate) fn build_command_env() -> HashMap<OsString, OsString> {
     let mut env_vars = std::env::vars_os().collect::<HashMap<_, _>>();
     env_vars

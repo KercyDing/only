@@ -35,7 +35,7 @@ fn reports_undefined_dependency_and_variable() {
 #[test]
 fn lowers_directives_and_namespaced_tasks() {
     let compiled = compile_document(concat!(
-        "!echo true\n",
+        "!shell deno\n",
         "% Developer commands.\n",
         "[dev]\n",
         "% Start the app.\n",

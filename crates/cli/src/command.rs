@@ -8,7 +8,9 @@ use crate::render::{
     render_available_tasks, render_error_message, render_global_help, render_help_hint,
     render_namespace_help,
 };
-use only_engine::{ExecutionPlan, render_command, select_root_task_variant};
+use only_engine::{
+    ExecutionPlan, RuntimeOptions, render_command, run_plan_with_options, select_root_task_variant,
+};
 use only_semantic::{DocumentAst, GuardAst, TaskAst};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -77,8 +79,11 @@ pub fn run_with(cli: CliInput) -> Result<ExitCode> {
     }
 
     let compiled = compile_for_cli_input_in_dir(&discovered.contents, &cli, discovered.base_dir)?;
-    render_preview_if_enabled(&compiled, &cli)?;
-    only_engine::run_plan(&compiled.plan).map_err(|error| OnlyError::runtime(error.to_string()))
+    if cli.dry_run {
+        println!("{}", render_dry_run_for_cli(&compiled, &cli)?);
+        return Ok(ExitCode::SUCCESS);
+    }
+    run_compiled_plan(&compiled.plan, &cli)
 }
 
 /// Loads and parses the requested Onlyfile.
@@ -153,20 +158,20 @@ pub fn run_plan(plan: &ExecutionPlan) -> Result<ExitCode> {
     only_engine::run_plan(plan).map_err(|error| OnlyError::runtime(error.to_string()))
 }
 
-fn render_preview_if_enabled(compiled: &CliCompileResult, cli: &CliInput) -> Result<()> {
-    if !compiled.plan.preview {
-        return Ok(());
-    }
-
+fn render_dry_run_for_cli(compiled: &CliCompileResult, cli: &CliInput) -> Result<String> {
     let (target, _) = resolve_target(&compiled.compiled, cli)?;
     let variant = select_root_task_variant(&compiled.compiled.document, &target)
         .map_err(|error| OnlyError::runtime(error.to_string()))?;
-    eprintln!("{}", render_plan_preview(&compiled.plan, variant)?);
-    Ok(())
+    render_dry_run(&compiled.plan, variant)
 }
 
-fn render_plan_preview(plan: &ExecutionPlan, variant: &TaskAst) -> Result<String> {
-    let mut output = String::from("Preview:\n");
+fn run_compiled_plan(plan: &ExecutionPlan, cli: &CliInput) -> Result<ExitCode> {
+    run_plan_with_options(plan, RuntimeOptions { quiet: cli.quiet })
+        .map_err(|error| OnlyError::runtime(error.to_string()))
+}
+
+fn render_dry_run(plan: &ExecutionPlan, variant: &TaskAst) -> Result<String> {
+    let mut output = String::from("Dry run:\n");
     output.push_str("  variant: ");
     output.push_str(&render_task_variant(variant));
     output.push('\n');
@@ -251,6 +256,9 @@ fn run_inner() -> Result<ExitCode> {
     }
 
     let compiled = compile_for_cli_input_in_dir(&discovered.contents, &cli, discovered.base_dir)?;
-    render_preview_if_enabled(&compiled, &cli)?;
-    only_engine::run_plan(&compiled.plan).map_err(|error| OnlyError::runtime(error.to_string()))
+    if cli.dry_run {
+        println!("{}", render_dry_run_for_cli(&compiled, &cli)?);
+        return Ok(ExitCode::SUCCESS);
+    }
+    run_compiled_plan(&compiled.plan, &cli)
 }

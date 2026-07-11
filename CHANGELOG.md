@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Removed the `!label` directive and task-name prefixes from command output.
+- Removed the `!echo` and `!preview` directives.
+- Added `only --dry-run` to print the selected task plan without executing it.
+- Added `only -q` / `only --quiet` to hide progress lines while preserving command output.
+- Shortened task progress lines from `[task N/M] name` to `[N/M] name`.
+
 ## 0.0.5 - 2026-05-17
 
 - Added `only --update` and `only --upgrade` for GitHub release based self updates.

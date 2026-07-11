@@ -2,7 +2,7 @@ use only_syntax::{DiagnosticCode, ParseResultExt, SyntaxKind, parse};
 
 #[test]
 fn parses_document_with_directive_task_and_namespace() {
-    let parsed = parse("!echo true\nbuild():\n    echo hi\n[dev]\nserve():\n    cargo run\n");
+    let parsed = parse("!shell deno\nbuild():\n    echo hi\n[dev]\nserve():\n    cargo run\n");
     let kinds: Vec<_> = parsed.root_children().map(|node| node.kind()).collect();
 
     assert!(kinds.contains(&SyntaxKind::Directive));
@@ -13,7 +13,7 @@ fn parses_document_with_directive_task_and_namespace() {
 
 #[test]
 fn parses_document_with_crlf_line_endings() {
-    let parsed = parse("!echo true\r\n\r\nbuild():\r\n    echo hi\r\n");
+    let parsed = parse("!shell deno\r\n\r\nbuild():\r\n    echo hi\r\n");
     let kinds: Vec<_> = parsed.root_children().map(|node| node.kind()).collect();
 
     assert!(kinds.contains(&SyntaxKind::Directive));

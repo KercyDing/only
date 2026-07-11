@@ -1,39 +1,13 @@
 use only_semantic::compile_document;
 
 #[test]
-fn lowers_preview_directive() {
-    let compiled = compile_document("!preview true\nbuild():\n    echo ok\n");
-
-    assert!(compiled.diagnostics.is_empty());
-    assert!(matches!(
-        compiled.document.directives[0],
-        only_semantic::DirectiveAst::Preview { value: true, .. }
-    ));
-}
-
-#[test]
-fn lowers_label_directive() {
-    let compiled = compile_document("!label false\nbuild():\n    echo ok\n");
-
-    assert!(compiled.diagnostics.is_empty());
-    assert!(matches!(
-        compiled.document.directives[0],
-        only_semantic::DirectiveAst::Label { value: false, .. }
-    ));
-}
-
-#[test]
 fn lowers_directives_with_crlf_line_endings() {
-    let compiled = compile_document("!echo true\r\n!preview false\r\nbuild():\r\n    echo ok\r\n");
+    let compiled = compile_document("!shell bash\r\nbuild():\r\n    echo ok\r\n");
 
     assert!(compiled.diagnostics.is_empty());
     assert!(matches!(
         compiled.document.directives[0],
-        only_semantic::DirectiveAst::Echo { value: true, .. }
-    ));
-    assert!(matches!(
-        compiled.document.directives[1],
-        only_semantic::DirectiveAst::Preview { value: false, .. }
+        only_semantic::DirectiveAst::Shell { .. }
     ));
 }
 

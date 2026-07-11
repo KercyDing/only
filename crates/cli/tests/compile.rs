@@ -26,6 +26,8 @@ fn compiles_selected_namespaced_task_with_positional_arg() {
     let cli = CliInput {
         onlyfile_path: None,
         print_discovered_path: false,
+        dry_run: false,
+        quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
@@ -48,6 +50,8 @@ fn compiles_selected_global_task_with_named_override() {
     let cli = CliInput {
         onlyfile_path: None,
         print_discovered_path: false,
+        dry_run: false,
+        quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
@@ -70,6 +74,8 @@ fn rejects_direct_invocation_of_helper_task_for_semantic_cli_compile() {
     let cli = CliInput {
         onlyfile_path: None,
         print_discovered_path: false,
+        dry_run: false,
+        quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
@@ -90,6 +96,8 @@ fn rejects_namespace_without_task_target_for_semantic_cli_compile() {
     let cli = CliInput {
         onlyfile_path: None,
         print_discovered_path: false,
+        dry_run: false,
+        quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
@@ -107,6 +115,8 @@ fn rejects_error_diagnostics_before_planning() {
     let cli = CliInput {
         onlyfile_path: None,
         print_discovered_path: false,
+        dry_run: false,
+        quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,

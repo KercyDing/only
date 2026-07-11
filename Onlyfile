@@ -1,16 +1,12 @@
-!echo true
-!preview false
-!label false
-
 % Internal helper for release builds
 _release_build():
     cargo build --release
 
 % Run cargo check
 check():
-    cargo check
-    cargo fmt --all --check
-    cargo clippy --workspace -- -D warnings
+    cargo fmt --all -- --check
+    cargo check --workspace --all-targets
+    cargo clippy --workspace --all-targets -- -D warnings
 
 % Run the full test suite
 test() ? @has("cargo-nextest"):

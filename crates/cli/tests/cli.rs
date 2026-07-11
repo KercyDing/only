@@ -5,7 +5,7 @@ use only::{
 use std::env;
 use std::error::Error as _;
 use std::fs;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::process::ExitCode;
@@ -67,6 +67,8 @@ fn cli(task_path: &[&str]) -> CliInput {
     CliInput {
         onlyfile_path: None,
         print_discovered_path: false,
+        dry_run: false,
+        quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
@@ -231,19 +233,11 @@ fn parses_empty_onlyfile() {
 
 #[test]
 fn parses_minimal_document_shape() {
-    let source = "!echo false\n!label false\n!shell sh\nhello():\n    echo hello\n[tools]\nfmt():\n    cargo fmt\n";
+    let source = "!shell sh\nhello():\n    echo hello\n[tools]\nfmt():\n    cargo fmt\n";
     let document = parse_onlyfile(source).expect("minimal document should parse");
 
     assert!(matches!(
         document.directives[0],
-        DirectiveAst::Echo { value: false, .. }
-    ));
-    assert!(matches!(
-        document.directives[1],
-        DirectiveAst::Label { value: false, .. }
-    ));
-    assert!(matches!(
-        document.directives[2],
         DirectiveAst::Shell { ref shell, .. } if shell == "sh"
     ));
     assert_eq!(
@@ -281,11 +275,10 @@ fn rejects_duplicate_parameter_names() {
 
 #[test]
 fn rejects_duplicate_directives() {
-    let source = "!echo false\n!echo true\n!shell sh\n!shell bash\nbuild():\n    echo build\n";
+    let source = "!shell sh\n!shell bash\nbuild():\n    echo build\n";
     let error = parse_onlyfile(source).expect_err("duplicate directives should fail");
     let rendered = error.to_string();
 
-    assert!(rendered.contains("duplicate directive '!echo'"));
     assert!(rendered.contains("duplicate directive '!shell'"));
 }
 
@@ -455,6 +448,8 @@ fn applies_cli_parameter_overrides() {
     let input = CliInput {
         onlyfile_path: None,
         print_discovered_path: false,
+        dry_run: false,
+        quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
@@ -491,6 +486,8 @@ fn rejects_unknown_parameter_override() {
     let input = CliInput {
         onlyfile_path: None,
         print_discovered_path: false,
+        dry_run: false,
+        quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
@@ -517,6 +514,8 @@ fn rejects_duplicate_parameter_overrides() {
     let input = CliInput {
         onlyfile_path: None,
         print_discovered_path: false,
+        dry_run: false,
+        quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
@@ -540,52 +539,44 @@ fn rejects_duplicate_parameter_overrides() {
 
 #[cfg(unix)]
 #[test]
-fn runs_echo_plan_successfully_with_sh() {
+fn runs_shell_plan_successfully_with_sh() {
     let _cwd_lock = cwd_lock();
     let plan = compile_plan(
-        "!echo true
-!shell sh
+        "!shell sh
 hello():
     true
 ",
         &cli(&["hello"]),
     );
-    assert!(plan.echo);
     assert_eq!(plan.shell.as_deref(), Some("sh"));
 
-    let code = run_plan(&plan).expect("echo-enabled runtime should succeed");
+    let code = run_plan(&plan).expect("shell runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
 }
 
 #[cfg(windows)]
 #[test]
-fn runs_echo_plan_successfully_with_powershell() {
+fn runs_shell_plan_successfully_with_powershell() {
     let _cwd_lock = cwd_lock();
     let plan = compile_plan(
-        "!echo true
-!shell powershell
+        "!shell powershell
 hello():
     exit 0
 ",
         &cli(&["hello"]),
     );
-    assert!(plan.echo);
     assert_eq!(plan.shell.as_deref(), Some("powershell"));
 
-    let code = run_plan(&plan).expect("echo-enabled runtime should succeed");
+    let code = run_plan(&plan).expect("shell runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
 }
 
 #[test]
-fn can_hide_task_output_labels_without_affecting_progress() {
+fn command_output_is_unprefixed_by_default() {
     let _cwd_lock = cwd_lock();
-    let temp_dir = TempDir::new("label-false");
+    let temp_dir = TempDir::new("raw-output");
     let onlyfile_path = temp_dir.path().join("Onlyfile");
-    fs::write(
-        &onlyfile_path,
-        "!echo true\n!label false\nhello():\n    echo hello\n",
-    )
-    .expect("Onlyfile should be written");
+    fs::write(&onlyfile_path, "hello():\n    echo hello\n").expect("Onlyfile should be written");
 
     let output = Command::new(cli_binary_path())
         .arg("hello")
@@ -600,10 +591,56 @@ fn can_hide_task_output_labels_without_affecting_progress() {
 
     assert_eq!(output.status.code(), Some(0));
     assert!(plain_stdout.contains("hello"));
-    assert!(plain_stderr.contains("[task 1/1] hello"));
-    assert!(plain_stderr.contains("hello"));
+    assert!(plain_stderr.contains("[1/1] hello"));
     assert!(!plain_stdout.contains("[hello]"));
     assert!(!plain_stderr.contains("[hello]"));
+}
+
+#[cfg(unix)]
+#[test]
+fn serial_echo_task_streams_stdout_before_command_exits() {
+    let _cwd_lock = cwd_lock();
+    let temp_dir = TempDir::new("serial-inherit-stdout");
+    let onlyfile_path = temp_dir.path().join("Onlyfile");
+    fs::write(
+        &onlyfile_path,
+        r#"!shell sh
+foreground():
+    printf start; sleep 0.30; printf end
+"#,
+    )
+    .expect("Onlyfile should be written");
+
+    let mut child = Command::new(cli_binary_path())
+        .arg("foreground")
+        .current_dir(temp_dir.path())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("CLI process should spawn");
+    let mut stdout = child.stdout.take().expect("stdout should be piped");
+    let mut prefix = [0u8; 5];
+
+    stdout
+        .read_exact(&mut prefix)
+        .expect("foreground command should stream stdout before exit");
+    assert_eq!(&prefix, b"start");
+    assert!(
+        child
+            .try_wait()
+            .expect("child status should be readable")
+            .is_none(),
+        "child should still be running after the first stdout bytes"
+    );
+
+    let status = child.wait().expect("child should exit");
+    let mut rest = String::new();
+    stdout
+        .read_to_string(&mut rest)
+        .expect("remaining stdout should be readable");
+
+    assert_eq!(status.code(), Some(0));
+    assert_eq!(rest, "end");
 }
 
 #[test]
@@ -652,33 +689,32 @@ ci() & prepare & check:
         Some(0),
         "expected CLI to succeed, stderr was: {stderr}"
     );
-    assert!(plain_stdout.contains("[prepare] prepare out"));
-    assert!(plain_stdout.contains("[check] check out"));
-    assert!(plain_stdout.contains("[ci] ci out"));
+    assert!(plain_stdout.contains("prepare out"));
+    assert!(plain_stdout.contains("check out"));
+    assert!(plain_stdout.contains("ci out"));
     assert!(
-        plain_stderr.contains("[task 1/3] prepare"),
+        plain_stderr.contains("[1/3] prepare"),
         "expected first task progress in stderr, got: {stderr}"
     );
     assert!(
-        plain_stderr.contains("[task 2/3] check"),
+        plain_stderr.contains("[2/3] check"),
         "expected second task progress in stderr, got: {stderr}"
     );
     assert!(
-        plain_stderr.contains("[task 3/3] ci"),
+        plain_stderr.contains("[3/3] ci"),
         "expected final task progress in stderr, got: {stderr}"
     );
 }
 
 #[cfg(unix)]
 #[test]
-fn echo_false_is_quiet_on_success() {
+fn quiet_hides_progress_and_preserves_command_output_on_success() {
     let _cwd_lock = cwd_lock();
-    let temp_dir = TempDir::new("echo-false-unix");
+    let temp_dir = TempDir::new("quiet-success-unix");
     let onlyfile_path = temp_dir.path().join("Onlyfile");
     fs::write(
         &onlyfile_path,
-        r#"!echo false
-!shell sh
+        r#"!shell sh
 prepare():
     printf 'prepare out\n'
     printf 'prepare err\n' >&2
@@ -691,6 +727,7 @@ ci() & prepare:
     .expect("Onlyfile should be written");
 
     let output = Command::new(cli_binary_path())
+        .arg("--quiet")
         .arg("ci")
         .current_dir(temp_dir.path())
         .output()
@@ -705,26 +742,25 @@ ci() & prepare:
         Some(0),
         "expected CLI to succeed, stderr was: {stderr}"
     );
-    assert_eq!(plain_stdout, "");
-    assert!(plain_stderr.contains("[task 1/2] prepare"));
-    assert!(plain_stderr.contains("[task 2/2] ci"));
-    assert!(plain_stderr.contains("Success"));
+    assert!(plain_stdout.contains("prepare out"));
+    assert!(plain_stdout.contains("ci out"));
+    assert!(plain_stderr.contains("prepare err"));
+    assert!(plain_stderr.contains("ci err"));
+    assert!(!plain_stderr.contains("[1/2] prepare"));
+    assert!(!plain_stderr.contains("[2/2] ci"));
     assert!(!plain_stderr.contains("[prepare]"));
     assert!(!plain_stderr.contains("[ci]"));
-    assert!(!plain_stderr.contains("prepare out"));
-    assert!(!plain_stderr.contains("ci out"));
 }
 
 #[cfg(unix)]
 #[test]
-fn echo_false_replays_stderr_on_failure() {
+fn quiet_hides_progress_and_preserves_command_output_on_failure() {
     let _cwd_lock = cwd_lock();
-    let temp_dir = TempDir::new("echo-false-failure-unix");
+    let temp_dir = TempDir::new("quiet-failure-unix");
     let onlyfile_path = temp_dir.path().join("Onlyfile");
     fs::write(
         &onlyfile_path,
-        r#"!echo false
-!shell sh
+        r#"!shell sh
 fail():
     printf 'fail out\n'
     printf 'fail err\n' >&2
@@ -734,6 +770,7 @@ fail():
     .expect("Onlyfile should be written");
 
     let output = Command::new(cli_binary_path())
+        .arg("-q")
         .arg("fail")
         .current_dir(temp_dir.path())
         .output()
@@ -748,16 +785,14 @@ fail():
         Some(0),
         "expected CLI to fail, stderr was: {stderr}"
     );
-    assert_eq!(plain_stdout, "");
-    assert!(plain_stderr.contains("[task 1/1] fail"));
-    assert!(plain_stderr.contains("[fail] fail err"));
-    assert!(plain_stderr.contains("Fail"));
+    assert!(plain_stdout.contains("fail out"));
+    assert!(plain_stderr.contains("fail err"));
     assert!(plain_stderr.contains("Error:"));
-    assert!(!plain_stderr.contains("fail out"));
+    assert!(!plain_stderr.contains("[1/1] fail"));
 }
 
 #[test]
-fn grouped_parallel_output_uses_task_prefixes() {
+fn grouped_parallel_output_preserves_stage_order() {
     let _cwd_lock = cwd_lock();
     let temp_dir = TempDir::new("grouped-parallel-output");
     let onlyfile_path = temp_dir.path().join("Onlyfile");
@@ -792,16 +827,15 @@ ci() & (fmt, test):
         Some(0),
         "expected CLI to succeed, stdout was: {stdout}"
     );
-    assert!(plain_stdout.contains("[fmt] fmt start\n[fmt] fmt end\n"));
-    assert!(plain_stdout.contains("[test] test start\n[test] test end\n"));
-    assert!(plain_stdout.contains("[ci] ci end\n"));
-    assert!(stdout.contains("\u{1b}["));
+    assert!(plain_stdout.contains("fmt start\nfmt end\n"));
+    assert!(plain_stdout.contains("test start\ntest end\n"));
+    assert!(plain_stdout.contains("ci end\n"));
     assert!(
         plain_stdout
-            .find("[fmt] fmt start")
+            .find("fmt start")
             .expect("fmt output should exist")
             < plain_stdout
-                .find("[test] test start")
+                .find("test start")
                 .expect("test output should exist")
     );
 }
@@ -850,7 +884,7 @@ ci() & (fmt, test):
         }
         collected.push_str(&line);
         let plain = strip_ansi(&collected);
-        if plain.contains("[fmt] fmt end\n") {
+        if plain.contains("fmt end\n") {
             assert!(
                 child
                     .try_wait()
@@ -955,6 +989,8 @@ fn runs_tasks_from_onlyfile_base_dir() {
     let input = CliInput {
         onlyfile_path: Some(onlyfile_path),
         print_discovered_path: false,
+        dry_run: false,
+        quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
@@ -991,6 +1027,8 @@ fn run_with_selects_guarded_task_for_current_environment() {
     let input = CliInput {
         onlyfile_path: Some(onlyfile_path),
         print_discovered_path: false,
+        dry_run: false,
+        quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
@@ -1026,6 +1064,8 @@ fn run_with_reports_unavailable_guarded_task() {
     let input = CliInput {
         onlyfile_path: Some(onlyfile_path),
         print_discovered_path: false,
+        dry_run: false,
+        quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
@@ -1056,6 +1096,8 @@ fn run_with_rejects_error_diagnostics_before_execution() {
     let input = CliInput {
         onlyfile_path: Some(onlyfile_path),
         print_discovered_path: false,
+        dry_run: false,
+        quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
@@ -1084,6 +1126,8 @@ fn rejects_direct_helper_task_execution_via_run_with() {
     let input = CliInput {
         onlyfile_path: Some(onlyfile_path),
         print_discovered_path: false,
+        dry_run: false,
+        quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
@@ -1132,9 +1176,9 @@ fn helper_task_help_is_available_via_cli_binary() {
 
 #[cfg(unix)]
 #[test]
-fn preview_prints_selected_variant_and_commands_before_execution() {
+fn dry_run_prints_selected_variant_and_commands_without_execution() {
     let _cwd_lock = cwd_lock();
-    let temp_dir = TempDir::new("preview-cli-unix");
+    let temp_dir = TempDir::new("dry-run-cli-unix");
     let onlyfile_path = temp_dir.path().join("Onlyfile");
     let current_os = std::env::consts::OS;
     let other_os = if current_os == "windows" {
@@ -1145,12 +1189,13 @@ fn preview_prints_selected_variant_and_commands_before_execution() {
     fs::write(
         &onlyfile_path,
         format!(
-            "!preview true\nprobe() ? @os(\"{current_os}\"):\n    printf 'guarded\\n'\nprobe() ? @os(\"{other_os}\"):\n    printf 'skipped\\n'\nprobe():\n    printf 'fallback\\n'\n"
+            "probe() ? @os(\"{current_os}\"):\n    printf 'guarded\\n' > guarded.txt\nprobe() ? @os(\"{other_os}\"):\n    printf 'skipped\\n' > skipped.txt\nprobe():\n    printf 'fallback\\n' > fallback.txt\n"
         ),
     )
     .expect("Onlyfile should be written");
 
     let output = Command::new(cli_binary_path())
+        .arg("--dry-run")
         .arg("probe")
         .current_dir(temp_dir.path())
         .output()
@@ -1162,10 +1207,13 @@ fn preview_prints_selected_variant_and_commands_before_execution() {
     let plain_stderr = strip_ansi(&stderr);
 
     assert_eq!(output.status.code(), Some(0), "stderr was: {stderr}");
-    assert!(plain_stderr.contains("Preview:"));
-    assert!(plain_stderr.contains(&format!("variant: probe() ? @os(\"{current_os}\")")));
-    assert!(plain_stderr.contains("[probe] printf 'guarded"));
-    assert!(plain_stdout.contains("[probe] guarded"));
+    assert!(plain_stdout.contains("Dry run:"));
+    assert!(plain_stdout.contains(&format!("variant: probe() ? @os(\"{current_os}\")")));
+    assert!(plain_stdout.contains("[probe] printf 'guarded"));
+    assert!(plain_stderr.is_empty(), "stderr was: {plain_stderr}");
+    assert!(!temp_dir.path().join("guarded.txt").exists());
+    assert!(!temp_dir.path().join("skipped.txt").exists());
+    assert!(!temp_dir.path().join("fallback.txt").exists());
 }
 
 #[test]

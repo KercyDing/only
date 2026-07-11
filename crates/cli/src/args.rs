@@ -18,6 +18,8 @@ use std::path::PathBuf;
 pub struct CliInput {
     pub onlyfile_path: Option<PathBuf>,
     pub print_discovered_path: bool,
+    pub dry_run: bool,
+    pub quiet: bool,
     pub top_level_help_requested: bool,
     pub top_level_version_requested: bool,
     pub top_level_upgrade_requested: bool,
@@ -44,6 +46,8 @@ impl CliInput {
         Ok(Self {
             onlyfile_path: matches.get_one::<String>("onlyfile").map(PathBuf::from),
             print_discovered_path: matches.get_flag("print-path"),
+            dry_run: matches.get_flag("dry-run"),
+            quiet: matches.get_flag("quiet"),
             top_level_help_requested: false,
             top_level_version_requested: false,
             top_level_upgrade_requested: matches.get_flag("upgrade") || matches.get_flag("update"),
@@ -117,6 +121,8 @@ where
 {
     let mut onlyfile_path = None;
     let mut print_discovered_path = false;
+    let mut dry_run = false;
+    let mut quiet = false;
     let mut top_level_help_requested = false;
     let mut top_level_version_requested = false;
     let mut top_level_upgrade_requested = false;
@@ -144,6 +150,12 @@ where
             }
             "-p" | "--path" => {
                 print_discovered_path = true;
+            }
+            "--dry-run" => {
+                dry_run = true;
+            }
+            "-q" | "--quiet" => {
+                quiet = true;
             }
             "--set" => {
                 let value = iter
@@ -185,6 +197,8 @@ where
     Ok(CliInput {
         onlyfile_path,
         print_discovered_path,
+        dry_run,
+        quiet,
         top_level_help_requested,
         top_level_version_requested,
         top_level_upgrade_requested,

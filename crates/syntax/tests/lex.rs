@@ -2,7 +2,7 @@ use only_syntax::{SyntaxKind, lex};
 
 #[test]
 fn lexes_directive_task_and_trivia() {
-    let tokens = lex("!echo true\nbuild():\n    echo hi\n");
+    let tokens = lex("!shell deno\nbuild():\n    echo hi\n");
     let kinds: Vec<_> = tokens.iter().map(|token| token.kind).collect();
 
     assert!(kinds.contains(&SyntaxKind::Bang));
@@ -22,7 +22,7 @@ fn keeps_comment_and_unknown_tokens() {
 
 #[test]
 fn lexes_crlf_as_newlines_without_unknown_tokens() {
-    let tokens = lex("!echo true\r\n\r\nbuild():\r\n    echo hi\r\n");
+    let tokens = lex("!shell deno\r\n\r\nbuild():\r\n    echo hi\r\n");
     let kinds: Vec<_> = tokens.iter().map(|token| token.kind).collect();
 
     assert_eq!(

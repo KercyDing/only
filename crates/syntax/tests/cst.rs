@@ -3,7 +3,7 @@ use only_syntax::snapshot;
 #[test]
 fn exposes_typed_top_level_nodes() {
     let parsed = only_syntax::parse(
-        "!echo true\n% Developer tasks.\n[dev]\nserve(port=\"3000\"):\n    echo {{port}}\n",
+        "!shell deno\n% Developer tasks.\n[dev]\nserve(port=\"3000\"):\n    echo {{port}}\n",
     );
     let document = parsed.document();
 
@@ -11,8 +11,8 @@ fn exposes_typed_top_level_nodes() {
         .directives()
         .next()
         .expect("directive should exist");
-    assert_eq!(directive.name().as_deref(), Some("echo"));
-    assert_eq!(directive.value().as_deref(), Some("true"));
+    assert_eq!(directive.name().as_deref(), Some("shell"));
+    assert_eq!(directive.value().as_deref(), Some("deno"));
 
     let doc = document
         .doc_comments()

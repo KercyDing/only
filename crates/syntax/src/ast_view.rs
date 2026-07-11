@@ -202,7 +202,7 @@ impl DirectiveNode {
     /// None.
     ///
     /// Returns:
-    /// Range covering `!echo` or `!shell` when present.
+    /// Range covering a directive keyword such as `!shell` when present.
     pub fn keyword_range(&self) -> Option<TextRange> {
         let mut tokens = self
             .syntax

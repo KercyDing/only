@@ -137,9 +137,6 @@ fn report_duplicate_directives(document: &DocumentAst, diagnostics: &mut Vec<Dia
 
     for directive in &document.directives {
         let (name, range) = match directive {
-            DirectiveAst::Echo { range, .. } => ("echo", *range),
-            DirectiveAst::Preview { range, .. } => ("preview", *range),
-            DirectiveAst::Label { range, .. } => ("label", *range),
             DirectiveAst::Shell { range, .. } => ("shell", *range),
         };
 

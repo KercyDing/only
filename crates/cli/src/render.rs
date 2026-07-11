@@ -45,6 +45,21 @@ pub fn build_global_cli() -> Command {
                 .help("Override a target task parameter"),
         )
         .arg(
+            Arg::new("dry-run")
+                .long("dry-run")
+                .action(ArgAction::SetTrue)
+                .global(true)
+                .help("Print the selected task plan without executing it"),
+        )
+        .arg(
+            Arg::new("quiet")
+                .short('q')
+                .long("quiet")
+                .action(ArgAction::SetTrue)
+                .global(true)
+                .help("Hide only progress lines while preserving command output"),
+        )
+        .arg(
             Arg::new("upgrade")
                 .long("upgrade")
                 .action(ArgAction::SetTrue)

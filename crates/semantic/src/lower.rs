@@ -66,51 +66,6 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
 fn lower_directive(node: &DirectiveNode) -> Result<DirectiveAst, Diagnostic> {
     let range = node.range();
     match (node.name().as_deref(), node.value().as_deref()) {
-        (Some("echo"), Some("true")) => Ok(DirectiveAst::Echo { value: true, range }),
-        (Some("echo"), Some("false")) => Ok(DirectiveAst::Echo {
-            value: false,
-            range,
-        }),
-        (Some("preview"), Some("true")) => Ok(DirectiveAst::Preview { value: true, range }),
-        (Some("preview"), Some("false")) => Ok(DirectiveAst::Preview {
-            value: false,
-            range,
-        }),
-        (Some("label"), Some("true")) => Ok(DirectiveAst::Label { value: true, range }),
-        (Some("label"), Some("false")) => Ok(DirectiveAst::Label {
-            value: false,
-            range,
-        }),
-        (Some("echo"), Some(value)) => Err(lower_error(
-            "lower.invalid-directive",
-            &format!("invalid echo value '{value}': expected 'true' or 'false'"),
-            range,
-        )),
-        (Some("preview"), Some(value)) => Err(lower_error(
-            "lower.invalid-directive",
-            &format!("invalid preview value '{value}': expected 'true' or 'false'"),
-            range,
-        )),
-        (Some("echo"), None) => Err(lower_error(
-            "lower.invalid-directive",
-            "directive '!echo' requires a value",
-            range,
-        )),
-        (Some("preview"), None) => Err(lower_error(
-            "lower.invalid-directive",
-            "directive '!preview' requires a value",
-            range,
-        )),
-        (Some("label"), Some(value)) => Err(lower_error(
-            "lower.invalid-directive",
-            &format!("invalid label value '{value}': expected 'true' or 'false'"),
-            range,
-        )),
-        (Some("label"), None) => Err(lower_error(
-            "lower.invalid-directive",
-            "directive '!label' requires a value",
-            range,
-        )),
         (Some("shell"), Some(shell)) => Ok(DirectiveAst::Shell {
             shell: SmolStr::new(shell),
             range,

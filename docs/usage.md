@@ -259,20 +259,14 @@ Resolution order is:
 Directives start with `!` and apply to the whole file.
 
 ```Onlyfile
-!echo true
-!preview false
 !shell deno
 ```
 
 | Directive | Values | Default | Effect |
 | --- | --- | --- | --- |
-| `!echo` | `true` / `false` | `true` | Controls command output on success. Failures still surface output. |
-| `!preview` | `true` / `false` | `false` | Prints the selected task variant and rendered commands before execution. |
-| `!label` | `true` / `false` | `true` | Controls the `[task]` prefix on task output. |
 | `!shell` | shell name | `deno` | Sets the default shell for tasks without an explicit shell. |
 
-Use `!preview true` when you want to see exactly which task variant and commands will run after parameters are bound.
-Use `!label false` when you want raw command output but still want task progress lines.
+Use `only --dry-run <task>` when you want to see which task variant and commands will run after parameters are bound.
 
 ## 10. Organize tasks with namespaces
 
@@ -310,9 +304,6 @@ Run `only dev` to see help for just that namespace.
 ## 11. A complete example
 
 ```Onlyfile
-!echo true
-!preview false
-
 % Serve the dev site.
 serve(port="3000", host="127.0.0.1"):
     echo "Serving on {{host}}:{{port}}"
@@ -436,22 +427,6 @@ build() shell?=bash:
 
 Accepted names are `deno`, `bash`, `sh`, `pwsh`, and `powershell`.
 
-### Command output disappeared on success
-
-`!echo false` is active. Remove it or set:
-
-```Onlyfile
-!echo true
-```
-
-### Commands are printed before they run
-
-`!preview true` is active. Remove it or set:
-
-```Onlyfile
-!preview false
-```
-
 ### Interpolation fails
 
 - `{{name}}` must match a declared parameter.
@@ -467,7 +442,7 @@ Accepted names are `deno`, `bash`, `sh`, `pwsh`, and `powershell`.
 | Code | Meaning | Fix |
 | --- | --- | --- |
 | `parse.unexpected-token` | grammar did not expect the current token | check punctuation, indentation, and header shape |
-| `parse.malformed-directive` | broken `!` directive line | use `!echo true`, `!preview false`, or `!shell <name>` |
+| `parse.malformed-directive` | broken `!` directive line | use `!shell <name>` |
 | `parse.malformed-namespace-header` | broken `[namespace]` line | keep the namespace header on its own line |
 | `parse.malformed-task-header` | broken task signature | use `name():` or `name(param="default"):` |
 
@@ -475,7 +450,7 @@ Accepted names are `deno`, `bash`, `sh`, `pwsh`, and `powershell`.
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
-| `lower.invalid-directive` | unknown directive or invalid directive value | use one of `!echo`, `!preview`, `!shell` with valid values |
+| `lower.invalid-directive` | unknown directive or invalid directive value | use `!shell <name>` |
 | `lower.invalid-task` | task header could not become a typed task | check parameters, guard, shell, and trailing colon |
 | `lower.invalid-namespace` | namespace header could not become a typed namespace | use plain `[name]` |
 | `lower.invalid-guard` | guard shape is invalid | use `@os(...)`, `@arch(...)`, `@env(...)`, or `@has(...)` |
@@ -521,14 +496,14 @@ Accepted names are `deno`, `bash`, `sh`, `pwsh`, and `powershell`.
 | `only -p` / `only --path` | print discovered `Onlyfile` path |
 | `only -f <path>` / `only --file <path>` | use a specific file |
 | `only --set name=value <task>` | override a task parameter |
+| `only --dry-run <task>` | print the selected task plan without executing it |
+| `only -q <task>` / `only --quiet <task>` | hide progress lines while preserving command output |
 
 ### Syntax pieces
 
 | Syntax | Meaning |
 | --- | --- |
 | `% text` | document the next task or namespace |
-| `!echo true` | configure command output |
-| `!preview true` | preview selected task and rendered commands |
 | `!shell bash` | set file-level default shell |
 | `task():` | define a task |
 | `task(name="value"):` | define a parameter with default |

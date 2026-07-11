@@ -67,11 +67,9 @@ fn assigns_parallel_dependency_groups_to_shared_stage() {
 }
 
 #[test]
-fn carries_echo_label_shell_and_default_params_into_plan() {
+fn carries_shell_and_default_params_into_plan() {
     let compiled = compile_document(
-        "!echo true\n\
-         !label false\n\
-         !shell bash\n\
+        "!shell bash\n\
          build(tag=\"v1\") shell?=pwsh:\n\
              echo {{tag}}\n",
     );
@@ -84,8 +82,6 @@ fn carries_echo_label_shell_and_default_params_into_plan() {
         },
     );
 
-    assert!(plan.echo);
-    assert!(!plan.label);
     assert_eq!(plan.shell.as_deref(), Some("bash"));
     assert_eq!(plan.nodes.len(), 1);
     assert_eq!(plan.nodes[0].shell.as_deref(), Some("pwsh"));
@@ -309,38 +305,6 @@ fn allows_helper_task_as_dependency() {
     assert_eq!(plan.nodes.len(), 2);
     assert_eq!(plan.nodes[0].name, "_prepare");
     assert_eq!(plan.nodes[1].name, "ci");
-}
-
-#[test]
-fn carries_preview_directive_into_plan() {
-    let compiled = compile_document("!preview true\nhello():\n    echo ok\n");
-    let plan = try_build_execution_plan(
-        &compiled.document,
-        Invocation::Task {
-            target: "hello",
-            args: vec![],
-            overrides: vec![],
-        },
-    )
-    .expect("preview directive should compile into plan");
-
-    assert!(plan.preview);
-}
-
-#[test]
-fn leaves_preview_disabled_by_default() {
-    let compiled = compile_document("hello():\n    echo ok\n");
-    let plan = try_build_execution_plan(
-        &compiled.document,
-        Invocation::Task {
-            target: "hello",
-            args: vec![],
-            overrides: vec![],
-        },
-    )
-    .expect("plan should build without preview directive");
-
-    assert!(!plan.preview);
 }
 
 #[test]
