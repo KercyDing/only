@@ -163,11 +163,11 @@ where
             "-q" | "--quiet" => {
                 quiet = true;
             }
-            "--set" => {
-                let value = iter
-                    .next()
-                    .ok_or_else(|| OnlyError::parse("missing value for global option '--set'"))?;
-                parameter_overrides.push(parse_override(&os_string_to_string(value, "--set")?)?);
+            "-s" | "--set" => {
+                let value = iter.next().ok_or_else(|| {
+                    OnlyError::parse(format!("missing value for global option '{text}'"))
+                })?;
+                parameter_overrides.push(parse_override(&os_string_to_string(value, text)?)?);
             }
             "-h" | "--help" => {
                 if !seen_task_token {
@@ -189,6 +189,10 @@ where
                     onlyfile_path = Some(PathBuf::from(value));
                 } else if let Some(value) = text.strip_prefix("--set=") {
                     parameter_overrides.push(parse_override(value)?);
+                } else if let Some(value) = text.strip_prefix("-s") {
+                    if !value.is_empty() {
+                        parameter_overrides.push(parse_override(value)?);
+                    }
                 } else if let Some(value) = text.strip_prefix("-f") {
                     if !value.is_empty() {
                         onlyfile_path = Some(PathBuf::from(value));
@@ -283,7 +287,7 @@ mod tests {
             "only",
             "frontend",
             "build",
-            "--set",
+            "-s",
             "profile=prod",
             "--path",
             "-fOnlyfile.dev",
@@ -293,6 +297,17 @@ mod tests {
         assert_eq!(cli.onlyfile_path.unwrap(), PathBuf::from("Onlyfile.dev"));
         assert!(cli.print_discovered_path);
         assert!(!cli.top_level_help_requested);
+        assert_eq!(
+            cli.parameter_overrides,
+            vec![("profile".into(), "prod".into())]
+        );
+    }
+
+    #[test]
+    fn collects_attached_short_parameter_override() {
+        let cli = parse_global_options_from(["only", "-sprofile=prod", "build"])
+            .expect("phase-one parsing should succeed");
+
         assert_eq!(
             cli.parameter_overrides,
             vec![("profile".into(), "prod".into())]

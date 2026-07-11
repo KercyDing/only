@@ -7,7 +7,7 @@
 Create a file named `Onlyfile` in your project root:
 
 ```Onlyfile
-// Minimal task.
+# Minimal task.
 hello():
     echo "hello from only"
 ```
@@ -81,25 +81,25 @@ only serve 8080 0.0.0.0
 # Serving on 0.0.0.0:8080
 ```
 
-Override by name with `--set`:
+Override by name with `-s` / `--set`:
 
 ```bash
-only --set host=0.0.0.0 serve
+only -s host=0.0.0.0 serve
 # Serving on 0.0.0.0:3000
 
-only --set host=0.0.0.0 serve 8080
+only -s host=0.0.0.0 serve 8080
 # Serving on 0.0.0.0:8080
 ```
 
-`--set` is a global option, so put it before the task path. It can be repeated:
+`-s` is a global option, so put it before the task path. It can be repeated:
 
 ```bash
-only --set host=0.0.0.0 --set port=8080 serve
+only -s host=0.0.0.0 -s port=8080 serve
 ```
 
 Parameter binding precedence is:
 
-1. `--set NAME=VALUE`
+1. `-s NAME=VALUE` / `--set NAME=VALUE`
 2. positional arguments
 3. defaults from the task signature
 
@@ -350,7 +350,7 @@ Useful calls:
 ```bash
 only
 only serve
-only --set host=0.0.0.0 serve 8080
+only -s host=0.0.0.0 serve 8080
 only ci
 only release
 only dev build
@@ -381,16 +381,16 @@ Common causes:
 - the namespace only contains helper tasks, so the namespace is hidden from the top-level list
 - the file has parse or semantic errors, so the task was never registered
 
-### `--set` does not work
+### `-s` / `--set` does not work
 
 Check three things:
 
 1. The task signature declares the parameter.
 2. The command body uses `{{name}}`, not `$name`.
-3. `--set` is written before the task path:
+3. `-s` is written before the task path:
 
 ```bash
-only --set port=8080 serve
+only -s port=8080 serve
 ```
 
 ### A positional argument sets the wrong value
@@ -402,7 +402,7 @@ serve(port="3000", host="127.0.0.1"):
     echo "{{host}}:{{port}}"
 ```
 
-`only serve 8080` sets `port`, not `host`. Use `--set host=...` when you want to skip earlier parameters.
+`only serve 8080` sets `port`, not `host`. Use `-s host=...` when you want to skip earlier parameters.
 
 ### A guarded task is unavailable
 
@@ -476,8 +476,8 @@ Accepted names are `deno`, `bash`, `sh`, `pwsh`, and `powershell`.
 | `helper task '<name>' cannot be invoked directly` | helpers are dependency-only |
 | `task '<name>' is not available for this environment` | guards did not match and no fallback exists |
 | `missing required parameter '{{name}}'` | required parameter was not supplied |
-| `unknown parameter '<name>' for task '<task>'` | `--set` targeted a non-existent parameter |
-| `duplicate parameter override '<name>'` | same `--set` name appeared twice |
+| `unknown parameter '<name>' for task '<task>'` | `-s` / `--set` targeted a non-existent parameter |
+| `duplicate parameter override '<name>'` | same override name appeared twice |
 | `cyclic dependency detected: ...` | dependencies form a cycle |
 | `unterminated interpolation expression` | `{{` has no closing `}}` |
 | `unsupported shell '<name>'` | shell name is not accepted |
@@ -496,7 +496,7 @@ Accepted names are `deno`, `bash`, `sh`, `pwsh`, and `powershell`.
 | `only <task> --help` | show task help, including parameters |
 | `only -p` / `only --path` | print discovered `Onlyfile` path |
 | `only -f <path>` / `only --file <path>` | use a specific file |
-| `only --set name=value <task>` | override a task parameter |
+| `only -s name=value <task>` / `only --set name=value <task>` | override a task parameter |
 | `only --dry-run <task>` | print the selected task plan without executing it; requires an explicit task |
 | `only --dry-run --full <task>` | include rendered commands in dry-run output |
 | `only -q <task>` / `only --quiet <task>` | hide progress lines while preserving command output |

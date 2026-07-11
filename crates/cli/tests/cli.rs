@@ -944,7 +944,7 @@ fn accepts_named_override_for_required_parameter_through_dynamic_cli() {
     .expect("document should parse");
 
     let matches = build_cli(&document)
-        .try_get_matches_from(["only", "--set", "task=true", "run"])
+        .try_get_matches_from(["only", "-s", "task=true", "run"])
         .expect("dynamic CLI should accept named override without positional argument");
     let input = CliInput::from_matches(matches.clone())
         .expect("matches should normalize")

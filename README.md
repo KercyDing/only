@@ -10,16 +10,20 @@
 Write this once:
 
 ```Onlyfile
-// Start small.
+// Start small and keep common commands close to the project.
+# Start the development server.
 serve(port="3000", host="127.0.0.1"):
     echo "Serving on {{host}}:{{port}}"
 
+# Check the project.
 check():
     cargo check
 
+# Run tests.
 test():
     cargo test
 
+# Run the local CI workflow.
 ci() & check & test:
     echo "done"
 ```
@@ -30,7 +34,7 @@ Run it like this:
 only
 only serve
 only serve 8080
-only --set host=0.0.0.0 serve 8080
+only -s host=0.0.0.0 serve 8080
 only ci
 ```
 

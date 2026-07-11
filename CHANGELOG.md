@@ -7,6 +7,7 @@
 - Removed the `!label`, `!echo`, and `!preview` file-level directives.
 - Added `only --dry-run` to print a compact selected task plan without executing it.
 - Added `only --dry-run --full` to expand rendered commands while keeping default dry-run output compact.
+- Added `only -s` as the short form for `only --set`.
 - Added `only -q` / `only --quiet` to hide only `only` progress lines while preserving command stdout and stderr.
 - Changed Onlyfile comments to use `#` for task and namespace docs and standalone `//` lines for ordinary comments, making files easier to migrate from `just` without making line-end syntax ambiguous.
 - Changed serial foreground tasks to inherit stdio so interactive and colored tools such as `cargo run` and `zig build run` behave like they do when run directly.

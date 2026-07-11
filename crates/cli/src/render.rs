@@ -38,6 +38,7 @@ pub fn build_global_cli() -> Command {
         )
         .arg(
             Arg::new("set")
+                .short('s')
                 .long("set")
                 .value_name("NAME=VALUE")
                 .action(ArgAction::Append)
