@@ -1,0 +1,52 @@
+name: Publish AUR
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version to publish, with or without leading v"
+        required: true
+        type: string
+
+jobs:
+  aur:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - pkg: only-bin
+            dir: packaging/arch/only-bin
+          - pkg: only-git
+            dir: packaging/arch/only-git
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Normalize version
+        id: version
+        run: |
+          VERSION="${{ inputs.version }}"
+          VERSION="${VERSION#v}"
+          echo "value=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Update pkgver in PKGBUILD
+        run: sed -i "s/^pkgver=.*/pkgver=${{ steps.version.outputs.value }}/" "${{ matrix.dir }}/PKGBUILD"
+
+      - name: Update sha256sums for only-bin
+        if: matrix.pkg == 'only-bin'
+        run: |
+          VERSION="${{ steps.version.outputs.value }}"
+          SHA_X86_64="$(curl -fsSL "${{ github.server_url }}/${{ github.repository }}/releases/download/v${VERSION}/only-linux-amd64" | sha256sum | cut -d' ' -f1)"
+          SHA_AARCH64="$(curl -fsSL "${{ github.server_url }}/${{ github.repository }}/releases/download/v${VERSION}/only-linux-arm64" | sha256sum | cut -d' ' -f1)"
+          sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${SHA_X86_64}')/" "${{ matrix.dir }}/PKGBUILD"
+          sed -i "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('${SHA_AARCH64}')/" "${{ matrix.dir }}/PKGBUILD"
+
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v3.0.1
+        with:
+          pkgname: ${{ matrix.pkg }}
+          pkgbuild: ${{ matrix.dir }}/PKGBUILD
+          commit_username: KercyDing
+          commit_email: dkx215417@gmail.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "Update to ${{ steps.version.outputs.tag }}"

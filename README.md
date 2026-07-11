@@ -68,6 +68,16 @@ From crates.io:
 cargo install only
 ```
 
+On Arch Linux:
+
+```shell
+# Stable release
+paru -S only-bin
+
+# Git build
+paru -S only-git
+```
+
 From GitHub:
 
 ```shell
