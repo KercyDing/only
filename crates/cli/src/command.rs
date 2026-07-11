@@ -78,6 +78,8 @@ pub fn run_with(cli: CliInput) -> Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
 
+    ensure_dry_run_has_target(&cli)?;
+
     let compiled = compile_for_cli_input_in_dir(&discovered.contents, &cli, discovered.base_dir)?;
     if cli.dry_run {
         println!("{}", render_dry_run_for_cli(&compiled, &cli)?);
@@ -158,11 +160,27 @@ pub fn run_plan(plan: &ExecutionPlan) -> Result<ExitCode> {
     only_engine::run_plan(plan).map_err(|error| OnlyError::runtime(error.to_string()))
 }
 
+fn ensure_dry_run_has_target(cli: &CliInput) -> Result<()> {
+    if cli.dry_run_full && !cli.dry_run {
+        return Err(OnlyError::parse(
+            "--full requires --dry-run; use 'only --dry-run --full <task>'",
+        ));
+    }
+
+    if cli.dry_run && cli.task_path.is_empty() {
+        return Err(OnlyError::parse(
+            "--dry-run requires a task target; use 'only --dry-run <task>'",
+        ));
+    }
+
+    Ok(())
+}
+
 fn render_dry_run_for_cli(compiled: &CliCompileResult, cli: &CliInput) -> Result<String> {
     let (target, _) = resolve_target(&compiled.compiled, cli)?;
     let variant = select_root_task_variant(&compiled.compiled.document, &target)
         .map_err(|error| OnlyError::runtime(error.to_string()))?;
-    render_dry_run(&compiled.plan, variant)
+    render_dry_run(&compiled.plan, variant, cli.dry_run_full)
 }
 
 fn run_compiled_plan(plan: &ExecutionPlan, cli: &CliInput) -> Result<ExitCode> {
@@ -170,26 +188,100 @@ fn run_compiled_plan(plan: &ExecutionPlan, cli: &CliInput) -> Result<ExitCode> {
         .map_err(|error| OnlyError::runtime(error.to_string()))
 }
 
-fn render_dry_run(plan: &ExecutionPlan, variant: &TaskAst) -> Result<String> {
-    let mut output = String::from("Dry run:\n");
-    output.push_str("  variant: ");
-    output.push_str(&render_task_variant(variant));
-    output.push('\n');
-    output.push_str("  commands:\n");
+fn render_dry_run(plan: &ExecutionPlan, variant: &TaskAst, full: bool) -> Result<String> {
+    let mut output = String::new();
+    let header = format!("Dry run: {}", render_task_variant(variant));
+    push_line(&mut output, &header);
 
-    for node in &plan.nodes {
-        for command in &node.commands {
-            let rendered = render_command(command, &node.params)
-                .map_err(|error| OnlyError::runtime(error.to_string()))?;
-            output.push_str("    [");
-            output.push_str(&node.name);
-            output.push_str("] ");
-            output.push_str(&rendered);
-            output.push('\n');
+    let stages = plan_stages(plan);
+    let mut index = 0usize;
+    while index < stages.len() {
+        let (stage, stage_nodes) = stages[index];
+        let stage_last = index + 1 == stages.len();
+        let stage_label = render_stage_label(stage, stage_nodes.len());
+        push_tree_line(&mut output, "", stage_last, &stage_label);
+        let stage_prefix = if stage_last { "   " } else { "│  " };
+
+        for (node_index, node) in stage_nodes.iter().enumerate() {
+            let node_last = node_index + 1 == stage_nodes.len();
+            let node_label = if full {
+                node.name.to_string()
+            } else {
+                render_node_summary(&node.name, node.commands.len())
+            };
+            push_tree_line(&mut output, stage_prefix, node_last, &node_label);
+            if !full {
+                continue;
+            }
+
+            let command_prefix = if node_last {
+                format!("{stage_prefix}   ")
+            } else {
+                format!("{stage_prefix}│  ")
+            };
+
+            for (command_index, command) in node.commands.iter().enumerate() {
+                let rendered = render_command(command, &node.params)
+                    .map_err(|error| OnlyError::runtime(error.to_string()))?;
+                push_tree_line(
+                    &mut output,
+                    &command_prefix,
+                    command_index + 1 == node.commands.len(),
+                    &rendered,
+                );
+            }
         }
+
+        index += 1;
     }
 
     Ok(output.trim_end().to_string())
+}
+
+fn plan_stages(plan: &ExecutionPlan) -> Vec<(usize, &[only_engine::ExecutionNode])> {
+    let mut stages = Vec::new();
+    let mut index = 0usize;
+
+    while index < plan.nodes.len() {
+        let stage = plan.nodes[index].stage;
+        let stage_start = index;
+        while index < plan.nodes.len() && plan.nodes[index].stage == stage {
+            index += 1;
+        }
+        stages.push((stage, &plan.nodes[stage_start..index]));
+    }
+
+    stages
+}
+
+fn render_node_summary(name: &str, command_count: usize) -> String {
+    let noun = if command_count == 1 {
+        "command"
+    } else {
+        "commands"
+    };
+    format!("{name} ({command_count} {noun})")
+}
+
+fn render_stage_label(stage: usize, node_count: usize) -> String {
+    if node_count > 1 {
+        format!("stage {} (parallel)", stage + 1)
+    } else {
+        format!("stage {}", stage + 1)
+    }
+}
+
+fn push_tree_line(output: &mut String, prefix: &str, is_last: bool, text: &str) {
+    let mut line = String::new();
+    line.push_str(prefix);
+    line.push_str(if is_last { "└─ " } else { "├─ " });
+    line.push_str(text);
+    push_line(output, &line);
+}
+
+fn push_line(output: &mut String, line: &str) {
+    output.push_str(line);
+    output.push('\n');
 }
 
 fn render_task_variant(task: &TaskAst) -> String {
@@ -235,6 +327,8 @@ fn run_inner() -> Result<ExitCode> {
     }
 
     let cli = parse_with_onlyfile(&discovered.document)?;
+
+    ensure_dry_run_has_target(&cli)?;
 
     if cli.task_path.is_empty() {
         print!("{}", render_available_tasks(&discovered.document));

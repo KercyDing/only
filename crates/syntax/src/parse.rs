@@ -170,7 +170,7 @@ fn parse_top_level_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevel
 
 fn parse_directive_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem> {
     token_kind(input, SyntaxKind::Bang)?;
-    let malformed = !line_has_non_trivia(input);
+    let malformed = !line_has_non_trivia(input) || line_contains_kind(input, SyntaxKind::Comment);
     consume_line(input);
     Ok(ParsedTopLevelItem::Directive { malformed })
 }
@@ -183,7 +183,8 @@ fn parse_doc_comment_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLev
 
 fn parse_namespace_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem> {
     token_kind(input, SyntaxKind::LBracket)?;
-    let malformed = !line_contains_kind(input, SyntaxKind::RBracket);
+    let malformed = !line_contains_kind(input, SyntaxKind::RBracket)
+        || line_contains_kind(input, SyntaxKind::Comment);
     consume_line(input);
     Ok(ParsedTopLevelItem::Namespace { malformed })
 }
@@ -203,6 +204,10 @@ fn parse_task_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem>
         }
 
         if !header_complete {
+            if kind == SyntaxKind::Comment {
+                malformed = true;
+            }
+
             match &mut phase {
                 TaskHeaderPhase::BeforeTail => match kind {
                     SyntaxKind::LParen => {

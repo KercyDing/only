@@ -14,7 +14,7 @@ fn lexes_directive_task_and_trivia() {
 
 #[test]
 fn keeps_comment_and_unknown_tokens() {
-    let tokens = lex("% doc\n# tail\n@\n");
+    let tokens = lex("# doc\n// tail\n@\n");
     assert!(tokens.iter().any(|token| token.kind == SyntaxKind::Percent));
     assert!(tokens.iter().any(|token| token.kind == SyntaxKind::Comment));
     assert!(tokens.iter().any(|token| token.kind == SyntaxKind::At));

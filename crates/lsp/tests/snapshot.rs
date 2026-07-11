@@ -35,7 +35,7 @@ fn keeps_uri_when_reparsing_new_version() {
 #[test]
 fn keeps_doc_comment_hover_separate_from_following_task() {
     let source =
-        "# section header\n\n% macOS-only task.\nbuild-macos(target=\"debug\"):\n    echo ok\n";
+        "// section header\n\n# macOS-only task.\nbuild-macos(target=\"debug\"):\n    echo ok\n";
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
     let offset = TextSize::from(source.find("macOS-only").expect("doc text should exist") as u32);
 
@@ -117,10 +117,10 @@ fn returns_interpolation_hover() {
 #[test]
 fn returns_dependency_hover_for_serial_chain_entries() {
     let source = concat!(
-        "% Formatting task.\n",
+        "# Formatting task.\n",
         "fmt():\n",
         "    cargo fmt\n",
-        "% CI wrapper.\n",
+        "# CI wrapper.\n",
         "ci() & fmt:\n",
         "    echo done\n",
     );
@@ -142,7 +142,7 @@ fn returns_dependency_hover_for_serial_chain_entries() {
 fn resolves_local_namespace_dependency_hover() {
     let source = concat!(
         "[dev]\n",
-        "% Build assets.\n",
+        "# Build assets.\n",
         "build():\n",
         "    cargo build\n",
         "ci() & build:\n",

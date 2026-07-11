@@ -272,7 +272,7 @@ impl DocCommentNode {
         self.syntax.text_range()
     }
 
-    /// Returns normalized doc-comment text without the leading `%`.
+    /// Returns normalized doc-comment text without the leading `#`.
     ///
     /// Args:
     /// None.
@@ -284,7 +284,7 @@ impl DocCommentNode {
             .text()
             .to_string()
             .trim()
-            .strip_prefix('%')
+            .strip_prefix('#')
             .map(str::trim)
             .filter(|text| !text.is_empty())
             .map(SmolStr::new)
@@ -441,6 +441,7 @@ impl TaskNode {
             .skip(1)
             .map(str::trim_start)
             .filter(|line| !line.is_empty())
+            .filter(|line| !line.starts_with("//"))
             .map(SmolStr::new)
             .collect::<Vec<_>>()
             .into_iter()

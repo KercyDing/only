@@ -36,9 +36,9 @@ fn reports_undefined_dependency_and_variable() {
 fn lowers_directives_and_namespaced_tasks() {
     let compiled = compile_document(concat!(
         "!shell deno\n",
-        "% Developer commands.\n",
+        "# Developer commands.\n",
         "[dev]\n",
-        "% Start the app.\n",
+        "# Start the app.\n",
         "serve(port=\"3000\") & build:\n",
         "    echo {{port}}\n",
         "build():\n",

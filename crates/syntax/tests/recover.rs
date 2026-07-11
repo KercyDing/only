@@ -44,7 +44,7 @@ fn inserts_error_node_for_malformed_directive_and_recovers() {
 
 #[test]
 fn recovers_across_blank_lines_and_comments_after_error() {
-    let parsed = parse("build(name:\n# keep going\n\nnext():\n    echo next\n");
+    let parsed = parse("build(name:\n// keep going\n\nnext():\n    echo next\n");
     let kinds: Vec<_> = parsed.root_children().map(|node| node.kind()).collect();
 
     assert!(kinds.contains(&SyntaxKind::Error));

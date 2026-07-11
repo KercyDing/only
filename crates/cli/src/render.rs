@@ -52,6 +52,13 @@ pub fn build_global_cli() -> Command {
                 .help("Print the selected task plan without executing it"),
         )
         .arg(
+            Arg::new("full")
+                .long("full")
+                .action(ArgAction::SetTrue)
+                .global(true)
+                .help("Expand commands in dry-run output"),
+        )
+        .arg(
             Arg::new("quiet")
                 .short('q')
                 .long("quiet")
@@ -389,7 +396,7 @@ mod tests {
     fn renders_namespace_entries_with_trailing_slash() {
         let document = parse_onlyfile(
             "[dev]
-% Default developer workflow.
+# Default developer workflow.
 workflow():
     echo ok
 ",
@@ -407,7 +414,7 @@ workflow():
     fn accepts_namespace_help_via_alias_without_trailing_slash() {
         let document = parse_onlyfile(
             "[dev]
-% Default developer workflow.
+# Default developer workflow.
 workflow():
     echo ok
 ",
@@ -457,12 +464,12 @@ workflow():
     #[test]
     fn renders_dynamic_root_help_with_tasks_and_namespaces() {
         let document = parse_onlyfile(
-            "% Run tests.
+            "# Run tests.
 test():
     cargo test
 
 [dev]
-% Default developer workflow.
+# Default developer workflow.
 workflow():
     echo ok
 ",
@@ -480,11 +487,11 @@ workflow():
     fn renders_namespace_help_without_default_task() {
         let document = parse_onlyfile(
             "[dev]
-% Default developer workflow.
+# Default developer workflow.
 workflow():
     echo ok
 
-% Run a namespaced smoke command.
+# Run a namespaced smoke command.
 smoke():
     echo smoke
 ",
@@ -501,7 +508,7 @@ smoke():
     #[test]
     fn hides_help_subcommand_from_dynamic_help() {
         let document = parse_onlyfile(
-            "% Run tests.
+            "# Run tests.
 test():
     cargo test
 ",
@@ -515,12 +522,12 @@ test():
     #[test]
     fn renders_available_tasks_listing() {
         let document = parse_onlyfile(
-            "% Run tests.
+            "# Run tests.
 test():
     cargo test
 
 [dev]
-% Default developer workflow.
+# Default developer workflow.
 workflow():
     echo ok
 ",
@@ -538,7 +545,7 @@ workflow():
     #[test]
     fn renders_namespace_summary_from_namespace_doc() {
         let document = parse_onlyfile(
-            "% Developer workflow.\n[dev]\n% Run smoke.\nsmoke():\n    echo smoke\n",
+            "# Developer workflow.\n[dev]\n# Run smoke.\nsmoke():\n    echo smoke\n",
         )
         .expect("document should parse");
 
@@ -551,7 +558,7 @@ workflow():
     fn omits_namespace_fallback_summary_when_doc_is_missing() {
         let document = parse_onlyfile(
             "[dev]
-% Run smoke.
+# Run smoke.
 smoke():
     echo smoke
 ",
@@ -565,9 +572,9 @@ smoke():
     #[test]
     fn renders_namespace_help_about_from_namespace_doc() {
         let document = parse_onlyfile(
-            "% Developer workflow.
+            "# Developer workflow.
 [dev]
-% Run smoke.
+# Run smoke.
 smoke():
     echo smoke
 ",
@@ -581,7 +588,7 @@ smoke():
     #[test]
     fn hides_helper_tasks_from_rendered_outputs() {
         let document = parse_onlyfile(
-            "% Run tests.\n_test_helper():\n    cargo test\ntest():\n    cargo test\n\n[dev]\n_workflow():\n    echo hidden\nworkflow():\n    echo ok\n",
+            "# Run tests.\n_test_helper():\n    cargo test\ntest():\n    cargo test\n\n[dev]\n_workflow():\n    echo hidden\nworkflow():\n    echo ok\n",
         )
         .expect("document should parse");
 
@@ -602,7 +609,7 @@ smoke():
     #[test]
     fn omits_namespaces_that_only_contain_helper_tasks() {
         let document = parse_onlyfile(
-            "% Visible workflow.\ncheck():\n    cargo check\n\n% Hidden namespace.\n[dev]\n_hidden():\n    echo hidden\n",
+            "# Visible workflow.\ncheck():\n    cargo check\n\n# Hidden namespace.\n[dev]\n_hidden():\n    echo hidden\n",
         )
         .expect("document should parse");
 

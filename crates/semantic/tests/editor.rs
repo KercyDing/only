@@ -7,7 +7,7 @@ use text_size::TextSize;
 #[test]
 fn builds_document_symbols_for_namespaces_and_tasks() {
     let compiled = compile_document(
-        "% Developer commands.\n[dev]\n% Start the app.\nserve(port=\"3000\"):\n    echo {{port}}\n",
+        "# Developer commands.\n[dev]\n# Start the app.\nserve(port=\"3000\"):\n    echo {{port}}\n",
     );
 
     let symbols = document_symbols(&compiled);
@@ -42,7 +42,7 @@ fn builds_folding_ranges_for_namespace_and_task_blocks() {
 
 #[test]
 fn returns_hover_for_task_at_offset() {
-    let source = "% Start the app.\nserve(port=\"3000\"):\n    echo {{port}}\n";
+    let source = "# Start the app.\nserve(port=\"3000\"):\n    echo {{port}}\n";
     let compiled = compile_document(source);
     let offset = TextSize::from(source.find("serve").expect("task name should exist") as u32);
 

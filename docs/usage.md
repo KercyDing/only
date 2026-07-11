@@ -7,7 +7,7 @@
 Create a file named `Onlyfile` in your project root:
 
 ```Onlyfile
-# Minimal task.
+// Minimal task.
 hello():
     echo "hello from only"
 ```
@@ -38,15 +38,16 @@ only -f ./examples/Onlyfile hello
 
 ## 2. Add task descriptions
 
-Use `#` for ordinary comments. Lines starting with `%` document the next task or namespace, and show up in `only` and `only --help` output.
+Use standalone `//` lines for ordinary comments. They can appear between top-level items or inside a task body. Lines starting with `#` document the next task or namespace, and show up in `only` and `only --help` output.
 
 ```Onlyfile
-# Ordinary comments are ignored.
-% Format the codebase.
+// Ordinary comments are ignored.
+# Format the codebase.
 fmt():
+    // Task-body comments are ignored too.
     cargo fmt --all
 
-% Run tests.
+# Run tests.
 test():
     cargo test
 ```
@@ -58,7 +59,7 @@ Now `only` gives a readable task list instead of just names.
 Tasks use function-style signatures. A parameter without a default is required; a parameter with a default is optional.
 
 ```Onlyfile
-% Serve the dev site.
+# Serve the dev site.
 serve(port="3000", host="127.0.0.1"):
     echo "Serving on {{host}}:{{port}}"
 ```
@@ -266,25 +267,25 @@ Directives start with `!` and apply to the whole file.
 | --- | --- | --- | --- |
 | `!shell` | shell name | `deno` | Sets the default shell for tasks without an explicit shell. |
 
-Use `only --dry-run <task>` when you want to see which task variant and commands will run after parameters are bound.
+Use `only --dry-run <task>` when you want to see which task variant and dependency stages will run after parameters are bound. Add `--full` when you also need the rendered commands.
 
 ## 10. Organize tasks with namespaces
 
 Namespaces group related tasks.
 
 ```Onlyfile
-% Development workflow.
+# Development workflow.
 [dev]
 
-% Build in development mode.
+# Build in development mode.
 build():
     cargo build
 
-% Run in development mode.
+# Run in development mode.
 run():
     cargo run
 
-% Release workflow.
+# Release workflow.
 [rel]
 
 build():
@@ -304,16 +305,16 @@ Run `only dev` to see help for just that namespace.
 ## 11. A complete example
 
 ```Onlyfile
-% Serve the dev site.
+# Serve the dev site.
 serve(port="3000", host="127.0.0.1"):
     echo "Serving on {{host}}:{{port}}"
 
-% Format and check the workspace.
+# Format and check the workspace.
 check():
     cargo fmt --all --check
     cargo check
 
-% Prefer nextest when available.
+# Prefer nextest when available.
 test() ? @has("cargo-nextest"):
     cargo nextest run
 
@@ -326,15 +327,15 @@ _package():
 publish():
     echo "Publishing release"
 
-% Run the local CI workflow.
+# Run the local CI workflow.
 ci() & check & test:
     echo "CI complete"
 
-% Build first, then package and publish together.
+# Build first, then package and publish together.
 release() & check & (_package, publish):
     echo "Release complete"
 
-% Development commands.
+# Development commands.
 [dev]
 
 build():
@@ -496,14 +497,16 @@ Accepted names are `deno`, `bash`, `sh`, `pwsh`, and `powershell`.
 | `only -p` / `only --path` | print discovered `Onlyfile` path |
 | `only -f <path>` / `only --file <path>` | use a specific file |
 | `only --set name=value <task>` | override a task parameter |
-| `only --dry-run <task>` | print the selected task plan without executing it |
+| `only --dry-run <task>` | print the selected task plan without executing it; requires an explicit task |
+| `only --dry-run --full <task>` | include rendered commands in dry-run output |
 | `only -q <task>` / `only --quiet <task>` | hide progress lines while preserving command output |
 
 ### Syntax pieces
 
 | Syntax | Meaning |
 | --- | --- |
-| `% text` | document the next task or namespace |
+| `// text` | standalone ordinary comment |
+| `# text` | document the next task or namespace |
 | `!shell bash` | set file-level default shell |
 | `task():` | define a task |
 | `task(name="value"):` | define a parameter with default |

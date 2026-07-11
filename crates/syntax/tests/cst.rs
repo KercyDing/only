@@ -3,7 +3,7 @@ use only_syntax::snapshot;
 #[test]
 fn exposes_typed_top_level_nodes() {
     let parsed = only_syntax::parse(
-        "!shell deno\n% Developer tasks.\n[dev]\nserve(port=\"3000\"):\n    echo {{port}}\n",
+        "!shell deno\n# Developer tasks.\n[dev]\nserve(port=\"3000\"):\n    echo {{port}}\n",
     );
     let document = parsed.document();
 
@@ -41,6 +41,29 @@ fn snapshot_exposes_typed_document_root() {
 
     assert_eq!(task.name().as_deref(), Some("build"));
     assert_eq!(task.commands().collect::<Vec<_>>(), vec!["cargo build"]);
+}
+
+#[test]
+fn skips_task_body_comment_lines() {
+    let syntax = snapshot("check():\n    // comment\n    cargo check\n");
+    let document = syntax.document();
+    let task = document.tasks().next().expect("task should exist");
+
+    assert_eq!(task.commands().collect::<Vec<_>>(), vec!["cargo check"]);
+}
+
+#[test]
+fn top_level_doc_comment_ends_previous_task_body() {
+    let syntax = snapshot(
+        "# Build release artifacts.\nbuild():\n    cargo build\n# Run checks.\ncheck():\n    cargo check\n",
+    );
+    let tasks = syntax.document().tasks().collect::<Vec<_>>();
+
+    assert_eq!(tasks.len(), 2);
+    assert_eq!(tasks[0].name().as_deref(), Some("build"));
+    assert_eq!(tasks[0].commands().collect::<Vec<_>>(), vec!["cargo build"]);
+    assert_eq!(tasks[1].name().as_deref(), Some("check"));
+    assert_eq!(tasks[1].commands().collect::<Vec<_>>(), vec!["cargo check"]);
 }
 
 #[test]

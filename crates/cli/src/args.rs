@@ -19,6 +19,7 @@ pub struct CliInput {
     pub onlyfile_path: Option<PathBuf>,
     pub print_discovered_path: bool,
     pub dry_run: bool,
+    pub dry_run_full: bool,
     pub quiet: bool,
     pub top_level_help_requested: bool,
     pub top_level_version_requested: bool,
@@ -47,6 +48,7 @@ impl CliInput {
             onlyfile_path: matches.get_one::<String>("onlyfile").map(PathBuf::from),
             print_discovered_path: matches.get_flag("print-path"),
             dry_run: matches.get_flag("dry-run"),
+            dry_run_full: matches.get_flag("full"),
             quiet: matches.get_flag("quiet"),
             top_level_help_requested: false,
             top_level_version_requested: false,
@@ -122,6 +124,7 @@ where
     let mut onlyfile_path = None;
     let mut print_discovered_path = false;
     let mut dry_run = false;
+    let mut dry_run_full = false;
     let mut quiet = false;
     let mut top_level_help_requested = false;
     let mut top_level_version_requested = false;
@@ -153,6 +156,9 @@ where
             }
             "--dry-run" => {
                 dry_run = true;
+            }
+            "--full" => {
+                dry_run_full = true;
             }
             "-q" | "--quiet" => {
                 quiet = true;
@@ -198,6 +204,7 @@ where
         onlyfile_path,
         print_discovered_path,
         dry_run,
+        dry_run_full,
         quiet,
         top_level_help_requested,
         top_level_version_requested,

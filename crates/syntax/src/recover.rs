@@ -16,6 +16,7 @@ pub(crate) fn starts_top_level_item(current: SyntaxKind) -> bool {
     matches!(
         current,
         SyntaxKind::Bang
+            | SyntaxKind::Comment
             | SyntaxKind::Percent
             | SyntaxKind::LBracket
             | SyntaxKind::Ident

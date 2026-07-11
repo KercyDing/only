@@ -1,50 +1,47 @@
-!echo true
-!preview false
-
-# This file demonstrates the full task shape.
-% Say hello with an optional name.
+// This file demonstrates the full task shape.
+# Say hello with an optional name.
 hello(name="world"):
     echo "hello, {{name}}"
 
-% Start a local service with configurable bind settings.
+# Start a local service with configurable bind settings.
 serve(port="3000", host="127.0.0.1"):
     echo "Serving on http://{{host}}:{{port}}"
 
-% Format the workspace.
+# Format the workspace.
 fmt():
     cargo fmt --all --check
 
-% Check the workspace.
+# Check the workspace.
 check():
     cargo check --workspace
     cargo clippy --workspace -- -D warnings
 
-% Run tests with nextest when it is installed.
+# Run tests with nextest when it is installed.
 test() ? @has("cargo-nextest"):
     cargo nextest run
 
 test():
     cargo test --workspace
 
-% Build the release binary.
+# Build the release binary.
 build():
     cargo build --release
 
-% Hidden helper used by release packaging tasks.
+# Hidden helper used by release packaging tasks.
 _prepare_dist():
     mkdir -p ../dist
 
-% Package the release binary.
+# Package the release binary.
 package() ? @os("windows") & build & _prepare_dist shell?=pwsh:
     Copy-Item ../target/release/only.exe ../dist/only.exe -Force
 
 package() & build & _prepare_dist:
     cp ../target/release/only ../dist/only
 
-% Run the normal local verification workflow.
+# Run the normal local verification workflow.
 ci() & fmt & check & test:
     echo "CI complete"
 
-% Build and package after CI passes.
+# Build and package after CI passes.
 release() & ci & package:
     echo "Release ready in dist/"

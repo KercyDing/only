@@ -2,11 +2,16 @@
 
 ## Unreleased
 
-- Removed the `!label` directive and task-name prefixes from command output.
-- Removed the `!echo` and `!preview` directives.
-- Added `only --dry-run` to print the selected task plan without executing it.
-- Added `only -q` / `only --quiet` to hide progress lines while preserving command output.
+## 0.0.6 - 2026-07-11
+
+- Removed the `!label`, `!echo`, and `!preview` file-level directives.
+- Added `only --dry-run` to print a compact selected task plan without executing it.
+- Added `only --dry-run --full` to expand rendered commands while keeping default dry-run output compact.
+- Added `only -q` / `only --quiet` to hide only `only` progress lines while preserving command stdout and stderr.
+- Changed Onlyfile comments to use `#` for task and namespace docs and standalone `//` lines for ordinary comments, making files easier to migrate from `just` without making line-end syntax ambiguous.
+- Changed serial foreground tasks to inherit stdio so interactive and colored tools such as `cargo run` and `zig build run` behave like they do when run directly.
 - Shortened task progress lines from `[task N/M] name` to `[N/M] name`.
+- Rationale: output controls now live on the command line instead of in `Onlyfile`, because previewing and quieting are invocation-time choices. This keeps the task file focused on project semantics such as `!shell`, reduces configuration noise, and makes terminal-heavy commands feel less like dumped captured output.
 
 ## 0.0.5 - 2026-05-17
 

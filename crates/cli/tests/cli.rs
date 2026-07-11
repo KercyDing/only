@@ -68,6 +68,7 @@ fn cli(task_path: &[&str]) -> CliInput {
         onlyfile_path: None,
         print_discovered_path: false,
         dry_run: false,
+        dry_run_full: false,
         quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
@@ -316,7 +317,7 @@ serve():
 
 #[test]
 fn does_not_assign_namespace_doc_to_first_task() {
-    let source = "% Developer workflow.\n[dev]\nsmoke():\n    echo smoke\n";
+    let source = "# Developer workflow.\n[dev]\nsmoke():\n    echo smoke\n";
     let document = parse_onlyfile(source).expect("namespaced tasks should parse");
 
     assert_eq!(
@@ -449,6 +450,7 @@ fn applies_cli_parameter_overrides() {
         onlyfile_path: None,
         print_discovered_path: false,
         dry_run: false,
+        dry_run_full: false,
         quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
@@ -487,6 +489,7 @@ fn rejects_unknown_parameter_override() {
         onlyfile_path: None,
         print_discovered_path: false,
         dry_run: false,
+        dry_run_full: false,
         quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
@@ -515,6 +518,7 @@ fn rejects_duplicate_parameter_overrides() {
         onlyfile_path: None,
         print_discovered_path: false,
         dry_run: false,
+        dry_run_full: false,
         quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
@@ -990,6 +994,7 @@ fn runs_tasks_from_onlyfile_base_dir() {
         onlyfile_path: Some(onlyfile_path),
         print_discovered_path: false,
         dry_run: false,
+        dry_run_full: false,
         quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
@@ -1028,6 +1033,7 @@ fn run_with_selects_guarded_task_for_current_environment() {
         onlyfile_path: Some(onlyfile_path),
         print_discovered_path: false,
         dry_run: false,
+        dry_run_full: false,
         quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
@@ -1065,6 +1071,7 @@ fn run_with_reports_unavailable_guarded_task() {
         onlyfile_path: Some(onlyfile_path),
         print_discovered_path: false,
         dry_run: false,
+        dry_run_full: false,
         quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
@@ -1097,6 +1104,7 @@ fn run_with_rejects_error_diagnostics_before_execution() {
         onlyfile_path: Some(onlyfile_path),
         print_discovered_path: false,
         dry_run: false,
+        dry_run_full: false,
         quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
@@ -1127,6 +1135,7 @@ fn rejects_direct_helper_task_execution_via_run_with() {
         onlyfile_path: Some(onlyfile_path),
         print_discovered_path: false,
         dry_run: false,
+        dry_run_full: false,
         quiet: false,
         top_level_help_requested: false,
         top_level_version_requested: false,
@@ -1207,13 +1216,95 @@ fn dry_run_prints_selected_variant_and_commands_without_execution() {
     let plain_stderr = strip_ansi(&stderr);
 
     assert_eq!(output.status.code(), Some(0), "stderr was: {stderr}");
-    assert!(plain_stdout.contains("Dry run:"));
-    assert!(plain_stdout.contains(&format!("variant: probe() ? @os(\"{current_os}\")")));
-    assert!(plain_stdout.contains("[probe] printf 'guarded"));
+    assert!(plain_stdout.contains(&format!("Dry run: probe() ? @os(\"{current_os}\")")));
+    assert!(plain_stdout.contains("└─ stage 1"));
+    assert!(plain_stdout.contains("   └─ probe (1 command)"));
+    assert!(!plain_stdout.contains("printf 'guarded"));
     assert!(plain_stderr.is_empty(), "stderr was: {plain_stderr}");
     assert!(!temp_dir.path().join("guarded.txt").exists());
     assert!(!temp_dir.path().join("skipped.txt").exists());
     assert!(!temp_dir.path().join("fallback.txt").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn dry_run_full_expands_rendered_commands_without_execution() {
+    let _cwd_lock = cwd_lock();
+    let temp_dir = TempDir::new("dry-run-full-cli-unix");
+    let onlyfile_path = temp_dir.path().join("Onlyfile");
+    fs::write(
+        &onlyfile_path,
+        "probe():\n    printf 'guarded\\n' > guarded.txt\n",
+    )
+    .expect("Onlyfile should be written");
+
+    let output = Command::new(cli_binary_path())
+        .arg("--dry-run")
+        .arg("--full")
+        .arg("probe")
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("CLI process should run");
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be valid utf-8");
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be valid utf-8");
+    let plain_stdout = strip_ansi(&stdout);
+    let plain_stderr = strip_ansi(&stderr);
+
+    assert_eq!(output.status.code(), Some(0), "stderr was: {stderr}");
+    assert!(plain_stdout.contains("Dry run: probe()"));
+    assert!(plain_stdout.contains("   └─ probe"));
+    assert!(plain_stdout.contains("      └─ printf 'guarded"));
+    assert!(plain_stderr.is_empty(), "stderr was: {plain_stderr}");
+    assert!(!temp_dir.path().join("guarded.txt").exists());
+}
+
+#[test]
+fn dry_run_without_task_reports_target_error() {
+    let _cwd_lock = cwd_lock();
+    let temp_dir = TempDir::new("dry-run-missing-target");
+    let onlyfile_path = temp_dir.path().join("Onlyfile");
+    fs::write(&onlyfile_path, "check():\n    echo ok\n").expect("Onlyfile should be written");
+
+    let output = Command::new(cli_binary_path())
+        .arg("--dry-run")
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("CLI process should run");
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be valid utf-8");
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be valid utf-8");
+    let plain_stdout = strip_ansi(&stdout);
+    let plain_stderr = strip_ansi(&stderr);
+
+    assert_ne!(output.status.code(), Some(0));
+    assert!(plain_stdout.is_empty(), "stdout was: {plain_stdout}");
+    assert!(plain_stderr.contains("--dry-run requires a task target"));
+    assert!(!plain_stderr.contains("Available tasks:"));
+}
+
+#[test]
+fn full_without_dry_run_reports_usage_error() {
+    let _cwd_lock = cwd_lock();
+    let temp_dir = TempDir::new("full-without-dry-run");
+    let onlyfile_path = temp_dir.path().join("Onlyfile");
+    fs::write(&onlyfile_path, "check():\n    echo ok\n").expect("Onlyfile should be written");
+
+    let output = Command::new(cli_binary_path())
+        .arg("--full")
+        .arg("check")
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("CLI process should run");
+
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be valid utf-8");
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be valid utf-8");
+    let plain_stdout = strip_ansi(&stdout);
+    let plain_stderr = strip_ansi(&stderr);
+
+    assert_ne!(output.status.code(), Some(0));
+    assert!(plain_stdout.is_empty(), "stdout was: {plain_stdout}");
+    assert!(plain_stderr.contains("--full requires --dry-run"));
 }
 
 #[test]

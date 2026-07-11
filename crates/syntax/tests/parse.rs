@@ -61,7 +61,7 @@ fn recovers_after_unexpected_top_level_token() {
 
 #[test]
 fn keeps_parsing_after_comments_and_blank_lines() {
-    let parsed = parse("% docs\n\n# comment\nbuild():\n    cargo build\n");
+    let parsed = parse("# docs\n\n// comment\nbuild():\n    cargo build\n");
     let kinds: Vec<_> = parsed.root_children().map(|node| node.kind()).collect();
 
     assert!(kinds.contains(&SyntaxKind::DocComment));
@@ -70,8 +70,37 @@ fn keeps_parsing_after_comments_and_blank_lines() {
 }
 
 #[test]
+fn top_level_comment_ends_previous_task_body() {
+    let parsed = parse("build():\n    cargo build\n// comment\ncheck():\n    cargo check\n");
+    let task_count = parsed
+        .root_children()
+        .filter(|node| node.kind() == SyntaxKind::TaskDecl)
+        .count();
+
+    assert_eq!(task_count, 2);
+    assert!(parsed.diagnostics().is_empty());
+}
+
+#[test]
 fn reports_malformed_namespace_header_and_recovers() {
     let parsed = parse("[dev\nserve():\n    cargo run\n");
+    let task_count = parsed
+        .root_children()
+        .filter(|node| node.kind() == SyntaxKind::TaskDecl)
+        .count();
+
+    assert_eq!(task_count, 1);
+    assert!(
+        parsed
+            .diagnostics()
+            .iter()
+            .any(|diag| diag.code == DiagnosticCode::new("parse.malformed-namespace-header"))
+    );
+}
+
+#[test]
+fn reports_inline_comment_in_namespace_header() {
+    let parsed = parse("[dev] // comment\nserve():\n    cargo run\n");
     let task_count = parsed
         .root_children()
         .filter(|node| node.kind() == SyntaxKind::TaskDecl)
@@ -104,8 +133,47 @@ fn reports_malformed_directive_and_recovers() {
 }
 
 #[test]
+fn reports_inline_comment_in_directive() {
+    let parsed = parse("!shell bash // comment\nbuild():\n    cargo build\n");
+    let task_count = parsed
+        .root_children()
+        .filter(|node| node.kind() == SyntaxKind::TaskDecl)
+        .count();
+
+    assert_eq!(task_count, 1);
+    assert!(
+        parsed
+            .diagnostics()
+            .iter()
+            .any(|diag| diag.code == DiagnosticCode::new("parse.malformed-directive"))
+    );
+}
+
+#[test]
 fn reports_malformed_task_params_and_recovers() {
     let parsed = parse("build(name:\n    echo broken\nnext():\n    echo next\n");
+    let task_count = parsed
+        .root_children()
+        .filter(|node| node.kind() == SyntaxKind::TaskDecl)
+        .count();
+    let error_count = parsed
+        .root_children()
+        .filter(|node| node.kind() == SyntaxKind::Error)
+        .count();
+
+    assert_eq!(task_count, 1);
+    assert_eq!(error_count, 1);
+    assert!(
+        parsed
+            .diagnostics()
+            .iter()
+            .any(|diag| diag.code == DiagnosticCode::new("parse.malformed-task-header"))
+    );
+}
+
+#[test]
+fn reports_inline_comment_in_task_header() {
+    let parsed = parse("build(): // comment\nnext():\n    echo next\n");
     let task_count = parsed
         .root_children()
         .filter(|node| node.kind() == SyntaxKind::TaskDecl)

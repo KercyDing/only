@@ -1,25 +1,26 @@
-% Internal helper for release builds
+// This is for prerelease.
+# Internal helper for release builds
 _release_build():
     cargo build --release
 
-% Run cargo check
+# Run cargo check
 check():
     cargo fmt --all -- --check
     cargo check --workspace --all-targets
     cargo clippy --workspace --all-targets -- -D warnings
 
-% Run the full test suite
+# Run the full test suite
 test() ? @has("cargo-nextest"):
     cargo nextest run
 
 test():
     cargo test
 
-% Run formatter, type checks, and tests
+# Run formatter, type checks, and tests
 ci() & check & test:
     echo "CI complete!"
 
-% Install the local only binary
+# Install the local only binary
 install() ? @os("windows") & _release_build shell?=pwsh:
     New-Item -ItemType Directory -Force -Path (Join-Path $env:LOCALAPPDATA "Programs\Only") | Out-Null
     Copy-Item target/release/only.exe -Destination (Join-Path $env:TEMP "only-install-staged.exe") -Force
@@ -34,27 +35,27 @@ install() & _release_build shell?=bash:
     echo "Installed only to $([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/only"
     "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/only" --version
 
-% Development builds
+# Development builds
 [dev]
-% Build the project in development mode.
+# Build the project in development mode.
 build():
     cargo build
 
-% Run the project in development mode
+# Run the project in development mode
 run():
     cargo run
 
-% Release builds
+# Release builds
 [rel]
-% Build the project in release mode.
+# Build the project in release mode.
 build():
     cargo build --release
 
-% Run the project in release mode
+# Run the project in release mode
 run():
     cargo run --release
 
-% Run the release test suite
+# Run the release test suite
 test() ? @has("cargo-nextest"):
     cargo nextest run --release
 
