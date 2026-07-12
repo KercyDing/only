@@ -49,10 +49,14 @@ impl TaskAst {
             &self
                 .params
                 .iter()
-                .map(|parameter| match &parameter.default_value {
-                    Some(default) => format!("{}=\"{default}\"", parameter.name),
-                    None => parameter.name.to_string(),
-                })
+                .map(
+                    |parameter| match (parameter.is_slice, &parameter.default_value) {
+                        (true, Some(default)) => format!("{}..=\"{default}\"", parameter.name),
+                        (true, None) => format!("{}..", parameter.name),
+                        (false, Some(default)) => format!("{}=\"{default}\"", parameter.name),
+                        (false, None) => parameter.name.to_string(),
+                    },
+                )
                 .collect::<Vec<_>>()
                 .join(", "),
         );
@@ -76,6 +80,7 @@ impl TaskAst {
 pub struct ParamAst {
     pub name: SmolStr,
     pub default_value: Option<SmolStr>,
+    pub is_slice: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

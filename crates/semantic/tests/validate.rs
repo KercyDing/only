@@ -32,3 +32,29 @@ fn reports_duplicate_directives() {
 
     assert!(messages.contains(&"duplicate directive '!shell'"));
 }
+
+#[test]
+fn reports_slice_parameter_before_final_position() {
+    let compiled = compile_document("run(args.., tail):\n    echo {{args}} {{tail}}\n");
+    let messages: Vec<_> = compiled
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect();
+
+    assert!(
+        messages.contains(&"slice parameter 'args..' must be the final parameter in task 'run'")
+    );
+}
+
+#[test]
+fn reports_slice_parameter_default_value() {
+    let compiled = compile_document("run(args..=\"fetch\"):\n    echo {{args}}\n");
+    let messages: Vec<_> = compiled
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.message.as_str())
+        .collect();
+
+    assert!(messages.contains(&"slice parameter 'args..' cannot have a default value"));
+}

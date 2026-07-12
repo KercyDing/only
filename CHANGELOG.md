@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.0.7 - 2026-07-13
+
+- Added slice parameters with `name..` syntax to capture all remaining positional arguments.
+- Added CLI support for forwarding unquoted trailing arguments, including values such as `--force`, into slice parameters.
+- Added semantic diagnostics for slice parameters that are not final or that declare default values.
+- Updated usage docs with slice parameter examples and diagnostics.
+
 ## 0.0.6 - 2026-07-11
 
 - Removed the `!label`, `!echo`, and `!preview` file-level directives.

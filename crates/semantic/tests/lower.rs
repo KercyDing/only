@@ -18,10 +18,22 @@ fn lowers_task_header_and_commands_into_ast() {
 
     assert_eq!(task.name, "build");
     assert_eq!(task.params[0].name, "tag");
+    assert!(!task.params[0].is_slice);
     assert_eq!(task.params[0].default_value.as_deref(), Some("v1"));
     assert_eq!(task.commands.len(), 1);
     assert_eq!(task.commands[0].text, "echo {{tag}}");
     assert_eq!(task.commands[0].interpolations[0].name, "tag");
+}
+
+#[test]
+fn lowers_slice_parameter_suffix() {
+    let compiled = compile_document("run(args..):\n    echo {{args}}\n");
+    let task = &compiled.document.tasks[0];
+
+    assert_eq!(task.params[0].name, "args");
+    assert!(task.params[0].is_slice);
+    assert_eq!(task.params[0].default_value, None);
+    assert_eq!(task.signature(), "run(args..)");
 }
 
 #[test]

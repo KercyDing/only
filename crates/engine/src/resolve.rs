@@ -126,6 +126,11 @@ pub(crate) fn bind_parameters(
             continue;
         }
 
+        if param.is_slice {
+            parameters.insert(param.name.to_string(), String::new());
+            continue;
+        }
+
         if let Some(default) = &param.default_value {
             parameters.insert(param.name.to_string(), default.to_string());
             continue;
@@ -142,7 +147,16 @@ pub(crate) fn merge_parameter_inputs(
     named_overrides: Vec<(&str, &str)>,
     task: &TaskAst,
 ) -> Result<HashMap<String, String>, PlanError> {
-    if positional_args.len() > task.params.len() {
+    let slice_index = task
+        .params
+        .iter()
+        .enumerate()
+        .find(|(index, param)| {
+            param.is_slice && param.default_value.is_none() && index + 1 == task.params.len()
+        })
+        .map(|(index, _)| index);
+
+    if slice_index.is_none() && positional_args.len() > task.params.len() {
         return Err(PlanError::TooManyArguments {
             task: task.qualified_name().to_string(),
             expected: task.params.len(),
@@ -157,7 +171,13 @@ pub(crate) fn merge_parameter_inputs(
         .collect::<HashSet<_>>();
 
     let mut merged = HashMap::new();
-    for (index, value) in positional_args.into_iter().enumerate() {
+    for (index, value) in positional_args.iter().copied().enumerate() {
+        if Some(index) == slice_index {
+            let joined = positional_args[index..].join(" ");
+            merged.insert(task.params[index].name.to_string(), joined);
+            break;
+        }
+
         let parameter = &task.params[index];
         merged.insert(parameter.name.to_string(), value.to_string());
     }

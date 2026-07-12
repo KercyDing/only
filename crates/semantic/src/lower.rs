@@ -165,16 +165,21 @@ fn parse_params(section: &str) -> Vec<ParamAst> {
         .map(str::trim)
         .filter(|part| !part.is_empty())
         .map(|part| {
-            let (name, default_value) = match part.split_once('=') {
-                Some((name, value)) => (
-                    name.trim(),
+            let (raw_name, default_value) = match part.split_once('=') {
+                Some((raw_name, value)) => (
+                    raw_name.trim(),
                     parse_string_literal(value.trim()).map(SmolStr::new),
                 ),
                 None => (part, None),
             };
+            let (name, is_slice) = match raw_name.strip_suffix("..") {
+                Some(name) => (name.trim_end(), true),
+                None => (raw_name, false),
+            };
             ParamAst {
                 name: SmolStr::new(name),
                 default_value,
+                is_slice,
             }
         })
         .collect()

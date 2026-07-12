@@ -129,6 +129,63 @@ fn binds_positional_and_named_parameter_inputs() {
 }
 
 #[test]
+fn binds_slice_parameter_from_remaining_arguments() {
+    let compiled = compile_document("run(args..):\n    echo {{args}}\n");
+    let plan = try_build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "run",
+            args: vec!["fetch", "https://example.invalid/repo.git", "--force"],
+            overrides: vec![],
+        },
+    )
+    .expect("plan should build");
+
+    assert_eq!(plan.nodes.len(), 1);
+    assert_eq!(plan.nodes[0].params[0].name, "args");
+    assert_eq!(
+        plan.nodes[0].params[0].value.as_deref(),
+        Some("fetch https://example.invalid/repo.git --force")
+    );
+}
+
+#[test]
+fn binds_slice_parameter_after_fixed_arguments() {
+    let compiled = compile_document("run(tool, args..):\n    {{tool}} {{args}}\n");
+    let plan = try_build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "run",
+            args: vec!["cargo", "run", "--release"],
+            overrides: vec![],
+        },
+    )
+    .expect("plan should build");
+
+    assert_eq!(plan.nodes[0].params[0].value.as_deref(), Some("cargo"));
+    assert_eq!(
+        plan.nodes[0].params[1].value.as_deref(),
+        Some("run --release")
+    );
+}
+
+#[test]
+fn binds_empty_slice_parameter_when_no_remaining_arguments() {
+    let compiled = compile_document("run(args..):\n    echo {{args}}\n");
+    let plan = try_build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "run",
+            args: vec![],
+            overrides: vec![],
+        },
+    )
+    .expect("plan should build");
+
+    assert_eq!(plan.nodes[0].params[0].value.as_deref(), Some(""));
+}
+
+#[test]
 fn rejects_missing_required_parameter_for_new_engine_planner() {
     let compiled = compile_document("run(task):\n    echo {{task}}\n");
     let error = try_build_execution_plan(

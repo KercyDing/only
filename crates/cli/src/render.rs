@@ -307,7 +307,15 @@ fn build_task_command(task: &TaskAst) -> Command {
         .hide(task.is_helper());
 
     for (index, param) in task.params.iter().enumerate() {
-        let arg = if let Some(default) = &param.default_value {
+        let arg = if param.is_slice {
+            Arg::new(param.name.to_string())
+                .index(index + 1)
+                .required(false)
+                .num_args(0..)
+                .trailing_var_arg(true)
+                .allow_hyphen_values(true)
+                .help("Slice parameter")
+        } else if let Some(default) = &param.default_value {
             let help = format!("Parameter (default: {default})");
             Arg::new(param.name.to_string())
                 .index(index + 1)

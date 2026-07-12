@@ -919,6 +919,40 @@ fn binds_positional_arguments_for_global_task() {
 }
 
 #[test]
+fn binds_slice_arguments_for_global_task() {
+    let document = parse_onlyfile(
+        r#"run(args..):
+    echo {{args}}
+"#,
+    )
+    .expect("document should parse");
+
+    let matches = build_cli(&document)
+        .try_get_matches_from([
+            "only",
+            "run",
+            "fetch",
+            "https://example.invalid/repo.git",
+            "--force",
+        ])
+        .expect("dynamic CLI should accept slice arguments");
+    let input = CliInput::from_matches(matches.clone())
+        .expect("matches should normalize")
+        .with_task_path(matches, &document);
+    let plan = compile_plan(
+        r#"run(args..):
+    echo {{args}}
+"#,
+        &input,
+    );
+
+    assert_eq!(
+        plan.nodes[0].params[0].value.as_deref(),
+        Some("fetch https://example.invalid/repo.git --force")
+    );
+}
+
+#[test]
 fn binds_positional_arguments_for_namespaced_task() {
     let _cwd_lock = cwd_lock();
     let plan = compile_plan(

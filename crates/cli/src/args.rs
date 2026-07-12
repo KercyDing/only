@@ -77,6 +77,13 @@ impl CliInput {
 
         if let Some(task) = task_for_path(document, &path) {
             for parameter in &task.params {
+                if parameter.is_slice {
+                    if let Some(values) = current.get_many::<String>(parameter.name.as_str()) {
+                        path.extend(values.cloned());
+                    }
+                    continue;
+                }
+
                 if let Some(value) = current.get_one::<String>(parameter.name.as_str()) {
                     path.push(value.clone());
                 }

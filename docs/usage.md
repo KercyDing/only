@@ -117,6 +117,28 @@ only greet Ada
 
 Running `only greet` fails before any command runs because `name` has no default.
 
+### Slice parameters
+
+Use a slice parameter when the last parameter should capture every remaining positional argument.
+
+```Onlyfile
+run(args..):
+    cargo run {{args}}
+```
+
+```bash
+only run --release --bin demo
+```
+
+`args..` binds to `--release --bin demo`. A slice parameter can also follow fixed parameters:
+
+```Onlyfile
+tool(name, args..):
+    {{name}} {{args}}
+```
+
+Slice parameters can receive zero or more arguments. They must be the final parameter and cannot have a default value.
+
 ### Interpolation escapes
 
 Use `\{{` and `\}}` when you need literal `{{` and `}}` in a command.
@@ -463,6 +485,8 @@ Accepted names are `deno`, `bash`, `sh`, `pwsh`, and `powershell`.
 | `semantic.duplicate-directive` | same directive appears twice | keep one copy |
 | `semantic.duplicate-task` | duplicate task signature | rename it or make the variant distinct |
 | `semantic.duplicate-parameter` | same parameter appears twice | rename one parameter |
+| `semantic.slice-parameter-position` | slice parameter is not the last parameter | move `name..` to the end |
+| `semantic.slice-parameter-default` | slice parameter has a default value | remove the default value |
 | `semantic.ambiguous-guard` | two variants use the same guard | remove one or change the guard |
 | `semantic.namespace-conflict` | namespace and global task share a name | rename one |
 | `semantic.undefined-dependency` | dependency task is not defined | define it or fix the spelling |
@@ -511,6 +535,7 @@ Accepted names are `deno`, `bash`, `sh`, `pwsh`, and `powershell`.
 | `task():` | define a task |
 | `task(name="value"):` | define a parameter with default |
 | `task(name):` | define a required parameter |
+| `task(args..):` | define a slice parameter for remaining positional arguments |
 | `{{name}}` | interpolate a parameter |
 | `_task():` | helper task |
 | `task() & a & b:` | serial dependencies |

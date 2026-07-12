@@ -43,7 +43,7 @@ fn validate_task(
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     let mut params = HashSet::new();
-    for param in &task.params {
+    for (index, param) in task.params.iter().enumerate() {
         if !params.insert(param.name.clone()) {
             diagnostics.push(error(
                 "semantic.duplicate-parameter",
@@ -51,6 +51,29 @@ fn validate_task(
                     "duplicate parameter '{}' in task '{}'",
                     param.name,
                     task.qualified_name()
+                ),
+                task.range,
+            ));
+        }
+
+        if param.is_slice && index + 1 != task.params.len() {
+            diagnostics.push(error(
+                "semantic.slice-parameter-position",
+                format!(
+                    "slice parameter '{}..' must be the final parameter in task '{}'",
+                    param.name,
+                    task.qualified_name()
+                ),
+                task.range,
+            ));
+        }
+
+        if param.is_slice && param.default_value.is_some() {
+            diagnostics.push(error(
+                "semantic.slice-parameter-default",
+                format!(
+                    "slice parameter '{}..' cannot have a default value",
+                    param.name
                 ),
                 task.range,
             ));
@@ -154,10 +177,14 @@ fn task_signature_key(task: &TaskAst) -> String {
     let parameter_names = task
         .params
         .iter()
-        .map(|parameter| match &parameter.default_value {
-            Some(default) => format!("{}={default}", parameter.name),
-            None => parameter.name.to_string(),
-        })
+        .map(
+            |parameter| match (parameter.is_slice, &parameter.default_value) {
+                (true, Some(default)) => format!("{}..={default}", parameter.name),
+                (true, None) => format!("{}..", parameter.name),
+                (false, Some(default)) => format!("{}={default}", parameter.name),
+                (false, None) => parameter.name.to_string(),
+            },
+        )
         .collect::<Vec<_>>()
         .join(",");
 
