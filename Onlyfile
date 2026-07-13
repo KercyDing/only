@@ -27,13 +27,12 @@ install() ? @os("windows") & _release_build shell?=pwsh:
     $parentPid = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId; $shellPath = (Get-Process -Id $PID).Path; $stagedPath = Join-Path $env:TEMP "only-install-staged.exe"; $installPath = Join-Path $env:LOCALAPPDATA "Programs\Only\only.exe"; $script = "Wait-Process -Id $parentPid; Copy-Item -LiteralPath '$stagedPath' -Destination '$installPath' -Force; Remove-Item -LiteralPath '$stagedPath' -Force"; $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script)); Start-Process -WindowStyle Hidden -FilePath $shellPath -ArgumentList "-NoProfile", "-EncodedCommand", $encoded
     Write-Output "Install will complete after this only process exits: $(Join-Path $env:LOCALAPPDATA "Programs\Only\only.exe")"
 
-install() & _release_build shell?=bash:
-    mkdir -p "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")"
-    cp target/release/only "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/.only-install"
-    chmod +x "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/.only-install"
-    mv -f "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/.only-install" "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/only"
-    echo "Installed only to $([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/only"
-    "$([ -w /usr/local/bin ] && printf /usr/local/bin || printf "$HOME/.local/bin")/only" --version
+install() & _release_build:
+    mkdir -p "$HOME/.local/bin"
+    cp target/release/only "$HOME/.local/bin/.only-install"
+    chmod +x "$HOME/.local/bin/.only-install"
+    mv "$HOME/.local/bin/.only-install" "$HOME/.local/bin/only"
+    echo "Installed only to $HOME/.local/bin/only"
 
 # Development builds
 [dev]
