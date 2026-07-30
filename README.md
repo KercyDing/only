@@ -50,7 +50,7 @@ That is the core idea: a readable task file, parameters when you need them, depe
 
 ## Install
 
-From the latest GitHub release:
+On MacOS or Linux:
 
 ```shell
 curl -fsSL https://raw.githubusercontent.com/KercyDing/only/master/install.sh | sh
