@@ -4,24 +4,30 @@
 //! None.
 //!
 //! Returns:
-//! Platform-specific download and install helpers used by the CLI.
+//! Verified download and platform-specific install helpers used by the CLI.
 //!
 //! Edge Cases:
 //! Installed binaries replace themselves in place; ad hoc binaries copy into the install path.
 
 use crate::error::{OnlyError, Result};
 use self_replace::self_replace;
+use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;
 use std::fs::OpenOptions;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::process::ExitCode;
 
 const REPO: &str = "KercyDing/only";
+const CHECKSUMS_FILE: &str = "SHA256SUMS";
+const HTTP_TIMEOUT_SECONDS: u64 = 60;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct UpgradePlan {
+    binary: &'static str,
     download_url: String,
+    checksum_url: String,
     install_path: PathBuf,
     staged_path: PathBuf,
 }
@@ -46,11 +52,14 @@ pub(crate) fn run_upgrade() -> Result<ExitCode> {
 fn build_upgrade_plan() -> Result<UpgradePlan> {
     let binary = current_platform_binary()?;
     let download_url = latest_download_url(binary);
+    let checksum_url = latest_download_url(CHECKSUMS_FILE);
     let install_path = upgrade_install_path()?;
     let staged_path = staged_path_for(&install_path)?;
 
     Ok(UpgradePlan {
+        binary,
         download_url,
+        checksum_url,
         install_path,
         staged_path,
     })
@@ -178,7 +187,7 @@ fn execute_upgrade(plan: &UpgradePlan) -> Result<()> {
 
     ensure_directory_writable(install_dir, &plan.install_path)?;
     print_download_summary(plan);
-    download_with_windows_tool(&plan.download_url, &plan.staged_path)?;
+    download_verified(plan)?;
 
     if current_exe_is_install_path(&plan.install_path) {
         self_replace(&plan.staged_path).map_err(|error| {
@@ -228,7 +237,7 @@ fn execute_upgrade(plan: &UpgradePlan) -> Result<()> {
 
     ensure_directory_writable(install_dir, &plan.install_path)?;
     print_download_summary(plan);
-    download_with_system_tool(&plan.download_url, &plan.staged_path)?;
+    download_verified(plan)?;
     make_executable(&plan.staged_path)?;
     if current_exe_is_install_path(&plan.install_path) {
         self_replace(&plan.staged_path).map_err(|error| {
@@ -347,56 +356,15 @@ fn parse_latest_release_tag(body: &str) -> Result<String> {
     Ok(stripped[..end].to_string())
 }
 
-#[cfg(windows)]
 fn fetch_url_text(url: &str) -> Result<String> {
-    if command_exists("curl.exe") {
-        return run_text_command("curl.exe", &["-fsSL", url]);
-    }
-
-    let powershell = windows_powershell_command()?;
-    let script = format!(
-        "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest -Uri {} -UseBasicParsing | Select-Object -ExpandProperty Content",
-        ps_literal(url),
-    );
-    run_text_command(
-        powershell,
-        &[
-            "-NoProfile",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            &script,
-        ],
-    )
-}
-
-#[cfg(unix)]
-fn fetch_url_text(url: &str) -> Result<String> {
-    if command_exists("curl") {
-        return run_text_command("curl", &["-fsSL", url]);
-    }
-    if command_exists("wget") {
-        return run_text_command("wget", &["-qO-", url]);
-    }
-
-    Err(OnlyError::runtime(
-        "curl or wget is required to check the latest release",
-    ))
-}
-
-fn run_text_command(command: &str, args: &[&str]) -> Result<String> {
-    let output = Command::new(command)
-        .args(args)
-        .output()
-        .map_err(|error| OnlyError::runtime(format!("failed to start {command}: {error}")))?;
-
-    if !output.status.success() {
-        return Err(OnlyError::runtime(format!(
-            "failed to get release information with {command}"
-        )));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    let response = request(url)
+        .send()
+        .map_err(|error| request_error("fetch", url, error))?;
+    ensure_success(response.status_code, &response.reason_phrase, url)?;
+    response
+        .as_str()
+        .map(str::to_owned)
+        .map_err(|error| OnlyError::runtime(format!("invalid UTF-8 response from {url}: {error}")))
 }
 
 fn current_exe_is_install_path(install_path: &Path) -> bool {
@@ -414,71 +382,118 @@ fn paths_equal(left: &Path, right: &Path) -> bool {
         == right.as_os_str().to_string_lossy().to_lowercase()
 }
 
-#[cfg(windows)]
-fn download_with_windows_tool(url: &str, output: &Path) -> Result<()> {
-    if command_exists("curl.exe") {
-        return run_download_command(
-            "curl.exe",
-            &["-fL", "--progress-bar", url, "-o"],
-            output,
-            url,
-        );
+fn download_verified(plan: &UpgradePlan) -> Result<()> {
+    let checksums = fetch_url_text(&plan.checksum_url)?;
+    let expected = parse_checksum(&checksums, plan.binary)?;
+    let result = download_and_hash(&plan.download_url, &plan.staged_path);
+    let actual = match result {
+        Ok(actual) => actual,
+        Err(error) => {
+            let _ = fs::remove_file(&plan.staged_path);
+            return Err(error);
+        }
+    };
+
+    if actual != expected {
+        let _ = fs::remove_file(&plan.staged_path);
+        return Err(OnlyError::runtime(format!(
+            "checksum mismatch for {}\nexpected: {expected}\nactual:   {actual}",
+            plan.binary
+        )));
     }
 
-    let powershell = windows_powershell_command()?;
-    download_with_powershell(powershell, url, output)
+    Ok(())
 }
 
-#[cfg(windows)]
-fn download_with_powershell(powershell: &str, url: &str, output: &Path) -> Result<()> {
-    let script = format!(
-        "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'Continue'; Invoke-WebRequest -Uri {} -OutFile {} -UseBasicParsing",
-        ps_literal(url),
-        ps_literal_path(output),
-    );
-    let status = Command::new(powershell)
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"])
-        .arg(script)
-        .status()
-        .map_err(|error| OnlyError::runtime(format!("failed to start PowerShell: {error}")))?;
+fn download_and_hash(url: &str, output: &Path) -> Result<String> {
+    let mut response = request(url)
+        .send_lazy()
+        .map_err(|error| request_error("download", url, error))?;
+    ensure_success(response.status_code, &response.reason_phrase, url)?;
 
-    if status.success() {
+    let mut file = fs::File::create(output).map_err(|error| {
+        OnlyError::io_with_path(
+            "failed to create staged binary",
+            output.to_path_buf(),
+            error,
+        )
+    })?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 64 * 1024];
+
+    loop {
+        let read = response.read(&mut buffer).map_err(|error| {
+            OnlyError::runtime(format!("failed to read download from {url}: {error}"))
+        })?;
+        if read == 0 {
+            break;
+        }
+        file.write_all(&buffer[..read]).map_err(|error| {
+            OnlyError::io_with_path("failed to write staged binary", output.to_path_buf(), error)
+        })?;
+        hasher.update(&buffer[..read]);
+    }
+    file.flush().map_err(|error| {
+        OnlyError::io_with_path("failed to flush staged binary", output.to_path_buf(), error)
+    })?;
+
+    Ok(encode_hex(hasher.finalize().as_ref()))
+}
+
+fn encode_hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(DIGITS[(byte >> 4) as usize] as char);
+        encoded.push(DIGITS[(byte & 0x0f) as usize] as char);
+    }
+    encoded
+}
+
+fn parse_checksum(contents: &str, binary: &str) -> Result<String> {
+    for line in contents.lines() {
+        let mut fields = line.split_whitespace();
+        let Some(checksum) = fields.next() else {
+            continue;
+        };
+        let Some(name) = fields.next() else {
+            continue;
+        };
+        if name.trim_start_matches('*') != binary {
+            continue;
+        }
+        if checksum.len() != 64 || !checksum.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(OnlyError::runtime(format!(
+                "invalid SHA-256 checksum for {binary}"
+            )));
+        }
+        return Ok(checksum.to_ascii_lowercase());
+    }
+
+    Err(OnlyError::runtime(format!(
+        "no SHA-256 checksum found for {binary}"
+    )))
+}
+
+fn request(url: &str) -> minreq::Request {
+    minreq::get(url)
+        .with_header("User-Agent", concat!("only/", env!("CARGO_PKG_VERSION")))
+        .with_timeout(HTTP_TIMEOUT_SECONDS)
+}
+
+fn ensure_success(status: u16, reason: &str, url: &str) -> Result<()> {
+    if (200..300).contains(&status) {
         Ok(())
     } else {
         Err(OnlyError::runtime(format!(
-            "failed to download only from {url}"
+            "request to {url} failed with HTTP {status} {reason}"
         )))
     }
 }
 
-#[cfg(unix)]
-fn download_with_system_tool(url: &str, output: &Path) -> Result<()> {
-    if command_exists("curl") {
-        return run_download_command("curl", &["-fL", "--progress-bar", url, "-o"], output, url);
-    }
-    if command_exists("wget") {
-        return run_download_command("wget", &["--show-progress", url, "-O"], output, url);
-    }
-
-    Err(OnlyError::runtime(
-        "curl or wget is required to download the upgrade",
-    ))
-}
-
-fn run_download_command(command: &str, args: &[&str], output: &Path, url: &str) -> Result<()> {
-    let status = Command::new(command)
-        .args(args)
-        .arg(output)
-        .status()
-        .map_err(|error| OnlyError::runtime(format!("failed to start {command}: {error}")))?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        Err(OnlyError::runtime(format!(
-            "failed to download only from {url}"
-        )))
-    }
+fn request_error(action: &str, url: &str, error: minreq::Error) -> OnlyError {
+    OnlyError::runtime(format!("failed to {action} {url}: {error}"))
 }
 
 fn ensure_directory_writable(path: &Path, install_path: &Path) -> Result<()> {
@@ -502,30 +517,6 @@ fn install_not_writable_message(path: &Path, install_path: &Path) -> &'static st
     } else {
         "install directory is not writable"
     }
-}
-
-#[cfg(windows)]
-fn windows_powershell_command() -> Result<&'static str> {
-    if command_exists("pwsh.exe") {
-        return Ok("pwsh.exe");
-    }
-    if command_exists("powershell.exe") {
-        return Ok("powershell.exe");
-    }
-
-    Err(OnlyError::runtime(
-        "PowerShell is required to download the upgrade",
-    ))
-}
-
-#[cfg(windows)]
-fn ps_literal_path(path: &Path) -> String {
-    ps_literal(&path.display().to_string())
-}
-
-#[cfg(windows)]
-fn ps_literal(value: &str) -> String {
-    format!("'{}'", value.replace('\'', "''"))
 }
 
 #[cfg(unix)]
@@ -571,19 +562,14 @@ fn directory_is_writable(path: &Path) -> bool {
     }
 }
 
-fn command_exists(command: &str) -> bool {
-    let Some(path_var) = env::var_os("PATH") else {
-        return false;
-    };
-
-    env::split_paths(&path_var).any(|dir| dir.join(command).is_file())
-}
-
 #[cfg(test)]
 mod tests {
     #[cfg(unix)]
     use super::is_unix_install_path;
-    use super::{VersionOrder, compare_versions, latest_download_url, parse_latest_release_tag};
+    use super::{
+        VersionOrder, compare_versions, encode_hex, latest_download_url, parse_checksum,
+        parse_latest_release_tag,
+    };
     #[cfg(unix)]
     use std::path::Path;
 
@@ -603,6 +589,34 @@ mod tests {
             parse_latest_release_tag(body).expect("tag should parse"),
             "v0.0.5"
         );
+    }
+
+    #[test]
+    fn selects_platform_checksum() {
+        let checksums = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  only-linux-amd64\n\
+                         BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB *only-windows-amd64.exe\n";
+
+        assert_eq!(
+            parse_checksum(checksums, "only-windows-amd64.exe")
+                .expect("platform checksum should parse"),
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_platform_checksum() {
+        let error = parse_checksum("not-a-sha256  only-linux-amd64\n", "only-linux-amd64")
+            .expect_err("invalid checksum should fail");
+
+        assert_eq!(
+            error.to_string(),
+            "invalid SHA-256 checksum for only-linux-amd64"
+        );
+    }
+
+    #[test]
+    fn encodes_digest_bytes_as_lowercase_hex() {
+        assert_eq!(encode_hex(&[0x00, 0xab, 0xff]), "00abff");
     }
 
     #[test]

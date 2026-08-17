@@ -8,8 +8,9 @@ documentation.workspace = true
 description = "Syntax parsing and CST construction for the only task language."
 
 [dependencies]
-logos.workspace = true
 only-diagnostic = { version = "0.1.0", path = "../diagnostic" }
+
+logos.workspace = true
 rowan.workspace = true
 smol_str.workspace = true
 text-size.workspace = true

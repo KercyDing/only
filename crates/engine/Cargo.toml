@@ -8,7 +8,8 @@ documentation.workspace = true
 description = "Execution planning and runtime engine for only tasks."
 
 [dependencies]
+only-semantic = { version = "0.1.0", path = "../semantic" }
+
 anstyle.workspace = true
 deno_task_shell.workspace = true
-only-semantic = { version = "0.1.0", path = "../semantic" }
 tokio.workspace = true

@@ -23,8 +23,10 @@ clap = { version = "4.6", features = ["color", "std", "string"] }
 deno_task_shell = "0.33"
 logos = "0.16"
 miette = { version = "7.6", features = ["fancy"] }
+minreq = { version = "3", default-features = false, features = ["https-rustls"] }
 rowan = "0.17"
 self-replace = "1.5"
+sha2 = "0.11"
 smol_str = "0.3"
 text-size = "1.1"
 tokio = { version = "1.53", features = ["rt"] }

@@ -10,5 +10,6 @@ description = "Semantic analysis for the only task language."
 [dependencies]
 only-diagnostic = { version = "0.1.0", path = "../diagnostic" }
 only-syntax = { version = "0.1.0", path = "../syntax" }
+
 smol_str.workspace = true
 text-size.workspace = true

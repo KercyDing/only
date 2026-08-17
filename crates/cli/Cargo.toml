@@ -19,12 +19,15 @@ name = "only"
 path = "src/main.rs"
 
 [dependencies]
+only-diagnostic = { version = "0.1.0", path = "../diagnostic" }
+only-engine = { version = "0.1.0", path = "../engine" }
+only-semantic = { version = "0.1.0", path = "../semantic" }
+
+self-replace.workspace = true
+sha2.workspace = true
+tokio.workspace = true
 anstyle.workspace = true
 clap.workspace = true
 deno_task_shell.workspace = true
 miette.workspace = true
-only-diagnostic = { version = "0.1.0", path = "../diagnostic" }
-only-engine = { version = "0.1.0", path = "../engine" }
-only-semantic = { version = "0.1.0", path = "../semantic" }
-self-replace.workspace = true
-tokio.workspace = true
+minreq.workspace = true

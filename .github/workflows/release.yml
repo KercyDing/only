@@ -92,9 +92,14 @@ jobs:
         with:
           merge-multiple: true
 
+      - name: Generate SHA-256 checksums
+        run: sha256sum only-* > SHA256SUMS
+
       - uses: softprops/action-gh-release@v2
         with:
-          files: only-*
+          files: |
+            only-*
+            SHA256SUMS
           generate_release_notes: true
 
   aur:
