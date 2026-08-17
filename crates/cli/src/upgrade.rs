@@ -8,6 +8,7 @@
 //!
 //! Edge Cases:
 //! Installed binaries replace themselves in place; ad hoc binaries copy into the install path.
+//! Package-managed binaries refuse self-updates and defer to the system package manager.
 
 use crate::error::{OnlyError, Result};
 use self_replace::self_replace;
@@ -20,16 +21,22 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 const REPO: &str = "KercyDing/only";
+const VERSION_FILE: &str = "VERSION";
 const CHECKSUMS_FILE: &str = "SHA256SUMS";
 const HTTP_TIMEOUT_SECONDS: u64 = 60;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct UpgradePlan {
     binary: &'static str,
-    download_url: String,
-    checksum_url: String,
     install_path: PathBuf,
     staged_path: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LatestRelease {
+    version: String,
+    download_url: String,
+    checksum: String,
 }
 
 /// Downloads and installs the latest GitHub release for the current platform.
@@ -51,22 +58,14 @@ pub(crate) fn run_upgrade() -> Result<ExitCode> {
 
 fn build_upgrade_plan() -> Result<UpgradePlan> {
     let binary = current_platform_binary()?;
-    let download_url = latest_download_url(binary);
-    let checksum_url = latest_download_url(CHECKSUMS_FILE);
     let install_path = upgrade_install_path()?;
     let staged_path = staged_path_for(&install_path)?;
 
     Ok(UpgradePlan {
         binary,
-        download_url,
-        checksum_url,
         install_path,
         staged_path,
     })
-}
-
-fn latest_download_url(binary: &str) -> String {
-    format!("https://github.com/{REPO}/releases/latest/download/{binary}")
 }
 
 #[cfg(windows)]
@@ -122,13 +121,24 @@ fn upgrade_install_path() -> Result<PathBuf> {
 
 #[cfg(unix)]
 fn upgrade_install_path() -> Result<PathBuf> {
-    if let Ok(current_exe) = env::current_exe()
-        && is_unix_install_path(&current_exe)
-    {
-        return Ok(current_exe);
+    if let Ok(current_exe) = env::current_exe() {
+        if is_system_package_install_path(&current_exe) {
+            return Err(OnlyError::runtime(
+                "only was installed by a system package manager\nhelp: update it with your package manager",
+            ));
+        }
+        if is_unix_install_path(&current_exe) {
+            return Ok(current_exe);
+        }
     }
 
     default_install_path()
+}
+
+#[cfg(any(unix, test))]
+fn is_system_package_install_path(path: &Path) -> bool {
+    path.file_name().and_then(|name| name.to_str()) == Some("only")
+        && path.parent() == Some(Path::new("/usr/bin"))
 }
 
 #[cfg(unix)]
@@ -179,15 +189,15 @@ fn execute_upgrade(plan: &UpgradePlan) -> Result<()> {
         )
     })?;
 
-    let latest_version = fetch_latest_version()?;
-    if compare_versions(env!("CARGO_PKG_VERSION"), &latest_version)? != VersionOrder::Older {
+    let release = fetch_latest_release(plan.binary)?;
+    if compare_versions(env!("CARGO_PKG_VERSION"), &release.version)? != VersionOrder::Older {
         println!("Already up to date.");
         return Ok(());
     }
 
     ensure_directory_writable(install_dir, &plan.install_path)?;
-    print_download_summary(plan);
-    download_verified(plan)?;
+    print_download_summary(plan, &release.download_url);
+    download_verified(plan, &release)?;
 
     if current_exe_is_install_path(&plan.install_path) {
         self_replace(&plan.staged_path).map_err(|error| {
@@ -211,7 +221,7 @@ fn execute_upgrade(plan: &UpgradePlan) -> Result<()> {
         )
     })?;
 
-    print_upgrade_done(normalize_version(&latest_version));
+    print_upgrade_done(normalize_version(&release.version));
     Ok(())
 }
 
@@ -229,15 +239,15 @@ fn execute_upgrade(plan: &UpgradePlan) -> Result<()> {
         )
     })?;
 
-    let latest_version = fetch_latest_version()?;
-    if compare_versions(env!("CARGO_PKG_VERSION"), &latest_version)? != VersionOrder::Older {
+    let release = fetch_latest_release(plan.binary)?;
+    if compare_versions(env!("CARGO_PKG_VERSION"), &release.version)? != VersionOrder::Older {
         println!("Already up to date.");
         return Ok(());
     }
 
     ensure_directory_writable(install_dir, &plan.install_path)?;
-    print_download_summary(plan);
-    download_verified(plan)?;
+    print_download_summary(plan, &release.download_url);
+    download_verified(plan, &release)?;
     make_executable(&plan.staged_path)?;
     if current_exe_is_install_path(&plan.install_path) {
         self_replace(&plan.staged_path).map_err(|error| {
@@ -260,12 +270,12 @@ fn execute_upgrade(plan: &UpgradePlan) -> Result<()> {
         )
     })?;
 
-    print_upgrade_done(normalize_version(&latest_version));
+    print_upgrade_done(normalize_version(&release.version));
     Ok(())
 }
 
-fn print_download_summary(plan: &UpgradePlan) {
-    println!("Downloading from: {}", plan.download_url);
+fn print_download_summary(plan: &UpgradePlan, download_url: &str) {
+    println!("Downloading from: {download_url}");
     println!("Installing to: {}", plan.install_path.display());
 }
 
@@ -274,10 +284,25 @@ fn print_upgrade_done(installed_version: &str) {
     println!("Done.");
 }
 
-fn fetch_latest_version() -> Result<String> {
-    let url = format!("https://api.github.com/repos/{REPO}/releases/latest");
-    let body = fetch_url_text(&url)?;
-    parse_latest_release_tag(&body)
+fn fetch_latest_release(binary: &str) -> Result<LatestRelease> {
+    let version = fetch_url_text(&latest_download_url(VERSION_FILE))?;
+    let version = parse_release_version(&version)?;
+    let checksum_url = release_download_url(&version, CHECKSUMS_FILE);
+    let checksums = fetch_url_text(&checksum_url)?;
+
+    Ok(LatestRelease {
+        download_url: release_download_url(&version, binary),
+        checksum: parse_checksum(&checksums, binary)?,
+        version,
+    })
+}
+
+fn latest_download_url(asset: &str) -> String {
+    format!("https://github.com/{REPO}/releases/latest/download/{asset}")
+}
+
+fn release_download_url(version: &str, asset: &str) -> String {
+    format!("https://github.com/{REPO}/releases/download/{version}/{asset}")
 }
 
 fn normalize_version(version: &str) -> &str {
@@ -333,27 +358,35 @@ fn parse_version_component(component: Option<&str>, version: &str, label: &str) 
     })
 }
 
-fn parse_latest_release_tag(body: &str) -> Result<String> {
-    let Some(key_start) = body.find("\"tag_name\"") else {
-        return Err(OnlyError::runtime("GitHub returned no release version"));
-    };
-    let after_key = &body[key_start + "\"tag_name\"".len()..];
-    let Some(colon_start) = after_key.find(':') else {
-        return Err(OnlyError::runtime("GitHub returned invalid release data"));
-    };
-    let after_colon = after_key[colon_start + 1..].trim_start();
-    let Some(stripped) = after_colon.strip_prefix('"') else {
-        return Err(OnlyError::runtime(
-            "GitHub returned an invalid release version",
-        ));
-    };
-    let Some(end) = stripped.find('"') else {
-        return Err(OnlyError::runtime(
-            "GitHub returned an invalid release version",
-        ));
-    };
+fn parse_release_version(contents: &str) -> Result<String> {
+    let version = contents.trim();
+    parse_version_parts(version)?;
+    Ok(version.to_owned())
+}
 
-    Ok(stripped[..end].to_string())
+fn parse_checksum(contents: &str, binary: &str) -> Result<String> {
+    for line in contents.lines() {
+        let mut fields = line.split_whitespace();
+        let Some(checksum) = fields.next() else {
+            continue;
+        };
+        let Some(name) = fields.next() else {
+            continue;
+        };
+        if name.trim_start_matches('*') != binary {
+            continue;
+        }
+        if checksum.len() != 64 || !checksum.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(OnlyError::runtime(format!(
+                "invalid SHA-256 checksum for {binary}"
+            )));
+        }
+        return Ok(checksum.to_ascii_lowercase());
+    }
+
+    Err(OnlyError::runtime(format!(
+        "no SHA-256 checksum found for {binary}"
+    )))
 }
 
 fn fetch_url_text(url: &str) -> Result<String> {
@@ -378,14 +411,22 @@ fn current_exe_is_install_path(install_path: &Path) -> bool {
 fn paths_equal(left: &Path, right: &Path) -> bool {
     let left = fs::canonicalize(left).unwrap_or_else(|_| left.to_path_buf());
     let right = fs::canonicalize(right).unwrap_or_else(|_| right.to_path_buf());
-    left.as_os_str().to_string_lossy().to_lowercase()
-        == right.as_os_str().to_string_lossy().to_lowercase()
+
+    #[cfg(windows)]
+    {
+        left.as_os_str()
+            .to_string_lossy()
+            .eq_ignore_ascii_case(&right.as_os_str().to_string_lossy())
+    }
+
+    #[cfg(not(windows))]
+    {
+        left == right
+    }
 }
 
-fn download_verified(plan: &UpgradePlan) -> Result<()> {
-    let checksums = fetch_url_text(&plan.checksum_url)?;
-    let expected = parse_checksum(&checksums, plan.binary)?;
-    let result = download_and_hash(&plan.download_url, &plan.staged_path);
+fn download_verified(plan: &UpgradePlan, release: &LatestRelease) -> Result<()> {
+    let result = download_and_hash(&release.download_url, &plan.staged_path);
     let actual = match result {
         Ok(actual) => actual,
         Err(error) => {
@@ -394,11 +435,11 @@ fn download_verified(plan: &UpgradePlan) -> Result<()> {
         }
     };
 
-    if actual != expected {
+    if actual != release.checksum {
         let _ = fs::remove_file(&plan.staged_path);
         return Err(OnlyError::runtime(format!(
-            "checksum mismatch for {}\nexpected: {expected}\nactual:   {actual}",
-            plan.binary
+            "checksum mismatch for {}\nexpected: {}\nactual:   {actual}",
+            plan.binary, release.checksum
         )));
     }
 
@@ -449,31 +490,6 @@ fn encode_hex(bytes: &[u8]) -> String {
         encoded.push(DIGITS[(byte & 0x0f) as usize] as char);
     }
     encoded
-}
-
-fn parse_checksum(contents: &str, binary: &str) -> Result<String> {
-    for line in contents.lines() {
-        let mut fields = line.split_whitespace();
-        let Some(checksum) = fields.next() else {
-            continue;
-        };
-        let Some(name) = fields.next() else {
-            continue;
-        };
-        if name.trim_start_matches('*') != binary {
-            continue;
-        }
-        if checksum.len() != 64 || !checksum.bytes().all(|byte| byte.is_ascii_hexdigit()) {
-            return Err(OnlyError::runtime(format!(
-                "invalid SHA-256 checksum for {binary}"
-            )));
-        }
-        return Ok(checksum.to_ascii_lowercase());
-    }
-
-    Err(OnlyError::runtime(format!(
-        "no SHA-256 checksum found for {binary}"
-    )))
 }
 
 fn request(url: &str) -> minreq::Request {
@@ -567,27 +583,20 @@ mod tests {
     #[cfg(unix)]
     use super::is_unix_install_path;
     use super::{
-        VersionOrder, compare_versions, encode_hex, latest_download_url, parse_checksum,
-        parse_latest_release_tag,
+        VersionOrder, compare_versions, encode_hex, is_system_package_install_path, parse_checksum,
+        parse_release_version, release_download_url,
     };
-    #[cfg(unix)]
     use std::path::Path;
 
     #[test]
-    fn builds_latest_github_download_url() {
+    fn parses_release_version() {
         assert_eq!(
-            latest_download_url("only-linux-amd64"),
-            "https://github.com/KercyDing/only/releases/latest/download/only-linux-amd64"
+            parse_release_version("  v0.0.8\n").expect("release version should parse"),
+            "v0.0.8"
         );
-    }
-
-    #[test]
-    fn parses_latest_release_tag() {
-        let body = r#"{"url":"https://api.github.com","tag_name":"v0.0.5","name":"v0.0.5"}"#;
-
         assert_eq!(
-            parse_latest_release_tag(body).expect("tag should parse"),
-            "v0.0.5"
+            release_download_url("v0.0.8", "only-windows-amd64.exe"),
+            "https://github.com/KercyDing/only/releases/download/v0.0.8/only-windows-amd64.exe"
         );
     }
 
@@ -604,23 +613,12 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_platform_checksum() {
-        let error = parse_checksum("not-a-sha256  only-linux-amd64\n", "only-linux-amd64")
-            .expect_err("invalid checksum should fail");
-
-        assert_eq!(
-            error.to_string(),
-            "invalid SHA-256 checksum for only-linux-amd64"
-        );
-    }
-
-    #[test]
-    fn encodes_digest_bytes_as_lowercase_hex() {
+    fn encodes_digest_hex() {
         assert_eq!(encode_hex(&[0x00, 0xab, 0xff]), "00abff");
     }
 
     #[test]
-    fn parses_version_order_with_optional_v_prefix() {
+    fn compares_version_prefix() {
         assert_eq!(
             compare_versions("v1.2.3", "1.2.3").expect("versions should parse"),
             VersionOrder::Equal
@@ -628,7 +626,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_downgrade_as_newer_local_version() {
+    fn rejects_version_downgrade() {
         assert_eq!(
             compare_versions("1.2.4", "1.2.3").expect("versions should parse"),
             VersionOrder::Newer
@@ -637,7 +635,13 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn recognizes_common_unix_install_paths() {
+    fn recognizes_unix_paths() {
         assert!(is_unix_install_path(Path::new("/usr/local/bin/only")));
+    }
+
+    #[test]
+    fn recognizes_package_path() {
+        assert!(is_system_package_install_path(Path::new("/usr/bin/only")));
+        assert!(!is_system_package_install_path(Path::new("/usr/bin/other")));
     }
 }

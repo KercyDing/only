@@ -35,9 +35,11 @@ jobs:
       - name: Update sha256sums for only-bin
         if: matrix.pkg == 'only-bin'
         run: |
-          VERSION="${{ steps.version.outputs.value }}"
-          SHA_X86_64="$(curl -fsSL "${{ github.server_url }}/${{ github.repository }}/releases/download/v${VERSION}/only-linux-amd64" | sha256sum | cut -d' ' -f1)"
-          SHA_AARCH64="$(curl -fsSL "${{ github.server_url }}/${{ github.repository }}/releases/download/v${VERSION}/only-linux-arm64" | sha256sum | cut -d' ' -f1)"
+          curl -fsSL "${{ github.server_url }}/${{ github.repository }}/releases/download/${{ steps.version.outputs.tag }}/SHA256SUMS" -o SHA256SUMS
+          SHA_X86_64="$(awk '$2 == "only-linux-amd64" {print $1}' SHA256SUMS)"
+          SHA_AARCH64="$(awk '$2 == "only-linux-arm64" {print $1}' SHA256SUMS)"
+          test -n "${SHA_X86_64}"
+          test -n "${SHA_AARCH64}"
           sed -i "s/^sha256sums_x86_64=.*/sha256sums_x86_64=('${SHA_X86_64}')/" "${{ matrix.dir }}/PKGBUILD"
           sed -i "s/^sha256sums_aarch64=.*/sha256sums_aarch64=('${SHA_AARCH64}')/" "${{ matrix.dir }}/PKGBUILD"
 
