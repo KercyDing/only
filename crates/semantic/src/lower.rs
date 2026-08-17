@@ -269,6 +269,10 @@ fn lower_task(
         .name()
         .ok_or_else(|| lower_error("lower.invalid-task", "invalid task", range))?;
     let header = node.header_info();
+    let shell_range = node
+        .header()
+        .and_then(|header| header.shell())
+        .and_then(|shell| shell.content_range());
 
     let params = header
         .param_refs
@@ -324,6 +328,7 @@ fn lower_task(
         guards,
         dependencies,
         shell: header.shell,
+        shell_range,
         shell_fallback: header.shell_fallback,
         steps,
         range,

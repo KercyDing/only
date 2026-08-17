@@ -27,10 +27,13 @@ fn classifies_engineering_syntax() {
         .collect::<Vec<_>>();
     assert!(directives.contains(&"!version"));
     assert!(directives.contains(&"!var"));
-    assert!(
-        tokens
-            .iter()
-            .any(|token| token.kind == LspSemanticTokenKind::Namespace)
+    let namespace = tokens
+        .iter()
+        .find(|token| token.kind == LspSemanticTokenKind::Namespace)
+        .expect("namespace name should have namespace highlighting");
+    assert_eq!(
+        &source[usize::from(namespace.range.start())..usize::from(namespace.range.end())],
+        "dev"
     );
     assert!(
         tokens
@@ -42,9 +45,12 @@ fn classifies_engineering_syntax() {
             .iter()
             .any(|token| token.kind == LspSemanticTokenKind::Dependency)
     );
-    assert!(
-        tokens
-            .iter()
-            .any(|token| token.kind == LspSemanticTokenKind::Shell)
+    let shell = tokens
+        .iter()
+        .find(|token| token.kind == LspSemanticTokenKind::Shell)
+        .expect("shell clause should have shell highlighting");
+    assert_eq!(
+        &source[usize::from(shell.range.start())..usize::from(shell.range.end())],
+        "shell=bash"
     );
 }

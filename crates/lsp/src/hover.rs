@@ -154,7 +154,7 @@ fn directive_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspH
             "version" => "Declares the minimum Onlyfile language capability required by this file."
                 .to_string(),
             "shell" => "Sets the default shell host used for task commands.".to_string(),
-            "var" => "Defines a file-level string value.".to_string(),
+            "var" => "Defines a global string value.".to_string(),
             _ => return None,
         };
 
@@ -251,50 +251,52 @@ fn probe_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover
 }
 
 fn shell_operator_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {
-    let tokens = &snapshot.syntax.tokens;
-
-    for (index, token) in tokens.iter().enumerate() {
-        match token.kind {
-            only_syntax::SyntaxKind::ShellFallbackKw => {
-                if token.range.contains(offset) {
-                    return Some(LspHover {
-                        kind: LspHoverKind::ShellOperator,
-                        name: "shell~=".to_string(),
-                        signature: "shell~=".to_string(),
-                        docs: Some(
-                            "Prefers a specific shell and falls back to the default host shell when unavailable."
-                                .to_string(),
-                        ),
-                        range: token.range,
-                        container_name: None,
-                    });
-                }
-            }
-            only_syntax::SyntaxKind::ShellKw => {
-                let eq = tokens.get(index + 1)?;
-                if eq.kind != only_syntax::SyntaxKind::Eq {
-                    continue;
-                }
-                let range = TextRange::new(token.range.start(), eq.range.end());
-                if range.contains(offset) {
-                    return Some(LspHover {
-                        kind: LspHoverKind::ShellOperator,
-                        name: "shell=".to_string(),
-                        signature: "shell=".to_string(),
-                        docs: Some(
-                            "Requires a specific shell for the task without automatic fallback."
-                                .to_string(),
-                        ),
-                        range,
-                        container_name: None,
-                    });
-                }
-            }
-            _ => {}
+    for task in snapshot.syntax.document().tasks() {
+        let Some(clause) = task.header().and_then(|header| header.shell()) else {
+            continue;
+        };
+        let Some(range) = clause.content_range() else {
+            continue;
+        };
+        if !range.contains(offset) {
+            continue;
         }
+
+        let shell = clause.shell_name()?.to_string();
+        let operator = clause.operator()?;
+        let signature = match operator {
+            only_syntax::ShellOperator::Required => format!("shell={shell}"),
+            only_syntax::ShellOperator::Fallback => format!("shell~={shell}"),
+        };
+        let docs = match operator {
+            only_syntax::ShellOperator::Required => {
+                format!("Uses {shell}. The task fails if it is unavailable.")
+            }
+            only_syntax::ShellOperator::Fallback => {
+                let fallback = fallback_shell(&shell)?;
+                format!("Prefers {shell} and falls back to {fallback} when unavailable.")
+            }
+        };
+
+        return Some(LspHover {
+            kind: LspHoverKind::ShellOperator,
+            name: signature.clone(),
+            signature,
+            docs: Some(docs),
+            range,
+            container_name: None,
+        });
     }
 
     None
+}
+
+fn fallback_shell(shell: &str) -> Option<&'static str> {
+    match shell {
+        "pwsh" => Some("powershell"),
+        "bash" => Some("sh"),
+        _ => None,
+    }
 }
 
 fn interpolation_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {
@@ -417,9 +419,9 @@ fn namespace_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspH
                 signature: if syntax.is_close() {
                     "}".to_owned()
                 } else if syntax.has_open_brace() {
-                    format!("[{name}] {{")
+                    format!("namespace [{name}] {{")
                 } else {
-                    format!("[{name}]")
+                    format!("namespace [{name}]")
                 },
                 docs: namespace.doc.clone().map(|docs| docs.to_string()),
                 range: syntax.range(),

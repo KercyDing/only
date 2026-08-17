@@ -152,8 +152,30 @@ fn validate_task(
         ));
     }
 
+    if task.shell_fallback && !matches!(task.shell.as_deref(), Some("pwsh") | Some("bash")) {
+        diagnostics.push(error(
+            "semantic.invalid-shell-fallback",
+            format!(
+                "shell '{}' has no fallback; shell~= supports 'pwsh' -> 'powershell' and 'bash' -> 'sh'",
+                task.shell.as_deref().unwrap_or("an empty shell")
+            ),
+            task.shell_range.unwrap_or(task.range),
+        ));
+    }
+
     let mut guards = HashSet::new();
     for guard in &task.guards {
+        if !matches!(guard.kind.as_str(), "os" | "arch" | "env" | "has") {
+            diagnostics.push(error(
+                "semantic.unknown-guard",
+                format!(
+                    "guard '@{}' is not supported; use '@os', '@arch', '@env', or '@has'",
+                    guard.kind
+                ),
+                guard.range,
+            ));
+        }
+
         let key = format!("{}:{}", guard.kind, guard.argument);
         if !guards.insert(key) {
             diagnostics.push(error(

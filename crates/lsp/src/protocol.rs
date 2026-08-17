@@ -195,7 +195,7 @@ impl LanguageServerProtocol for Backend {
                                     SemanticTokenType::new("parameter"),
                                     SemanticTokenType::new("guard"),
                                     SemanticTokenType::new("dependency"),
-                                    SemanticTokenType::new("shell"),
+                                    SemanticTokenType::KEYWORD,
                                     SemanticTokenType::new("variable"),
                                 ],
                                 token_modifiers: Vec::new(),

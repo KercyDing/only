@@ -64,6 +64,21 @@ fn returns_directive_hover_for_keyword_only() {
 }
 
 #[test]
+fn describes_global_variable() {
+    let source = "!version 0.3\n!var profile = \"release\"\n";
+    let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
+    let offset = TextSize::from(source.find("var").expect("directive should exist") as u32);
+
+    let info = hover(&snapshot, offset).expect("hover should exist");
+
+    assert_eq!(info.signature, "!var");
+    assert_eq!(
+        info.docs.as_deref(),
+        Some("Defines a global string value.\n\nCurrent value: `profile = \"release\"`")
+    );
+}
+
+#[test]
 fn returns_guard_probe_hover() {
     let source = "build() ? @os(\"macos\"):\n    echo ok\n";
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
@@ -85,18 +100,46 @@ fn returns_guard_probe_hover() {
 
 #[test]
 fn returns_shell_operator_hover() {
-    let source = "!version 0.3\nbuild() shell~=bash:\n    echo ok\n";
+    let source = "!version 0.3\nbuild() shell~=pwsh:\n    echo ok\n";
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
-    let offset =
+    let operator_offset =
         TextSize::from(source.find("shell~=").expect("shell operator should exist") as u32);
-    let value_offset =
-        TextSize::from(source.find("bash").expect("shell value should exist") as u32);
+    let value_offset = TextSize::from(source.find("pwsh").expect("shell should exist") as u32);
 
-    let info = hover(&snapshot, offset).expect("hover should exist");
+    let operator = hover(&snapshot, operator_offset).expect("operator hover should exist");
+    let value = hover(&snapshot, value_offset).expect("shell hover should exist");
 
-    assert_eq!(info.kind, LspHoverKind::ShellOperator);
-    assert_eq!(info.signature, "shell~=");
-    assert!(hover(&snapshot, value_offset).is_none());
+    assert_eq!(operator.kind, LspHoverKind::ShellOperator);
+    assert_eq!(operator.signature, "shell~=pwsh");
+    assert_eq!(operator.range, value.range);
+    assert_eq!(
+        operator.docs.as_deref(),
+        Some("Prefers pwsh and falls back to powershell when unavailable.")
+    );
+}
+
+#[test]
+fn describes_required_shell() {
+    let source = "build() shell=bash:\n    echo ok\n";
+    let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
+    let offset = TextSize::from(source.find("bash").expect("shell should exist") as u32);
+
+    let info = hover(&snapshot, offset).expect("shell hover should exist");
+
+    assert_eq!(info.signature, "shell=bash");
+    assert_eq!(
+        info.docs.as_deref(),
+        Some("Uses bash. The task fails if it is unavailable.")
+    );
+}
+
+#[test]
+fn hides_invalid_fallback_hover() {
+    let source = "!version 0.3\nbuild() shell~=sh:\n    echo ok\n";
+    let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
+    let offset = TextSize::from(source.find("shell~=").expect("operator should exist") as u32);
+
+    assert!(hover(&snapshot, offset).is_none());
 }
 
 #[test]
@@ -190,7 +233,7 @@ fn returns_braced_namespace_hover() {
 
     assert_eq!(open.kind, LspHoverKind::Namespace);
     assert_eq!(open.name, "dev");
-    assert_eq!(open.signature, "[dev] {");
+    assert_eq!(open.signature, "namespace [dev] {");
     assert_eq!(open.docs.as_deref(), Some("Development tasks."));
     assert_eq!(close.kind, LspHoverKind::Namespace);
     assert_eq!(close.name, "dev");

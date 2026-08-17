@@ -118,6 +118,45 @@ fn fallback_shell_requires_version_0_3() {
 }
 
 #[test]
+fn rejects_unknown_shell_fallback() {
+    let compiled = compile_document("!version 0.3\nbuild() shell~=pw:\n    true\n");
+
+    let diagnostic = compiled
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "semantic.invalid-shell-fallback")
+        .expect("unknown fallback shell should be rejected");
+    assert!(diagnostic.message.contains("shell 'pw' has no fallback"));
+    assert!(diagnostic.message.contains("'pwsh' -> 'powershell'"));
+    let start = "!version 0.3\nbuild() ".len();
+    assert_eq!(
+        usize::from(diagnostic.primary_range.start()),
+        start,
+        "diagnostic should start at the shell clause"
+    );
+}
+
+#[test]
+fn rejects_unknown_guard() {
+    let source = "install() ? @s(\"windows\"):\n    true\n";
+    let compiled = compile_document(source);
+
+    let diagnostic = compiled
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "semantic.unknown-guard")
+        .expect("unknown guard should be rejected");
+    assert_eq!(
+        diagnostic.message,
+        "guard '@s' is not supported; use '@os', '@arch', '@env', or '@has'"
+    );
+    assert_eq!(
+        usize::from(diagnostic.primary_range.start()),
+        source.find('?').expect("guard should exist")
+    );
+}
+
+#[test]
 fn reports_slice_parameter_before_final_position() {
     let compiled = compile_document("run(args.., tail):\n    echo {{args}} {{tail}}\n");
     let messages: Vec<_> = compiled

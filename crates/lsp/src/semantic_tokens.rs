@@ -39,10 +39,12 @@ pub fn semantic_tokens(snapshot: &DocumentSnapshot) -> Vec<LspSemanticToken> {
         }
     }
     for namespace in snapshot.syntax.document().namespaces() {
-        tokens.push(LspSemanticToken {
-            range: namespace.range(),
-            kind: LspSemanticTokenKind::Namespace,
-        });
+        if let Some(range) = namespace.name_range() {
+            tokens.push(LspSemanticToken {
+                range,
+                kind: LspSemanticTokenKind::Namespace,
+            });
+        }
     }
     for task in snapshot.syntax.document().tasks() {
         if let Some(range) = task.name_range() {
@@ -74,9 +76,11 @@ pub fn semantic_tokens(snapshot: &DocumentSnapshot) -> Vec<LspSemanticToken> {
                     kind: LspSemanticTokenKind::Dependency,
                 }),
         );
-        if let Some(shell) = task.header().and_then(|header| header.shell()) {
+        if let Some(shell) = task.header().and_then(|header| header.shell())
+            && let Some(range) = shell.content_range()
+        {
             tokens.push(LspSemanticToken {
-                range: shell.range(),
+                range,
                 kind: LspSemanticTokenKind::Shell,
             });
         }

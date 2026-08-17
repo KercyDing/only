@@ -27,15 +27,28 @@ pub fn range_to_lsp_range(source: &str, range: TextRange) -> Range {
 }
 
 pub fn folding_range_to_lsp_range(source: &str, range: TextRange) -> Range {
-    let inclusive_end = if range.is_empty() {
-        range.end()
+    let end = trim_trailing_whitespace(source, range);
+    let inclusive_end = if end > range.start() {
+        end - TextSize::from(1)
     } else {
-        range.end() - TextSize::from(1)
+        end
     };
     Range::new(
         offset_to_position(source, range.start()),
         offset_to_position(source, inclusive_end),
     )
+}
+
+fn trim_trailing_whitespace(source: &str, range: TextRange) -> TextSize {
+    let start = usize::min(usize::from(range.start()), source.len());
+    let mut end = usize::min(usize::from(range.end()), source.len());
+    let bytes = source.as_bytes();
+
+    while end > start && bytes[end - 1].is_ascii_whitespace() {
+        end -= 1;
+    }
+
+    TextSize::from(end as u32)
 }
 
 pub fn position_to_offset(source: &str, position: Position) -> TextSize {
@@ -110,6 +123,16 @@ mod tests {
         let lsp = folding_range_to_lsp_range(source, range);
 
         assert_eq!(lsp.start, Position::new(0, 0));
-        assert_eq!(lsp.end.line, 2);
+        assert_eq!(lsp.end, Position::new(1, 16));
+    }
+
+    #[test]
+    fn excludes_trailing_blank_line_from_fold() {
+        let source = "build():\n    cargo build\n \t\nrun():\n    cargo run\n";
+        let next_task = source.find("run():").expect("next task should exist");
+        let range = TextRange::new(TextSize::from(0), TextSize::from(next_task as u32));
+        let lsp = folding_range_to_lsp_range(source, range);
+
+        assert_eq!(lsp.end, Position::new(1, 14));
     }
 }

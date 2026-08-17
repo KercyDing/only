@@ -46,6 +46,7 @@ pub struct TaskAst {
     pub guards: Vec<GuardAst>,
     pub dependencies: Vec<DependencyAst>,
     pub shell: Option<SmolStr>,
+    pub shell_range: Option<TextRange>,
     pub shell_fallback: bool,
     pub steps: Vec<TaskStepAst>,
     pub range: TextRange,

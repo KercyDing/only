@@ -15,8 +15,8 @@ mod version;
 pub use ast_view::{
     DependencyClauseNode, DirectiveNode, DocCommentNode, DocumentNode, GuardClauseNode,
     HeaderTerminatorNode, NamespaceNode, ParameterListNode, ParameterNode, ShellClauseNode,
-    TaskCommandBlockNode, TaskCommandNode, TaskDependencyRef, TaskGuardRef, TaskHeaderInfo,
-    TaskHeaderNode, TaskNode, TaskParamRef, TaskStepNode,
+    ShellOperator, TaskCommandBlockNode, TaskCommandNode, TaskDependencyRef, TaskGuardRef,
+    TaskHeaderInfo, TaskHeaderNode, TaskNode, TaskParamRef, TaskStepNode,
 };
 pub use cst::{SyntaxNode, SyntaxToken};
 pub use formatter::{format_range, format_source};

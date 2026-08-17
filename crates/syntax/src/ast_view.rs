@@ -93,6 +93,15 @@ pub struct ShellClauseNode {
     syntax: SyntaxNode,
 }
 
+/// Shell selection behavior expressed by a task header.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellOperator {
+    /// Requires the selected shell.
+    Required,
+    /// Allows a compatible fallback shell.
+    Fallback,
+}
+
 #[derive(Debug, Clone)]
 pub struct HeaderTerminatorNode {
     syntax: SyntaxNode,
@@ -443,6 +452,21 @@ impl NamespaceNode {
             .map(|(label, _)| label)
             .map(str::trim)?;
         (!label.is_empty()).then(|| SmolStr::new(label))
+    }
+
+    /// Returns the namespace name range inside the brackets.
+    ///
+    /// Args:
+    /// None.
+    ///
+    /// Returns:
+    /// Namespace name range when present.
+    pub fn name_range(&self) -> Option<TextRange> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|element| element.into_token())
+            .find(|token| token.kind() == SyntaxKind::Ident)
+            .map(|token| token.text_range())
     }
 
     /// Returns whether this node closes the current namespace.
@@ -870,6 +894,40 @@ clause_node!(GuardClauseNode, GuardClause);
 clause_node!(DependencyClauseNode, DependencyClause);
 clause_node!(ShellClauseNode, ShellClause);
 clause_node!(HeaderTerminatorNode, HeaderTerminator);
+
+impl ShellClauseNode {
+    /// Returns the shell selection operator.
+    pub fn operator(&self) -> Option<ShellOperator> {
+        node_tokens(&self.syntax).find_map(|token| match token.kind() {
+            SyntaxKind::ShellKw => Some(ShellOperator::Required),
+            SyntaxKind::ShellFallbackKw => Some(ShellOperator::Fallback),
+            _ => None,
+        })
+    }
+
+    /// Returns the selected shell name.
+    pub fn shell_name(&self) -> Option<SmolStr> {
+        node_tokens(&self.syntax)
+            .find(|token| token.kind() == SyntaxKind::Ident)
+            .map(|token| SmolStr::new(token.text()))
+    }
+
+    /// Returns the clause range without surrounding whitespace.
+    pub fn content_range(&self) -> Option<TextRange> {
+        let mut tokens = node_tokens(&self.syntax).filter(|token| {
+            !matches!(
+                token.kind(),
+                SyntaxKind::Whitespace | SyntaxKind::Indent | SyntaxKind::Newline
+            )
+        });
+        let first = tokens.next()?;
+        let end = tokens.last().unwrap_or_else(|| first.clone());
+        Some(TextRange::new(
+            first.text_range().start(),
+            end.text_range().end(),
+        ))
+    }
+}
 
 fn parse_task_header(node: &TaskHeaderNode) -> TaskHeaderInfo {
     let mut info = TaskHeaderInfo::default();
