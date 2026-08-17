@@ -17,6 +17,7 @@ pub enum LspHoverKind {
     GuardProbe,
     Interpolation,
     Namespace,
+    Parameter,
     ShellOperator,
     Task,
     CommandBlock,
@@ -52,11 +53,56 @@ pub fn hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> 
         .or_else(|| doc_comment_hover(snapshot, offset))
         .or_else(|| probe_hover(snapshot, offset))
         .or_else(|| shell_operator_hover(snapshot, offset))
+        .or_else(|| parameter_hover(snapshot, offset))
         .or_else(|| interpolation_hover(snapshot, offset))
         .or_else(|| command_block_hover(snapshot, offset))
         .or_else(|| dependency_hover(snapshot, offset))
         .or_else(|| task_hover(snapshot, offset))
         .or_else(|| namespace_hover(snapshot, offset))
+}
+
+fn parameter_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {
+    for (node, task) in snapshot
+        .syntax
+        .document()
+        .tasks()
+        .zip(snapshot.semantic.document.tasks.iter())
+    {
+        for (index, reference) in node.header_info().param_refs.into_iter().enumerate() {
+            if !reference.range.contains(offset) {
+                continue;
+            }
+
+            let parameter = task.params.get(index)?;
+            let mut docs = if parameter.is_slice {
+                "Variadic task parameter that captures remaining positional arguments.".to_string()
+            } else {
+                "Task parameter.".to_string()
+            };
+            if let Some(default) = &parameter.default_value {
+                docs.push_str(&format!("\n\nDefault: `{default}`"));
+            }
+
+            return Some(LspHover {
+                kind: LspHoverKind::Parameter,
+                name: parameter.name.to_string(),
+                signature: parameter_signature(parameter),
+                docs: Some(docs),
+                range: reference.range,
+                container_name: Some(task.qualified_name().to_string()),
+            });
+        }
+    }
+
+    None
+}
+
+fn parameter_signature(parameter: &only_semantic::ParamAst) -> String {
+    let suffix = if parameter.is_slice { ".." } else { "" };
+    match &parameter.default_value {
+        Some(default) => format!("{}{suffix}=\"{default}\"", parameter.name),
+        None => format!("{}{suffix}", parameter.name),
+    }
 }
 
 fn command_block_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {
@@ -329,7 +375,7 @@ fn task_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover>
         return Some(LspHover {
             kind: LspHoverKind::Task,
             name: task.name.to_string(),
-            signature: task.name.to_string(),
+            signature: task.signature().to_string(),
             docs: task.doc.clone().map(|docs| docs.to_string()),
             range,
             container_name: task.namespace.clone().map(|name| name.to_string()),

@@ -126,6 +126,23 @@ fn exposes_dependency_ranges_for_hover_and_diagnostics() {
 }
 
 #[test]
+fn exposes_parameter_name_ranges_for_hover() {
+    let source = "build(tag=\"v1\", args.., shell):\n    echo ok\n";
+    let syntax = snapshot(source);
+    let task = syntax.document().tasks().next().expect("task should exist");
+    let param_refs = task.header_info().param_refs;
+
+    assert_eq!(param_refs.len(), 3);
+    for (reference, expected) in param_refs.iter().zip(["tag", "args", "shell"]) {
+        assert_eq!(reference.name.as_str(), expected);
+        assert_eq!(
+            &source[usize::from(reference.range.start())..usize::from(reference.range.end())],
+            expected
+        );
+    }
+}
+
+#[test]
 fn preserves_multiple_install_task_variants_in_repo_onlyfile() {
     let syntax = snapshot(include_str!("../../../Onlyfile"));
     let install_count = syntax

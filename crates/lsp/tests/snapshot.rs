@@ -172,17 +172,36 @@ fn resolves_local_namespace_dependency_hover() {
 }
 
 #[test]
-fn keeps_task_hover_range_on_name_only() {
-    let source = "build(name=\"dev\"):\n    echo {{name}}\n";
+fn returns_task_and_parameter_hover() {
+    let source = "build(name=\"dev\", args..):\n    echo {{name}}\n";
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
     let name_offset = TextSize::from(source.find("build").expect("task name should exist") as u32);
-    let params_offset = TextSize::from(source.find("name=").expect("params should exist") as u32);
+    let param_offset = TextSize::from(source.find("name=").expect("param should exist") as u32);
+    let default_offset = TextSize::from(source.find("dev").expect("default should exist") as u32);
+    let slice_offset = TextSize::from(source.find("args..").expect("slice should exist") as u32);
 
     let task_hover = hover(&snapshot, name_offset).expect("hover should exist");
+    let param_hover = hover(&snapshot, param_offset).expect("parameter hover should exist");
+    let slice_hover = hover(&snapshot, slice_offset).expect("slice hover should exist");
 
     assert_eq!(task_hover.kind, LspHoverKind::Task);
-    assert_eq!(task_hover.signature, "build");
+    assert_eq!(task_hover.signature, "build(name=\"dev\", args..)");
     assert_eq!(task_hover.range.start(), TextSize::from(0));
     assert_eq!(task_hover.range.end(), TextSize::from(5));
-    assert!(hover(&snapshot, params_offset).is_none());
+    assert_eq!(param_hover.kind, LspHoverKind::Parameter);
+    assert_eq!(param_hover.signature, "name=\"dev\"");
+    assert_eq!(
+        param_hover.docs.as_deref(),
+        Some("Task parameter.\n\nDefault: `dev`")
+    );
+    assert_eq!(param_hover.container_name.as_deref(), Some("build"));
+    assert_eq!(slice_hover.kind, LspHoverKind::Parameter);
+    assert_eq!(slice_hover.signature, "args..");
+    assert!(
+        slice_hover
+            .docs
+            .as_deref()
+            .is_some_and(|docs| docs.contains("remaining positional arguments"))
+    );
+    assert!(hover(&snapshot, default_offset).is_none());
 }

@@ -100,6 +100,13 @@ pub struct TaskDependencyRef {
     pub stage: usize,
 }
 
+/// One parameter declaration parsed from a task header.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskParamRef {
+    pub name: SmolStr,
+    pub range: TextRange,
+}
+
 /// Structured task header data parsed from the CST token stream.
 ///
 /// Args:
@@ -110,6 +117,7 @@ pub struct TaskDependencyRef {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TaskHeaderInfo {
     pub params: Option<SmolStr>,
+    pub param_refs: Vec<TaskParamRef>,
     pub guard: Option<SmolStr>,
     pub dependencies: Option<SmolStr>,
     pub shell: Option<SmolStr>,
@@ -679,6 +687,7 @@ fn parse_task_header(node: &SyntaxNode) -> TaskHeaderInfo {
     let mut collector = String::new();
     let mut dependencies_started = false;
     let mut shell_expectation = ShellExpectation::None;
+    let mut expect_param_name = false;
 
     for token in node
         .children_with_tokens()
@@ -723,6 +732,7 @@ fn parse_task_header(node: &SyntaxNode) -> TaskHeaderInfo {
             HeaderPhase::BeforeTail => match kind {
                 SyntaxKind::LParen => {
                     collector.clear();
+                    expect_param_name = true;
                     phase = HeaderPhase::Params { depth: 1 };
                 }
                 SyntaxKind::Question => {
@@ -741,26 +751,47 @@ fn parse_task_header(node: &SyntaxNode) -> TaskHeaderInfo {
                 SyntaxKind::ShellKw => shell_expectation = ShellExpectation::AllowEqOrName,
                 _ => {}
             },
-            HeaderPhase::Params { depth } => match kind {
-                SyntaxKind::LParen => {
-                    *depth += 1;
-                    collector.push_str(token.text());
-                }
-                SyntaxKind::RParen => {
-                    *depth -= 1;
-                    if *depth == 0 {
-                        let trimmed = collector.trim();
-                        if !trimmed.is_empty() {
-                            info.params = Some(SmolStr::new(trimmed));
+            HeaderPhase::Params { depth } => {
+                if *depth == 1 && expect_param_name {
+                    match kind {
+                        SyntaxKind::Whitespace | SyntaxKind::Indent => {}
+                        SyntaxKind::Ident | SyntaxKind::ShellKw => {
+                            info.param_refs.push(TaskParamRef {
+                                name: SmolStr::new(token.text()),
+                                range: token.text_range(),
+                            });
+                            expect_param_name = false;
                         }
-                        collector.clear();
-                        phase = HeaderPhase::BeforeTail;
-                    } else {
-                        collector.push_str(token.text());
+                        _ => expect_param_name = false,
                     }
                 }
-                _ => collector.push_str(token.text()),
-            },
+
+                match kind {
+                    SyntaxKind::LParen => {
+                        *depth += 1;
+                        collector.push_str(token.text());
+                    }
+                    SyntaxKind::RParen => {
+                        *depth -= 1;
+                        if *depth == 0 {
+                            let trimmed = collector.trim();
+                            if !trimmed.is_empty() {
+                                info.params = Some(SmolStr::new(trimmed));
+                            }
+                            collector.clear();
+                            expect_param_name = false;
+                            phase = HeaderPhase::BeforeTail;
+                        } else {
+                            collector.push_str(token.text());
+                        }
+                    }
+                    SyntaxKind::Unknown if *depth == 1 && token.text() == "," => {
+                        collector.push_str(token.text());
+                        expect_param_name = true;
+                    }
+                    _ => collector.push_str(token.text()),
+                }
+            }
             HeaderPhase::Guard { depth } => match kind {
                 SyntaxKind::LParen => {
                     *depth += 1;

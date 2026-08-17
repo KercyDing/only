@@ -13,7 +13,7 @@ mod version;
 
 pub use ast_view::{
     DirectiveNode, DocCommentNode, DocumentNode, NamespaceNode, TaskCommandBlockNode,
-    TaskCommandNode, TaskDependencyRef, TaskHeaderInfo, TaskNode, TaskStepNode,
+    TaskCommandNode, TaskDependencyRef, TaskHeaderInfo, TaskNode, TaskParamRef, TaskStepNode,
 };
 pub use cst::{SyntaxNode, SyntaxToken};
 pub use kind::SyntaxKind;
