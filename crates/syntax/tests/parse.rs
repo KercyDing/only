@@ -206,6 +206,37 @@ fn reports_inline_comment_in_task_header() {
 }
 
 #[test]
+fn rejects_inline_task_command() {
+    let parsed = parse("build(): cargo build\nnext():\n    cargo check\n");
+    let task_count = parsed
+        .root_children()
+        .filter(|node| node.kind() == SyntaxKind::TaskDecl)
+        .count();
+    let error_count = parsed
+        .root_children()
+        .filter(|node| node.kind() == SyntaxKind::Error)
+        .count();
+
+    assert_eq!(task_count, 1);
+    assert_eq!(error_count, 1);
+    assert!(parsed.diagnostics().iter().any(|diagnostic| diagnostic.code
+        == DiagnosticCode::new("parse.malformed-task-header")));
+}
+
+#[test]
+fn rejects_task_header_without_newline() {
+    let parsed = parse("build():");
+
+    assert!(
+        parsed
+            .root_children()
+            .all(|node| node.kind() != SyntaxKind::TaskDecl)
+    );
+    assert!(parsed.diagnostics().iter().any(|diagnostic| diagnostic.code
+        == DiagnosticCode::new("parse.malformed-task-header")));
+}
+
+#[test]
 fn reports_malformed_task_guard_and_recovers() {
     let parsed = parse("build() ? env(\"CI\"):\n    echo broken\nnext():\n    echo next\n");
     let task_count = parsed

@@ -35,3 +35,16 @@ fn leaves_runner_version_checks_to_the_cli() {
     assert!(diagnostics.is_empty());
     assert_eq!(snapshot.semantic.document.tasks.len(), 1);
 }
+
+#[test]
+fn reports_inline_task_command() {
+    let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, "build(): cargo build\n");
+
+    let diagnostics = diagnostics(&snapshot);
+
+    assert!(
+        diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code == "parse.malformed-task-header")
+    );
+}

@@ -128,4 +128,6 @@ fn range_formats_namespaced_task_indentation() {
 #[test]
 fn formatting_rejects_invalid_source() {
     assert!(format_source("broken(\n").is_err());
+    assert!(format_source("build(): cargo build\n").is_err());
+    assert!(format_source("build():").is_err());
 }

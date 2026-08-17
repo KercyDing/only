@@ -291,6 +291,13 @@ fn parse_task_item(
             break;
         }
 
+        if saw_colon
+            && !header_complete
+            && !matches!(kind, SyntaxKind::Whitespace | SyntaxKind::Newline)
+        {
+            malformed = true;
+        }
+
         if !header_complete {
             if expect_param_indent {
                 match kind {
