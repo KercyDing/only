@@ -70,7 +70,7 @@ fn top_level_doc_comment_ends_previous_task_body() {
 #[test]
 fn exposes_structured_task_header_sections() {
     let syntax = snapshot(
-        "build(tag=\"v1\") ? @env(\"CI\") & install & bootstrap shell?=bash:\n    echo {{tag}}\n",
+        "build(tag=\"v1\") ? @env(\"CI\") & install & bootstrap shell~=bash:\n    echo {{tag}}\n",
     );
     let task = syntax.document().tasks().next().expect("task should exist");
     let header = task.header_info();
@@ -101,7 +101,7 @@ fn exposes_exact_shell_assignment_in_task_header() {
 
 #[test]
 fn exposes_dependency_ranges_for_hover_and_diagnostics() {
-    let source = "ci() & (fmt, dev.build) & test shell?=bash:\n    echo ok\n";
+    let source = "ci() & (fmt, dev.build) & test shell~=bash:\n    echo ok\n";
     let syntax = snapshot(source);
     let task = syntax.document().tasks().next().expect("task should exist");
     let dependency_refs = task.header_info().dependency_refs;
@@ -220,4 +220,97 @@ fn normalizes_crlf_block_newlines() {
 
     assert_eq!(block.source, "echo one\necho two\n");
     assert_eq!(block.line_ranges.len(), 2);
+}
+
+#[test]
+fn exposes_structured_multiline_header_nodes() {
+    let source = "release(\n    channel = \"nightly\",\n    target = \"x86_64,static\",\n)\n    ? @has(\"cargo\")\n    ? @env(\"CI\")\n    & build\n    & (sign, package)\n    shell=bash\n:\n    echo done\n";
+    let syntax = snapshot(source);
+    assert!(
+        syntax.diagnostics().is_empty(),
+        "{:?}",
+        syntax.diagnostics()
+    );
+    let task = syntax.document().tasks().next().expect("task should exist");
+    let header = task.header().expect("header should exist");
+
+    let parameters = header
+        .parameter_list()
+        .expect("parameters should exist")
+        .parameters()
+        .collect::<Vec<_>>();
+    assert_eq!(parameters.len(), 2);
+    assert_eq!(parameters[0].name().as_deref(), Some("channel"));
+    assert_eq!(
+        parameters[1].default_value().as_deref(),
+        Some("x86_64,static")
+    );
+    assert_eq!(header.guards().count(), 2);
+    assert_eq!(header.dependencies().count(), 2);
+    assert_eq!(
+        header.shell().expect("shell should exist").text(),
+        "shell=bash"
+    );
+    assert!(header.terminator().is_some());
+}
+
+#[test]
+fn multiline_and_single_line_headers_match() {
+    let single = snapshot(
+        "test(target=\"all\") ? @has(\"cargo\") ? @env(\"CI\") & build shell~=bash:\n    true\n",
+    );
+    let multiline = snapshot(
+        "test(\n    target = \"all\",\n)\n    ? @has(\"cargo\")\n    ? @env(\"CI\")\n    & build\n    shell~=bash\n:\n    true\n",
+    );
+
+    let single_info = single
+        .document()
+        .tasks()
+        .next()
+        .expect("task")
+        .header_info();
+    let multiline_info = multiline
+        .document()
+        .tasks()
+        .next()
+        .expect("task")
+        .header_info();
+    assert_eq!(
+        single_info.param_refs,
+        multiline_info
+            .param_refs
+            .iter()
+            .cloned()
+            .map(|mut parameter| {
+                parameter.range = single_info.param_refs[0].range;
+                parameter
+            })
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        single_info
+            .guards
+            .iter()
+            .map(|guard| &guard.text)
+            .collect::<Vec<_>>(),
+        multiline_info
+            .guards
+            .iter()
+            .map(|guard| &guard.text)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(
+        single_info
+            .dependency_refs
+            .iter()
+            .map(|dependency| (&dependency.name, dependency.stage))
+            .collect::<Vec<_>>(),
+        multiline_info
+            .dependency_refs
+            .iter()
+            .map(|dependency| (&dependency.name, dependency.stage))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(single_info.shell, multiline_info.shell);
+    assert_eq!(single_info.shell_fallback, multiline_info.shell_fallback);
 }

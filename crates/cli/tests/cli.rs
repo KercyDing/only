@@ -75,6 +75,8 @@ fn cli(task_path: &[&str]) -> CliInput {
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
+        format_requested: false,
+        format_check: false,
         task_path: task_path.iter().map(|part| part.to_string()).collect(),
         parameter_overrides: vec![],
     }
@@ -112,6 +114,34 @@ fn cli_binary_path() -> PathBuf {
     path.push("debug");
     path.push(if cfg!(windows) { "only.exe" } else { "only" });
     path
+}
+
+#[test]
+fn formats_onlyfile_and_checks_without_writing() {
+    let temp = TempDir::new("fmt");
+    let path = temp.path().join("Onlyfile");
+    fs::write(&path, "!version 0.3\n\n\nbuild():\n\t| echo one\n")
+        .expect("test Onlyfile should be written");
+
+    let output = Command::new(cli_binary_path())
+        .args(["--fmt", "-f"])
+        .arg(&path)
+        .output()
+        .expect("formatter should run");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let formatted = fs::read_to_string(&path).expect("formatted file should be readable");
+    assert_eq!(formatted, "!version 0.3\n\nbuild():\n    | echo one\n");
+
+    let check = Command::new(cli_binary_path())
+        .args(["--fmt", "--check", "-f"])
+        .arg(&path)
+        .output()
+        .expect("formatter check should run");
+    assert!(check.status.success());
 }
 
 fn strip_ansi(input: &str) -> String {
@@ -287,13 +317,13 @@ fn rejects_duplicate_directives() {
 
 #[test]
 fn rejects_incompatible_version_before_cli_parsing() {
-    let source = "!version 0.3\nbuild():\n    echo build\n";
-    let error = parse_onlyfile(source).expect_err("0.2 runner should reject 0.3");
+    let source = "!version 0.4\nbuild():\n    echo build\n";
+    let error = parse_onlyfile(source).expect_err("0.3 runner should reject 0.4");
 
     let message = error.to_string();
     assert!(!message.contains("version.incompatible"));
-    assert!(message.starts_with("this Onlyfile needs `only` 0.3 or newer (not 1.x)"));
-    assert!(message.contains("needed: >=0.3.0, <1.0.0"));
+    assert!(message.starts_with("this Onlyfile needs `only` 0.4 or newer (not 1.x)"));
+    assert!(message.contains("needed: >=0.4.0, <1.0.0"));
 }
 
 #[test]
@@ -465,6 +495,8 @@ fn applies_cli_parameter_overrides() {
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
+        format_requested: false,
+        format_check: false,
         task_path: vec!["hello".into()],
         parameter_overrides: vec![("name".into(), "true".into())],
     };
@@ -504,6 +536,8 @@ fn rejects_unknown_parameter_override() {
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
+        format_requested: false,
+        format_check: false,
         task_path: vec!["hello".into()],
         parameter_overrides: vec![("other".into(), "alice".into())],
     };
@@ -533,6 +567,8 @@ fn rejects_duplicate_parameter_overrides() {
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
+        format_requested: false,
+        format_check: false,
         task_path: vec!["hello".into()],
         parameter_overrides: vec![
             ("name".into(), "alice".into()),
@@ -1046,6 +1082,8 @@ fn runs_tasks_from_onlyfile_base_dir() {
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
+        format_requested: false,
+        format_check: false,
         task_path: vec!["check".into()],
         parameter_overrides: vec![],
     };
@@ -1085,6 +1123,8 @@ fn run_with_selects_guarded_task_for_current_environment() {
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
+        format_requested: false,
+        format_check: false,
         task_path: vec!["probe".into()],
         parameter_overrides: vec![],
     };
@@ -1123,6 +1163,8 @@ fn run_with_reports_unavailable_guarded_task() {
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
+        format_requested: false,
+        format_check: false,
         task_path: vec!["probe".into()],
         parameter_overrides: vec![],
     };
@@ -1156,6 +1198,8 @@ fn run_with_rejects_error_diagnostics_before_execution() {
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
+        format_requested: false,
+        format_check: false,
         task_path: vec!["deploy".into()],
         parameter_overrides: vec![],
     };
@@ -1177,7 +1221,7 @@ fn version_gate_prevents_execution() {
     let onlyfile_path = root.join("Onlyfile");
     fs::write(
         &onlyfile_path,
-        "!version 0.3\ncheck():\n    echo executed > marker.txt\n",
+        "!version 0.4\ncheck():\n    echo executed > marker.txt\n",
     )
     .expect("Onlyfile should be written");
     let input = CliInput {
@@ -1189,13 +1233,15 @@ fn version_gate_prevents_execution() {
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
+        format_requested: false,
+        format_check: false,
         task_path: vec!["check".into()],
         parameter_overrides: vec![],
     };
 
     let error = run_with(input).expect_err("incompatible version should stop execution");
 
-    assert!(error.to_string().contains("needs `only` 0.3"));
+    assert!(error.to_string().contains("needs `only` 0.4"));
     assert!(!root.join("marker.txt").exists());
     fs::remove_dir_all(root).expect("temp tree should be removed");
 }
@@ -1217,6 +1263,8 @@ fn rejects_direct_helper_task_execution_via_run_with() {
         top_level_help_requested: false,
         top_level_version_requested: false,
         top_level_upgrade_requested: false,
+        format_requested: false,
+        format_check: false,
         task_path: vec!["_prepare".into()],
         parameter_overrides: vec![],
     };

@@ -10,7 +10,7 @@ release() & ci & package:
     echo "Release ready in dist"
 
 # Package Windows artifacts.
-package() ? @os("windows") & (front.build, back.build) shell?=pwsh:
+package() ? @os("windows") & (front.build, back.build) shell~=pwsh:
     | $archive = "dist/app.zip"
     | New-Item -ItemType Directory -Force -Path dist | Out-Null
     | Compress-Archive -Path target/release/app.exe, web/dist -DestinationPath $archive -Force

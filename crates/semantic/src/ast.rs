@@ -6,6 +6,7 @@ pub struct DocumentAst {
     pub directives: Vec<DirectiveAst>,
     pub namespaces: Vec<NamespaceAst>,
     pub tasks: Vec<TaskAst>,
+    pub uses_namespace_close: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,6 +20,12 @@ pub enum DirectiveAst {
         shell: SmolStr,
         range: TextRange,
     },
+    Variable {
+        name: SmolStr,
+        value: SmolStr,
+        name_range: TextRange,
+        range: TextRange,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,6 +33,7 @@ pub struct NamespaceAst {
     pub name: SmolStr,
     pub doc: Option<SmolStr>,
     pub range: TextRange,
+    pub close_range: Option<TextRange>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,12 +42,13 @@ pub struct TaskAst {
     pub namespace: Option<SmolStr>,
     pub doc: Option<SmolStr>,
     pub params: Vec<ParamAst>,
-    pub guard: Option<GuardAst>,
+    pub guards: Vec<GuardAst>,
     pub dependencies: Vec<DependencyAst>,
     pub shell: Option<SmolStr>,
     pub shell_fallback: bool,
     pub steps: Vec<TaskStepAst>,
     pub range: TextRange,
+    pub uses_multiline_header: bool,
 }
 
 impl TaskAst {
@@ -89,12 +98,14 @@ pub struct ParamAst {
     pub name: SmolStr,
     pub default_value: Option<SmolStr>,
     pub is_slice: bool,
+    pub range: TextRange,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuardAst {
     pub kind: SmolStr,
     pub argument: SmolStr,
+    pub range: TextRange,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

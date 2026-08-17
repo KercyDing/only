@@ -24,6 +24,8 @@ pub struct CliInput {
     pub top_level_help_requested: bool,
     pub top_level_version_requested: bool,
     pub top_level_upgrade_requested: bool,
+    pub format_requested: bool,
+    pub format_check: bool,
     pub task_path: Vec<String>,
     pub parameter_overrides: Vec<(String, String)>,
 }
@@ -53,6 +55,8 @@ impl CliInput {
             top_level_help_requested: false,
             top_level_version_requested: false,
             top_level_upgrade_requested: matches.get_flag("upgrade") || matches.get_flag("update"),
+            format_requested: matches.get_flag("fmt"),
+            format_check: matches.get_flag("format-check"),
             task_path: vec![],
             parameter_overrides,
         })
@@ -136,6 +140,8 @@ where
     let mut top_level_help_requested = false;
     let mut top_level_version_requested = false;
     let mut top_level_upgrade_requested = false;
+    let mut format_requested = false;
+    let mut format_check = false;
     let mut parameter_overrides = Vec::new();
     let mut seen_task_token = false;
     let mut iter = args.into_iter().map(Into::into);
@@ -191,6 +197,8 @@ where
                     top_level_upgrade_requested = true;
                 }
             }
+            "--fmt" => format_requested = true,
+            "--check" => format_check = true,
             _ => {
                 if let Some(value) = text.strip_prefix("--file=") {
                     onlyfile_path = Some(PathBuf::from(value));
@@ -220,6 +228,8 @@ where
         top_level_help_requested,
         top_level_version_requested,
         top_level_upgrade_requested,
+        format_requested,
+        format_check,
         task_path: vec![],
         parameter_overrides,
     })

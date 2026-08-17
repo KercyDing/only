@@ -91,3 +91,32 @@ fn command_blocks_require_version_0_2() {
         );
     }
 }
+
+#[test]
+fn lowers_multiple_guards_in_order() {
+    let compiled =
+        compile_document("!version 0.3\ntest() ? @has(\"cargo\") ? @env(\"CI\"):\n    true\n");
+    let guards = &compiled.document.tasks[0].guards;
+
+    assert_eq!(guards.len(), 2);
+    assert_eq!(guards[0].kind, "has");
+    assert_eq!(guards[1].kind, "env");
+    assert!(guards[0].range.start() < guards[1].range.start());
+}
+
+#[test]
+fn lowers_multiline_parameter_list() {
+    let compiled = compile_document(
+        "!version 0.3\ndeploy(\n    env = \"production\",\n    region = \"global,primary\",\n):\n    true\n",
+    );
+    let params = &compiled.document.tasks[0].params;
+
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "{:?}",
+        compiled.diagnostics
+    );
+    assert_eq!(params.len(), 2);
+    assert_eq!(params[0].default_value.as_deref(), Some("production"));
+    assert_eq!(params[1].default_value.as_deref(), Some("global,primary"));
+}

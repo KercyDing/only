@@ -80,32 +80,54 @@ pub(crate) fn build_execution_nodes(
                     },
                 })
                 .collect(),
-            params: task
-                .params
-                .iter()
-                .map(|param| PlanParam {
-                    name: param.name.to_string(),
-                    default_value: param.default_value.as_ref().map(ToString::to_string),
-                    value: bindings.get(param.name.as_str()).cloned(),
-                })
-                .collect(),
+            params: build_plan_params(task, &bindings),
             shell: task.shell.as_ref().map(ToString::to_string),
             shell_fallback: task.shell_fallback,
         })
         .collect()
 }
 
+fn build_plan_params(task: &TaskAst, bindings: &HashMap<String, String>) -> Vec<PlanParam> {
+    let mut params = task
+        .params
+        .iter()
+        .map(|param| PlanParam {
+            name: param.name.to_string(),
+            default_value: param.default_value.as_ref().map(ToString::to_string),
+            value: bindings.get(param.name.as_str()).cloned(),
+        })
+        .collect::<Vec<_>>();
+    let mut globals = bindings
+        .iter()
+        .filter(|(name, _)| {
+            !task
+                .params
+                .iter()
+                .any(|param| param.name.as_str() == name.as_str())
+        })
+        .map(|(name, value)| PlanParam {
+            name: name.clone(),
+            default_value: Some(value.clone()),
+            value: Some(value.clone()),
+        })
+        .collect::<Vec<_>>();
+    globals.sort_by(|left, right| left.name.cmp(&right.name));
+    params.extend(globals);
+    params
+}
+
 pub(crate) fn select_task_variant<'a>(variants: &[&'a TaskAst]) -> Option<&'a TaskAst> {
     let mut fallback = None;
 
     for task in variants {
-        match &task.guard {
-            Some(guard) => {
-                if probe_matches(guard.kind.as_str(), guard.argument.as_str()) {
-                    return Some(task);
-                }
-            }
-            None => fallback = Some(*task),
+        if task.guards.is_empty() {
+            fallback = Some(*task);
+        } else if task
+            .guards
+            .iter()
+            .all(|guard| probe_matches(guard.kind.as_str(), guard.argument.as_str()))
+        {
+            return Some(task);
         }
     }
 
@@ -119,15 +141,17 @@ pub(crate) fn document_shell(document: &DocumentAst) -> Option<String> {
         .find_map(|directive| match directive {
             DirectiveAst::Version { .. } => None,
             DirectiveAst::Shell { shell, .. } => Some(shell.to_string()),
+            DirectiveAst::Variable { .. } => None,
         })
 }
 
 pub(crate) fn bind_parameters(
     task: &TaskAst,
     inputs: Option<&HashMap<String, String>>,
+    globals: &HashMap<String, String>,
 ) -> Result<HashMap<String, String>, PlanError> {
     let input_map = inputs.cloned().unwrap_or_default();
-    let mut parameters = HashMap::new();
+    let mut parameters = globals.clone();
 
     for param in &task.params {
         if let Some(value) = input_map.get(param.name.as_str()) {
@@ -155,6 +179,7 @@ pub(crate) fn merge_parameter_inputs(
     positional_args: Vec<&str>,
     named_overrides: Vec<(&str, &str)>,
     task: &TaskAst,
+    globals: &HashMap<String, String>,
 ) -> Result<HashMap<String, String>, PlanError> {
     let slice_index = task
         .params
@@ -191,17 +216,25 @@ pub(crate) fn merge_parameter_inputs(
         merged.insert(parameter.name.to_string(), value.to_string());
     }
 
+    for (name, value) in globals {
+        if !allowed.contains(name.as_str()) {
+            merged.insert(name.clone(), value.clone());
+        }
+    }
+
+    let mut seen_overrides = HashSet::new();
     for (name, value) in named_overrides {
-        if !allowed.contains(name) {
+        if !allowed.contains(name) && !globals.contains_key(name) {
             return Err(PlanError::UnknownParameter {
                 task: task.qualified_name().to_string(),
                 name: name.to_string(),
             });
         }
 
-        if merged.insert(name.to_string(), value.to_string()).is_some() {
+        if !seen_overrides.insert(name) {
             return Err(PlanError::DuplicateOverride(name.to_string()));
         }
+        merged.insert(name.to_string(), value.to_string());
     }
 
     Ok(merged)

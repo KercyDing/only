@@ -18,10 +18,18 @@ pub(crate) fn expand_execution_order<'a>(
     root: &'a TaskAst,
     root_bindings: &HashMap<String, String>,
     tasks: &TaskIndex<'a>,
+    globals: &HashMap<String, String>,
 ) -> Result<Vec<BoundTask<'a>>, PlanError> {
     let mut graph = ExecutionGraph::default();
     let mut visiting = Vec::new();
-    collect_task(root, Some(root_bindings), tasks, &mut visiting, &mut graph)?;
+    collect_task(
+        root,
+        Some(root_bindings),
+        tasks,
+        globals,
+        &mut visiting,
+        &mut graph,
+    )?;
     build_staged_order(graph)
 }
 
@@ -29,6 +37,7 @@ fn collect_task<'a>(
     task: &'a TaskAst,
     root_bindings: Option<&HashMap<String, String>>,
     tasks: &TaskIndex<'a>,
+    globals: &HashMap<String, String>,
     visiting: &mut Vec<String>,
     graph: &mut ExecutionGraph<'a>,
 ) -> Result<(), PlanError> {
@@ -42,7 +51,7 @@ fn collect_task<'a>(
     }
 
     visiting.push(qualified_name.clone());
-    let bindings = bind_parameters(task, root_bindings)?;
+    let bindings = bind_parameters(task, root_bindings, globals)?;
     graph.nodes.insert(qualified_name.clone(), (task, bindings));
     graph.registration_order.push(qualified_name.clone());
 
@@ -57,7 +66,7 @@ fn collect_task<'a>(
                 .and_then(|variants| select_task_variant(variants))
             {
                 let dependency_name = dependency_task.qualified_name().to_string();
-                collect_task(dependency_task, None, tasks, visiting, graph)?;
+                collect_task(dependency_task, None, tasks, globals, visiting, graph)?;
                 graph
                     .edges
                     .entry(dependency_name.clone())

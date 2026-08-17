@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0 - 2026-08-17
+
+- Added multiple guards, multiline task headers, file-level `!var` values, and explicit namespace closing tags.
+- Replaced fallback shell selection with the unambiguous `shell~=` syntax.
+- Added deterministic `only --fmt` and `only --fmt --check` formatting.
+- Added LSP formatting and semantic tokens.
+
 ## 0.2.0 - 2026-08-17
 
 - Added `|` command blocks that run consecutive marked lines in one shell process.

@@ -34,6 +34,44 @@ fn reports_duplicate_directives() {
 }
 
 #[test]
+fn reports_duplicate_global_variables() {
+    let compiled = compile_document("!version 0.3\n!var mode = \"one\"\n!var mode = \"two\"\n");
+
+    assert!(
+        compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "variable.duplicate")
+    );
+}
+
+#[test]
+fn reports_namespace_close_mismatch() {
+    let compiled = compile_document("!version 0.3\n[front]\n[/back]\n");
+
+    assert!(
+        compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "namespace.close-mismatch")
+    );
+}
+
+#[test]
+fn fallback_shell_requires_version_0_3() {
+    let unversioned = compile_document("build() shell~=bash:\n    true\n");
+    let versioned = compile_document("!version 0.3\nbuild() shell~=bash:\n    true\n");
+
+    assert!(
+        unversioned
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "semantic.engineering-version")
+    );
+    assert!(versioned.diagnostics.is_empty());
+}
+
+#[test]
 fn reports_slice_parameter_before_final_position() {
     let compiled = compile_document("run(args.., tail):\n    echo {{args}} {{tail}}\n");
     let messages: Vec<_> = compiled

@@ -4,18 +4,20 @@ use std::sync::RwLock;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
-    DidOpenTextDocumentParams, DocumentSymbolResponse, FoldingRange,
+    DidOpenTextDocumentParams, DocumentFormattingParams, DocumentSymbolResponse, FoldingRange,
     FoldingRangeProviderCapability, Hover, HoverContents, HoverParams, InitializeParams,
     InitializeResult, InitializedParams, MarkupContent, MarkupKind, MessageType, OneOf, Position,
-    ServerCapabilities, SymbolInformation, SymbolKind, TextDocumentSyncCapability,
-    TextDocumentSyncKind, Url,
+    SemanticToken, SemanticTokenType, SemanticTokens, SemanticTokensFullOptions,
+    SemanticTokensLegend, SemanticTokensParams, SemanticTokensResult,
+    SemanticTokensServerCapabilities, ServerCapabilities, SymbolInformation, SymbolKind,
+    TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
 };
 use tower_lsp::{Client, LanguageServer as LanguageServerProtocol, LspService, Server};
 
 use crate::position::{position_to_offset, range_to_lsp_range};
 use crate::{
     DocumentSnapshot, LspDiagnostic as HostDiagnostic, LspDiagnosticSeverity,
-    LspDocumentSymbolKind, LspHover,
+    LspDocumentSymbolKind, LspHover, LspSemanticTokenKind, semantic_tokens,
 };
 
 pub async fn run_stdio() {
@@ -179,6 +181,29 @@ impl LanguageServerProtocol for Backend {
                 hover_provider: Some(tower_lsp::lsp_types::HoverProviderCapability::Simple(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
                 folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
+                document_formatting_provider: Some(OneOf::Left(true)),
+                semantic_tokens_provider: Some(
+                    SemanticTokensServerCapabilities::SemanticTokensOptions(
+                        tower_lsp::lsp_types::SemanticTokensOptions {
+                            work_done_progress_options: Default::default(),
+                            legend: SemanticTokensLegend {
+                                token_types: vec![
+                                    SemanticTokenType::new("directive"),
+                                    SemanticTokenType::new("namespace"),
+                                    SemanticTokenType::new("task"),
+                                    SemanticTokenType::new("parameter"),
+                                    SemanticTokenType::new("guard"),
+                                    SemanticTokenType::new("dependency"),
+                                    SemanticTokenType::new("shell"),
+                                    SemanticTokenType::new("variable"),
+                                ],
+                                token_modifiers: Vec::new(),
+                            },
+                            range: None,
+                            full: Some(SemanticTokensFullOptions::Bool(true)),
+                        },
+                    ),
+                ),
                 ..ServerCapabilities::default()
             },
         })
@@ -235,6 +260,76 @@ impl LanguageServerProtocol for Backend {
         params: tower_lsp::lsp_types::FoldingRangeParams,
     ) -> Result<Option<Vec<FoldingRange>>> {
         Ok(Some(self.folding_ranges_for_uri(&params.text_document.uri)))
+    }
+
+    async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
+        let Some(snapshot) = self.snapshot_for_uri(&params.text_document.uri) else {
+            return Ok(None);
+        };
+        if snapshot
+            .semantic
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == only_diagnostic::DiagnosticSeverity::Error)
+        {
+            return Ok(None);
+        }
+        let Ok(formatted) = only_syntax::format_source(&snapshot.source) else {
+            return Ok(None);
+        };
+        if formatted == snapshot.source {
+            return Ok(Some(Vec::new()));
+        }
+        Ok(Some(vec![TextEdit {
+            range: range_to_lsp_range(
+                &snapshot.source,
+                text_size::TextRange::up_to(text_size::TextSize::of(snapshot.source.as_str())),
+            ),
+            new_text: formatted,
+        }]))
+    }
+
+    async fn semantic_tokens_full(
+        &self,
+        params: SemanticTokensParams,
+    ) -> Result<Option<SemanticTokensResult>> {
+        let Some(snapshot) = self.snapshot_for_uri(&params.text_document.uri) else {
+            return Ok(None);
+        };
+        let mut previous_line = 0u32;
+        let mut previous_character = 0u32;
+        let mut data = Vec::new();
+        for token in semantic_tokens(&snapshot) {
+            let protocol_range = range_to_lsp_range(&snapshot.source, token.range);
+            let start = protocol_range.start;
+            let token_type = match token.kind {
+                LspSemanticTokenKind::Directive => 0,
+                LspSemanticTokenKind::Namespace => 1,
+                LspSemanticTokenKind::Task => 2,
+                LspSemanticTokenKind::Parameter => 3,
+                LspSemanticTokenKind::Guard => 4,
+                LspSemanticTokenKind::Dependency => 5,
+                LspSemanticTokenKind::Shell => 6,
+                LspSemanticTokenKind::Variable => 7,
+            };
+            data.push(SemanticToken {
+                delta_line: start.line - previous_line,
+                delta_start: if start.line == previous_line {
+                    start.character - previous_character
+                } else {
+                    start.character
+                },
+                length: protocol_range.end.character - start.character,
+                token_type,
+                token_modifiers_bitset: 0,
+            });
+            previous_line = start.line;
+            previous_character = start.character;
+        }
+        Ok(Some(SemanticTokensResult::Tokens(SemanticTokens {
+            result_id: None,
+            data,
+        })))
     }
 }
 

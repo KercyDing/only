@@ -47,3 +47,19 @@ fn accepts_bom_only_at_file_start() {
             .any(|token| token.kind == SyntaxKind::Unknown)
     );
 }
+
+#[test]
+fn lexes_fallback_shell_operator() {
+    let tokens = lex("build() shell~=bash:\n    true\n");
+
+    assert!(
+        tokens
+            .iter()
+            .any(|token| { token.kind == SyntaxKind::ShellFallbackKw && token.text == "shell~=" })
+    );
+    assert!(
+        !lex("build() shell?=bash:\n    true\n")
+            .iter()
+            .any(|token| token.kind == SyntaxKind::ShellFallbackKw)
+    );
+}

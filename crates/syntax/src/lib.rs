@@ -2,6 +2,7 @@ mod ast_view;
 mod builder;
 mod cst;
 mod cursor;
+mod formatter;
 mod kind;
 mod lex;
 mod parse;
@@ -12,10 +13,13 @@ mod trivia;
 mod version;
 
 pub use ast_view::{
-    DirectiveNode, DocCommentNode, DocumentNode, NamespaceNode, TaskCommandBlockNode,
-    TaskCommandNode, TaskDependencyRef, TaskHeaderInfo, TaskNode, TaskParamRef, TaskStepNode,
+    DependencyClauseNode, DirectiveNode, DocCommentNode, DocumentNode, GuardClauseNode,
+    HeaderTerminatorNode, NamespaceNode, ParameterListNode, ParameterNode, ShellClauseNode,
+    TaskCommandBlockNode, TaskCommandNode, TaskDependencyRef, TaskGuardRef, TaskHeaderInfo,
+    TaskHeaderNode, TaskNode, TaskParamRef, TaskStepNode,
 };
 pub use cst::{SyntaxNode, SyntaxToken};
+pub use formatter::format_source;
 pub use kind::SyntaxKind;
 pub use lex::lex;
 pub use only_diagnostic::DiagnosticCode;

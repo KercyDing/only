@@ -42,6 +42,57 @@ fn builds_namespaced_dag_order_from_semantic_ast() {
 }
 
 #[test]
+fn applies_global_values_across_dag() {
+    let compiled = compile_document(concat!(
+        "!version 0.3\n",
+        "!var profile = \"release\"\n",
+        "prepare():\n",
+        "    echo {{profile}}\n",
+        "build(profile=\"debug\") & prepare:\n",
+        "    echo {{profile}}\n",
+    ));
+    let plan = try_build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "build",
+            args: vec![],
+            overrides: vec![("profile", "dist")],
+        },
+    )
+    .expect("global and local values should bind");
+
+    assert_eq!(plan.nodes[0].params[0].value.as_deref(), Some("release"));
+    assert_eq!(plan.nodes[1].params[0].value.as_deref(), Some("dist"));
+}
+
+#[test]
+fn overrides_global_value_for_whole_dag() {
+    let compiled = compile_document(concat!(
+        "!version 0.3\n",
+        "!var profile = \"release\"\n",
+        "prepare():\n",
+        "    echo {{profile}}\n",
+        "build() & prepare:\n",
+        "    echo {{profile}}\n",
+    ));
+    let plan = try_build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "build",
+            args: vec![],
+            overrides: vec![("profile", "dist")],
+        },
+    )
+    .expect("global override should bind");
+
+    assert!(plan.nodes.iter().all(|node| {
+        node.params
+            .iter()
+            .any(|param| param.name == "profile" && param.value.as_deref() == Some("dist"))
+    }));
+}
+
+#[test]
 fn assigns_parallel_dependency_groups_to_shared_stage() {
     let compiled = compile_document(
         "fmt():\n    cargo fmt\nlint():\n    cargo clippy\nbuild():\n    cargo build\nci() & fmt & (lint, build):\n    echo done\n",
@@ -69,8 +120,8 @@ fn assigns_parallel_dependency_groups_to_shared_stage() {
 #[test]
 fn carries_shell_and_default_params_into_plan() {
     let compiled = compile_document(
-        "!shell bash\n\
-         build(tag=\"v1\") shell?=pwsh:\n\
+        "!version 0.3\n!shell bash\n\
+         build(tag=\"v1\") shell~=pwsh:\n\
              echo {{tag}}\n",
     );
     let plan = build_execution_plan(

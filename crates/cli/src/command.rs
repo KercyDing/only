@@ -12,6 +12,7 @@ use only_engine::{
     ExecutionPlan, RuntimeOptions, render_command, run_plan_with_options, select_root_task_variant,
 };
 use only_semantic::{DocumentAst, GuardAst, TaskAst};
+use only_syntax::format_source;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
@@ -326,7 +327,7 @@ fn render_task_variant(task: &TaskAst) -> String {
         None => task.signature().to_string(),
     };
 
-    if let Some(guard) = &task.guard {
+    for guard in &task.guards {
         variant.push_str(" ? ");
         variant.push_str(&render_guard(guard));
     }
@@ -359,6 +360,23 @@ fn run_inner() -> Result<ExitCode> {
 
     if partial.print_discovered_path {
         println!("{}", discovered.path.display());
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    if partial.format_requested || partial.format_check {
+        if partial.format_check && !partial.format_requested {
+            return Err(OnlyError::parse("--check only works with --fmt"));
+        }
+        let _ = parse_onlyfile(&discovered.contents)?;
+        let formatted = format_source(&discovered.contents).map_err(OnlyError::parse)?;
+        if partial.format_check {
+            if formatted != discovered.contents {
+                println!("{} needs formatting", discovered.path.display());
+                return Ok(ExitCode::from(1));
+            }
+            return Ok(ExitCode::SUCCESS);
+        }
+        write_formatted_file(&discovered.path, &formatted)?;
         return Ok(ExitCode::SUCCESS);
     }
 
@@ -399,4 +417,14 @@ fn run_inner() -> Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
     run_compiled_plan(&compiled.plan, &cli)
+}
+
+fn write_formatted_file(path: &Path, contents: &str) -> Result<()> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let temporary = parent.join(format!(".only-format-{}", std::process::id()));
+    std::fs::write(&temporary, contents).map_err(|error| OnlyError::runtime(error.to_string()))?;
+    std::fs::rename(&temporary, path).map_err(|error| {
+        let _ = std::fs::remove_file(&temporary);
+        OnlyError::runtime(error.to_string())
+    })
 }

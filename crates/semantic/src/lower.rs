@@ -23,9 +23,18 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
     let mut pending_doc: Option<SmolStr> = None;
     let mut saw_declaration = false;
     let mut saw_version = false;
+    let mut left_directive_region = false;
+    let mut uses_namespace_close = false;
 
     for node in document.syntax().children() {
         if let Some(directive) = DirectiveNode::cast(node.clone()) {
+            if directive.name().as_deref() == Some("var") && left_directive_region {
+                diagnostics.push(semantic_error(
+                    "variable.directive-placement",
+                    "`!var` must be near the top of the file",
+                    directive.range(),
+                ));
+            }
             if directive.name().as_deref() == Some("version") {
                 if saw_version {
                     diagnostics.push(semantic_error(
@@ -57,18 +66,64 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
         }
 
         if let Some(namespace) = NamespaceNode::cast(node.clone()) {
-            match lower_namespace(&namespace, pending_doc.take()) {
-                Ok(namespace) => {
-                    current_namespace = Some(namespace.name.clone());
-                    namespaces.push(namespace);
+            left_directive_region = true;
+            if namespace.is_empty() {
+                diagnostics.push(semantic_error(
+                    "namespace.empty-label",
+                    "namespace name cannot be empty",
+                    namespace.range(),
+                ));
+            } else if namespace.is_close() {
+                uses_namespace_close = true;
+                match (current_namespace.as_deref(), namespace.name()) {
+                    (None, _) => diagnostics.push(semantic_error(
+                        "namespace.close-without-open",
+                        "there is no namespace to close",
+                        namespace.range(),
+                    )),
+                    (Some(current), Some(name)) if current != name => {
+                        let mut diagnostic = semantic_error(
+                            "namespace.close-mismatch",
+                            &format!("close namespace '{current}' with '[/{current}]'"),
+                            namespace.range(),
+                        );
+                        if let Some(open) = namespaces
+                            .iter()
+                            .rev()
+                            .find(|open: &&NamespaceAst| open.name == current)
+                        {
+                            diagnostic.secondary_ranges.push(open.range);
+                        }
+                        diagnostics.push(diagnostic);
+                    }
+                    (Some(current), Some(_)) => {
+                        if let Some(open) = namespaces
+                            .iter_mut()
+                            .rev()
+                            .find(|open: &&mut NamespaceAst| open.name == current)
+                        {
+                            open.close_range = Some(namespace.range());
+                        }
+                        current_namespace = None;
+                    }
+                    _ => {}
                 }
-                Err(diagnostic) => diagnostics.push(diagnostic),
+                pending_doc = None;
+            } else {
+                match lower_namespace(&namespace, pending_doc.take()) {
+                    Ok(namespace) => {
+                        current_namespace = Some(namespace.name.clone());
+                        namespaces.push(namespace);
+                    }
+                    Err(diagnostic) => diagnostics.push(diagnostic),
+                }
             }
             saw_declaration = true;
             continue;
         }
 
         if let Some(task) = TaskNode::cast(node.clone()) {
+            left_directive_region = true;
             match lower_task(&task, current_namespace.clone(), pending_doc.take()) {
                 Ok(task) => tasks.push(task),
                 Err(diagnostic) => diagnostics.push(diagnostic),
@@ -89,6 +144,7 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
             directives,
             namespaces,
             tasks,
+            uses_namespace_close,
         },
         diagnostics,
     )
@@ -126,6 +182,12 @@ fn lower_directive(node: &DirectiveNode) -> Result<DirectiveAst, Diagnostic> {
             "`!shell` needs a value",
             range,
         )),
+        (Some("var"), Some(value)) => lower_variable(node, value, range),
+        (Some("var"), None) => Err(lower_error(
+            "variable.non-literal",
+            "use `!var name = \"value\"`",
+            range,
+        )),
         (Some(name), _) => Err(lower_error(
             "lower.invalid-directive",
             &format!("`!{name}` is not supported"),
@@ -137,6 +199,51 @@ fn lower_directive(node: &DirectiveNode) -> Result<DirectiveAst, Diagnostic> {
             range,
         )),
     }
+}
+
+fn lower_variable(
+    node: &DirectiveNode,
+    value: &str,
+    range: TextRange,
+) -> Result<DirectiveAst, Diagnostic> {
+    let Some((name, raw_value)) = value.split_once('=') else {
+        return Err(lower_error(
+            "variable.non-literal",
+            "use `!var name = \"value\"`",
+            range,
+        ));
+    };
+    let name = name.trim();
+    if !valid_identifier(name) {
+        return Err(lower_error(
+            "variable.invalid-name",
+            "variable name is invalid",
+            range,
+        ));
+    }
+    let raw_value = raw_value.trim();
+    let Some(value) = parse_string_literal(raw_value) else {
+        return Err(lower_error(
+            "variable.non-literal",
+            "variable value must be a string",
+            range,
+        ));
+    };
+
+    let name_range = node.argument_name_range().unwrap_or(range);
+    Ok(DirectiveAst::Variable {
+        name: SmolStr::new(name),
+        value: SmolStr::new(value),
+        name_range,
+        range,
+    })
+}
+
+fn valid_identifier(name: &str) -> bool {
+    let mut chars = name.chars();
+    matches!(chars.next(), Some(first) if first.is_ascii_alphabetic() || matches!(first, '_' | '-'))
+        && chars
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-'))
 }
 
 fn semantic_error(code: &str, message: &str, range: TextRange) -> Diagnostic {
@@ -159,7 +266,12 @@ fn lower_namespace(node: &NamespaceNode, doc: Option<SmolStr>) -> Result<Namespa
         .name()
         .ok_or_else(|| lower_error("lower.invalid-namespace", "invalid namespace", range))?;
 
-    Ok(NamespaceAst { name, doc, range })
+    Ok(NamespaceAst {
+        name,
+        doc,
+        range,
+        close_range: None,
+    })
 }
 
 fn lower_task(
@@ -174,15 +286,21 @@ fn lower_task(
     let header = node.header_info();
 
     let params = header
-        .params
-        .as_deref()
-        .map(parse_params)
-        .unwrap_or_default();
+        .param_refs
+        .iter()
+        .map(|parameter| ParamAst {
+            name: parameter.name.clone(),
+            default_value: parameter.default_value.clone(),
+            is_slice: parameter.is_slice,
+            range: parameter.range,
+        })
+        .collect();
 
-    let guard = match header.guard.as_deref() {
-        Some(text) => Some(parse_guard(text, range)?),
-        None => None,
-    };
+    let guards = header
+        .guards
+        .iter()
+        .map(|guard| parse_guard(guard.text.as_str(), guard.range))
+        .collect::<Result<Vec<_>, _>>()?;
 
     let dependencies = header
         .dependency_refs
@@ -218,39 +336,14 @@ fn lower_task(
         namespace,
         doc,
         params,
-        guard,
+        guards,
         dependencies,
         shell: header.shell,
         shell_fallback: header.shell_fallback,
         steps,
         range,
+        uses_multiline_header: node.uses_multiline_header(),
     })
-}
-
-fn parse_params(section: &str) -> Vec<ParamAst> {
-    section
-        .split(',')
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-        .map(|part| {
-            let (raw_name, default_value) = match part.split_once('=') {
-                Some((raw_name, value)) => (
-                    raw_name.trim(),
-                    parse_string_literal(value.trim()).map(SmolStr::new),
-                ),
-                None => (part, None),
-            };
-            let (name, is_slice) = match raw_name.strip_suffix("..") {
-                Some(name) => (name.trim_end(), true),
-                None => (raw_name, false),
-            };
-            ParamAst {
-                name: SmolStr::new(name),
-                default_value,
-                is_slice,
-            }
-        })
-        .collect()
 }
 
 fn parse_guard(input: &str, range: TextRange) -> Result<GuardAst, Diagnostic> {
@@ -272,6 +365,7 @@ fn parse_guard(input: &str, range: TextRange) -> Result<GuardAst, Diagnostic> {
     Ok(GuardAst {
         kind: SmolStr::new(kind),
         argument: SmolStr::new(argument),
+        range,
     })
 }
 

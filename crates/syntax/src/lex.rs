@@ -8,7 +8,7 @@ use crate::{LexToken, SyntaxKind};
 enum RawTokenKind {
     #[token("\u{feff}")]
     Bom,
-    #[token("shell?=")]
+    #[token("shell~=")]
     ShellFallbackKw,
     #[token("shell")]
     ShellKw,
@@ -40,7 +40,7 @@ enum RawTokenKind {
     Ident,
     #[regex(r"//[^\n]*", allow_greedy = true)]
     Comment,
-    #[regex(r"[ ]+")]
+    #[regex(r"[ \t]+")]
     Spaces,
     #[regex(r"\r\n|\n|\r")]
     Newline,

@@ -68,6 +68,20 @@ pub fn build_global_cli() -> Command {
                 .help("Hide only progress lines while preserving command output"),
         )
         .arg(
+            Arg::new("fmt")
+                .long("fmt")
+                .action(ArgAction::SetTrue)
+                .global(true)
+                .help("Format the Onlyfile"),
+        )
+        .arg(
+            Arg::new("format-check")
+                .long("check")
+                .action(ArgAction::SetTrue)
+                .global(true)
+                .help("Check formatting without changing the file"),
+        )
+        .arg(
             Arg::new("upgrade")
                 .long("upgrade")
                 .action(ArgAction::SetTrue)

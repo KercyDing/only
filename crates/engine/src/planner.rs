@@ -1,7 +1,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use only_semantic::{DocumentAst, TaskAst};
+use only_semantic::{DirectiveAst, DocumentAst, TaskAst};
 
 use crate::dag::expand_execution_order;
 use crate::resolve::{
@@ -169,8 +169,26 @@ pub fn try_build_execution_plan_in_dir(
 
     let tasks = build_task_index(document);
     let root = resolve_root_task(&tasks, target)?;
-    let overrides = merge_parameter_inputs(args, overrides, root)?;
-    let ordered = expand_execution_order(root, &overrides, &tasks)?;
+    let globals = document
+        .directives
+        .iter()
+        .filter_map(|directive| match directive {
+            DirectiveAst::Variable { name, value, .. } => {
+                Some((name.to_string(), value.to_string()))
+            }
+            _ => None,
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let overrides = merge_parameter_inputs(args, overrides, root, &globals)?;
+    let mut effective_globals = globals.clone();
+    for (name, value) in &overrides {
+        if globals.contains_key(name)
+            && !root.params.iter().any(|param| param.name.as_str() == name)
+        {
+            effective_globals.insert(name.clone(), value.clone());
+        }
+    }
+    let ordered = expand_execution_order(root, &overrides, &tasks, &effective_globals)?;
 
     Ok(ExecutionPlan {
         nodes: build_execution_nodes(ordered),

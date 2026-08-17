@@ -85,17 +85,17 @@ fn returns_guard_probe_hover() {
 
 #[test]
 fn returns_shell_operator_hover() {
-    let source = "build() shell?=bash:\n    echo ok\n";
+    let source = "!version 0.3\nbuild() shell~=bash:\n    echo ok\n";
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
     let offset =
-        TextSize::from(source.find("shell?=").expect("shell operator should exist") as u32);
+        TextSize::from(source.find("shell~=").expect("shell operator should exist") as u32);
     let value_offset =
         TextSize::from(source.find("bash").expect("shell value should exist") as u32);
 
     let info = hover(&snapshot, offset).expect("hover should exist");
 
     assert_eq!(info.kind, LspHoverKind::ShellOperator);
-    assert_eq!(info.signature, "shell?=");
+    assert_eq!(info.signature, "shell~=");
     assert!(hover(&snapshot, value_offset).is_none());
 }
 

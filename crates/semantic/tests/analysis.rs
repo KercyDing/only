@@ -66,6 +66,28 @@ fn lowers_directives_and_namespaced_tasks() {
 }
 
 #[test]
+fn lowers_global_variables_and_namespace_close() {
+    let compiled = compile_document(concat!(
+        "!version 0.3\n",
+        "!var target = \"release\"\n",
+        "[dev]\n",
+        "build():\n",
+        "    echo {{target}}\n",
+        "[/dev]\n",
+        "clean():\n",
+        "    echo clean\n",
+    ));
+
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "{:?}",
+        compiled.diagnostics
+    );
+    assert_eq!(compiled.document.tasks[0].namespace.as_deref(), Some("dev"));
+    assert_eq!(compiled.document.tasks[1].namespace, None);
+}
+
+#[test]
 fn resolves_local_namespace_dependencies() {
     let compiled = compile_document(concat!(
         "[dev]\n",
@@ -146,19 +168,20 @@ fn reports_duplicate_parameter_names() {
 
 #[test]
 fn lowers_parameter_defaults_guard_and_shell() {
-    let compiled =
-        compile_document("build(tag=\"v1\") ? @env(\"CI\") shell?=bash:\n    echo {{tag}}\n");
+    let compiled = compile_document(
+        "!version 0.3\nbuild(tag=\"v1\") ? @env(\"CI\") shell~=bash:\n    echo {{tag}}\n",
+    );
 
     assert!(compiled.diagnostics.is_empty());
     let task = &compiled.document.tasks[0];
     assert_eq!(task.params[0].name, "tag");
     assert_eq!(task.params[0].default_value.as_deref(), Some("v1"));
     assert_eq!(
-        task.guard.as_ref().map(|guard| guard.kind.as_str()),
+        task.guards.first().map(|guard| guard.kind.as_str()),
         Some("env")
     );
     assert_eq!(
-        task.guard.as_ref().map(|guard| guard.argument.as_str()),
+        task.guards.first().map(|guard| guard.argument.as_str()),
         Some("CI")
     );
     assert_eq!(task.shell.as_deref(), Some("bash"));

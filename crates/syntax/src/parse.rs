@@ -129,7 +129,7 @@ pub(crate) fn parse_tokens(tokens: &[LexToken]) -> ParseResult {
                     builder.push_node(SyntaxKind::Error, token_slice);
                     continue;
                 }
-                builder.push_node(SyntaxKind::TaskDecl, token_slice);
+                builder.push_task(token_slice);
             }
             ParsedTopLevelItem::Unexpected => {
                 diagnostics.push(parse_error(
@@ -197,6 +197,11 @@ fn parse_task_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem>
     let mut malformed = false;
     let mut expect_guard_at = false;
     let mut phase = TaskHeaderPhase::BeforeTail;
+    let mut saw_parameter_list = false;
+    let mut continuation_header = false;
+    let mut expect_clause_start = false;
+    let mut continuation_indent = false;
+    let mut expect_param_indent = false;
 
     while let Some(kind) = input.first().copied() {
         if header_complete && line_start && starts_top_level_item(kind) {
@@ -204,13 +209,49 @@ fn parse_task_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem>
         }
 
         if !header_complete {
+            if expect_param_indent {
+                match kind {
+                    SyntaxKind::Indent => expect_param_indent = false,
+                    SyntaxKind::RParen => expect_param_indent = false,
+                    _ => {
+                        malformed = true;
+                        break;
+                    }
+                }
+            }
+
             if kind == SyntaxKind::Comment {
                 malformed = true;
+            }
+
+            if continuation_header && expect_clause_start {
+                match kind {
+                    SyntaxKind::Indent | SyntaxKind::Whitespace => {
+                        continuation_indent = true;
+                    }
+                    SyntaxKind::Question
+                    | SyntaxKind::Amp
+                    | SyntaxKind::ShellKw
+                    | SyntaxKind::ShellFallbackKw => {
+                        malformed |= !continuation_indent;
+                        expect_clause_start = false;
+                    }
+                    SyntaxKind::Colon => {
+                        malformed |= continuation_indent;
+                        expect_clause_start = false;
+                    }
+                    SyntaxKind::Newline => malformed = true,
+                    _ => {
+                        malformed = true;
+                        expect_clause_start = false;
+                    }
+                }
             }
 
             match &mut phase {
                 TaskHeaderPhase::BeforeTail => match kind {
                     SyntaxKind::LParen => {
+                        saw_parameter_list = true;
                         phase = TaskHeaderPhase::Params { depth: 1 };
                     }
                     SyntaxKind::Question => {
@@ -298,7 +339,7 @@ fn parse_task_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem>
             }
         }
 
-        if kind == SyntaxKind::Colon {
+        if kind == SyntaxKind::Colon && phase.is_balanced() {
             saw_colon = true;
         }
         advance(input);
@@ -308,6 +349,18 @@ fn parse_task_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem>
         }
 
         if kind == SyntaxKind::Newline && !saw_colon {
+            if matches!(phase, TaskHeaderPhase::Params { depth } if depth > 0) {
+                expect_param_indent = true;
+                line_start = true;
+                continue;
+            }
+            if saw_parameter_list && phase.is_balanced() && !expect_guard_at {
+                continuation_header = true;
+                expect_clause_start = true;
+                continuation_indent = false;
+                line_start = true;
+                continue;
+            }
             malformed |= !phase.is_balanced() || expect_guard_at;
             break;
         }

@@ -236,3 +236,13 @@ fn reports_nested_parallel_dependency_groups_as_malformed() {
             .any(|diag| diag.code == DiagnosticCode::new("parse.malformed-task-header"))
     );
 }
+
+#[test]
+fn rejects_old_fallback_shell_operator() {
+    let parsed = parse("build() shell?=bash:\n    true\n");
+
+    assert!(parsed
+        .diagnostics()
+        .iter()
+        .any(|diagnostic| diagnostic.code == DiagnosticCode::new("parse.malformed-task-header")));
+}

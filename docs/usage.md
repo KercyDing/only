@@ -428,10 +428,10 @@ build() shell=bash:
     ./scripts/build.sh
 ```
 
-Use `shell?=` when a compatible fallback is acceptable:
+Use `shell~=` when a compatible fallback is acceptable:
 
 ```Onlyfile
-build() shell?=bash:
+build() shell~=bash:
     ./scripts/build.sh
 ```
 
@@ -445,7 +445,7 @@ bash → sh
 You can combine shells with guards:
 
 ```Onlyfile
-show-user() ? @os("windows") shell?=pwsh:
+show-user() ? @os("windows") shell~=pwsh:
     Write-Output $env:USERNAME
 ```
 
@@ -499,7 +499,7 @@ hello():
 
 Shell selection follows this order:
 
-1. task-level `shell=` or `shell?=`
+1. task-level `shell=` or `shell~=`
 2. file-level `!shell`
 3. built-in `deno`
 
@@ -713,12 +713,12 @@ If you need a host shell, you can:
 
 - install the shell;
 - choose another supported shell;
-- use `shell?=` when a compatible fallback is acceptable.
+- use `shell~=` when a compatible fallback is acceptable.
 
 Example:
 
 ```Onlyfile
-build() shell?=bash:
+build() shell~=bash:
     ./scripts/build.sh
 ```
 
@@ -822,6 +822,6 @@ Common runtime errors include:
 | `task() & (a, b):` | parallel dependency stage |
 | `task() ? @has("cmd"):` | guarded task variant |
 | `task() shell=bash:` | require an exact shell |
-| `task() shell?=bash:` | prefer a shell with fallback |
+| `task() shell~=bash:` | prefer a shell with fallback |
 | `\| command` | continue a command block in one shell process |
 | `[namespace]` | place following tasks in a namespace |

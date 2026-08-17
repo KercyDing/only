@@ -114,6 +114,7 @@ fn command_block_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<
         .find_map(|directive| match directive {
             only_semantic::DirectiveAst::Shell { shell, .. } => Some(shell.as_str()),
             only_semantic::DirectiveAst::Version { .. } => None,
+            only_semantic::DirectiveAst::Variable { .. } => None,
         })
         .unwrap_or("deno");
 
@@ -153,6 +154,7 @@ fn directive_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspH
             "version" => "Declares the minimum Onlyfile language capability required by this file."
                 .to_string(),
             "shell" => "Sets the default shell host used for task commands.".to_string(),
+            "var" => "Defines a file-level string value.".to_string(),
             _ => return None,
         };
 
@@ -219,8 +221,12 @@ fn probe_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover
             .tasks
             .iter()
             .find(|task| task.range.contains(at.range.start()))
-            .and_then(|task| task.guard.as_ref())
-            .filter(|guard| guard.kind.as_str() == name)
+            .and_then(|task| {
+                task.guards
+                    .iter()
+                    .find(|guard| guard.range.contains(at.range.start()))
+                    .or_else(|| task.guards.iter().find(|guard| guard.kind.as_str() == name))
+            })
             .map(|guard| guard.argument.to_string());
         let signature = match &argument {
             Some(argument) => format!("@{name}(\"{argument}\")"),
@@ -253,8 +259,8 @@ fn shell_operator_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option
                 if token.range.contains(offset) {
                     return Some(LspHover {
                         kind: LspHoverKind::ShellOperator,
-                        name: "shell?=".to_string(),
-                        signature: "shell?=".to_string(),
+                        name: "shell~=".to_string(),
+                        signature: "shell~=".to_string(),
                         docs: Some(
                             "Prefers a specific shell and falls back to the default host shell when unavailable."
                                 .to_string(),
@@ -386,14 +392,27 @@ fn task_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover>
 }
 
 fn namespace_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {
-    for namespace in &snapshot.semantic.document.namespaces {
-        if namespace.range.contains(offset) {
+    for syntax in snapshot.syntax.document().namespaces() {
+        if syntax.range().contains(offset) {
+            let name = syntax.name()?;
+            let namespace = snapshot
+                .semantic
+                .document
+                .namespaces
+                .iter()
+                .find(|namespace| namespace.name == name);
             return Some(LspHover {
                 kind: LspHoverKind::Namespace,
-                name: namespace.name.to_string(),
-                signature: format!("[{}]", namespace.name),
-                docs: namespace.doc.clone().map(|docs| docs.to_string()),
-                range: namespace.range,
+                name: name.to_string(),
+                signature: if syntax.is_close() {
+                    format!("[/{name}]")
+                } else {
+                    format!("[{name}]")
+                },
+                docs: namespace
+                    .and_then(|namespace| namespace.doc.clone())
+                    .map(|docs| docs.to_string()),
+                range: syntax.range(),
                 container_name: None,
             });
         }

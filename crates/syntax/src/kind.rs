@@ -30,6 +30,14 @@ pub enum SyntaxKind {
     DocComment,
     NamespaceBlock,
     TaskDecl,
+    TaskHeader,
+    TaskName,
+    ParameterList,
+    Parameter,
+    GuardClause,
+    DependencyClause,
+    ShellClause,
+    HeaderTerminator,
     Error,
 }
 

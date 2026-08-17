@@ -63,6 +63,41 @@ pub struct TaskNode {
     syntax: SyntaxNode,
 }
 
+#[derive(Debug, Clone)]
+pub struct TaskHeaderNode {
+    syntax: SyntaxNode,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParameterListNode {
+    syntax: SyntaxNode,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParameterNode {
+    syntax: SyntaxNode,
+}
+
+#[derive(Debug, Clone)]
+pub struct GuardClauseNode {
+    syntax: SyntaxNode,
+}
+
+#[derive(Debug, Clone)]
+pub struct DependencyClauseNode {
+    syntax: SyntaxNode,
+}
+
+#[derive(Debug, Clone)]
+pub struct ShellClauseNode {
+    syntax: SyntaxNode,
+}
+
+#[derive(Debug, Clone)]
+pub struct HeaderTerminatorNode {
+    syntax: SyntaxNode,
+}
+
 /// One executable step read from a task body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskStepNode {
@@ -105,6 +140,14 @@ pub struct TaskDependencyRef {
 pub struct TaskParamRef {
     pub name: SmolStr,
     pub range: TextRange,
+    pub default_value: Option<SmolStr>,
+    pub is_slice: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskGuardRef {
+    pub text: SmolStr,
+    pub range: TextRange,
 }
 
 /// Structured task header data parsed from the CST token stream.
@@ -119,6 +162,7 @@ pub struct TaskHeaderInfo {
     pub params: Option<SmolStr>,
     pub param_refs: Vec<TaskParamRef>,
     pub guard: Option<SmolStr>,
+    pub guards: Vec<TaskGuardRef>,
     pub dependencies: Option<SmolStr>,
     pub shell: Option<SmolStr>,
     pub shell_fallback: bool,
@@ -306,6 +350,16 @@ impl DirectiveNode {
         let value = value.trim();
         (!value.is_empty()).then(|| SmolStr::new(value))
     }
+
+    /// Returns the first identifier range after the directive name.
+    pub fn argument_name_range(&self) -> Option<TextRange> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|element| element.into_token())
+            .filter(|token| matches!(token.kind(), SyntaxKind::Ident | SyntaxKind::ShellKw))
+            .nth(1)
+            .map(|token| token.text_range())
+    }
 }
 
 impl DocCommentNode {
@@ -381,6 +435,30 @@ impl NamespaceNode {
     /// Returns:
     /// Namespace name when present.
     pub fn name(&self) -> Option<SmolStr> {
+        let source = self.syntax.text().to_string();
+        let label = source
+            .trim()
+            .strip_prefix('[')
+            .and_then(|text| text.strip_suffix(']'))
+            .map(str::trim)?;
+        let label = label.strip_prefix('/').unwrap_or(label).trim();
+        (!label.is_empty()).then(|| SmolStr::new(label))
+    }
+
+    /// Returns whether this label closes the current namespace.
+    pub fn is_close(&self) -> bool {
+        self.syntax
+            .text()
+            .to_string()
+            .trim()
+            .strip_prefix('[')
+            .and_then(|text| text.strip_suffix(']'))
+            .map(str::trim)
+            .is_some_and(|label| label.starts_with('/'))
+    }
+
+    /// Returns whether this label is empty.
+    pub fn is_empty(&self) -> bool {
         self.syntax
             .text()
             .to_string()
@@ -389,7 +467,7 @@ impl NamespaceNode {
             .and_then(|text| text.strip_suffix(']'))
             .map(str::trim)
             .filter(|text| !text.is_empty())
-            .map(SmolStr::new)
+            .is_none()
     }
 }
 
@@ -424,11 +502,7 @@ impl TaskNode {
     /// Returns:
     /// Range covering the task name before the parameter list.
     pub fn name_range(&self) -> Option<TextRange> {
-        self.syntax
-            .children_with_tokens()
-            .filter_map(|element| element.into_token())
-            .find(|token| token.kind() == SyntaxKind::Ident)
-            .map(|token| token.text_range())
+        self.header()?.name_range()
     }
 
     /// Returns the task name from the header identifier.
@@ -439,11 +513,7 @@ impl TaskNode {
     /// Returns:
     /// Task name when present.
     pub fn name(&self) -> Option<SmolStr> {
-        self.syntax
-            .children_with_tokens()
-            .filter_map(|element| element.into_token())
-            .find(|token| token.kind() == SyntaxKind::Ident)
-            .map(|token| SmolStr::new(token.text()))
+        self.header()?.name()
     }
 
     /// Returns the normalized task header text without the trailing `:`.
@@ -454,24 +524,18 @@ impl TaskNode {
     /// Returns:
     /// Header text when present.
     pub fn header_text(&self) -> Option<SmolStr> {
-        let mut header = String::new();
-
-        for token in self
-            .syntax
-            .children_with_tokens()
-            .filter_map(|element| element.into_token())
-        {
-            if token.kind() == SyntaxKind::Colon {
-                break;
-            }
-            if token.kind() == SyntaxKind::Newline {
-                break;
-            }
-            header.push_str(token.text());
-        }
-
-        let header = header.trim();
+        let header = self.header()?.syntax.text().to_string();
+        let header = header.trim().trim_end_matches(':').trim_end();
         (!header.is_empty()).then(|| SmolStr::new(header))
+    }
+
+    pub fn header(&self) -> Option<TaskHeaderNode> {
+        self.syntax.children().find_map(TaskHeaderNode::cast)
+    }
+
+    pub fn uses_multiline_header(&self) -> bool {
+        self.header()
+            .is_some_and(|header| header.syntax.text().to_string().contains(['\n', '\r']))
     }
 
     /// Returns the parsed task header sections and dependency references.
@@ -482,7 +546,8 @@ impl TaskNode {
     /// Returns:
     /// Structured header information parsed from one token stream pass.
     pub fn header_info(&self) -> TaskHeaderInfo {
-        parse_task_header(&self.syntax)
+        self.header()
+            .map_or_else(TaskHeaderInfo::default, |header| header.info())
     }
 
     /// Iterates normalized command lines from the task body.
@@ -519,7 +584,11 @@ struct BodyLine<'a> {
 
 fn task_body_steps(node: &SyntaxNode) -> impl Iterator<Item = TaskStepNode> + '_ {
     let source = node.text().to_string();
-    let body_start = first_line_end(&source).unwrap_or(source.len());
+    let body_start = node
+        .children()
+        .find(|child| child.kind() == SyntaxKind::TaskHeader)
+        .map(|header| usize::from(header.text_range().end() - node.text_range().start()))
+        .unwrap_or_else(|| first_line_end(&source).unwrap_or(source.len()));
     let base = usize::from(node.text_range().start());
     let lines = body_lines(&source, body_start).collect::<Vec<_>>();
     let mut steps = Vec::new();
@@ -631,21 +700,6 @@ fn text_range(start: usize, end: usize) -> TextRange {
     TextRange::new(TextSize::from(start as u32), TextSize::from(end as u32))
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HeaderPhase {
-    BeforeTail,
-    Params { depth: usize },
-    Guard { depth: usize },
-    Dependencies,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ShellExpectation {
-    None,
-    AllowEqOrName,
-    NeedName,
-}
-
 #[derive(Debug, Default)]
 struct PendingRef {
     name: String,
@@ -677,263 +731,235 @@ impl PendingRef {
     }
 }
 
-fn parse_task_header(node: &SyntaxNode) -> TaskHeaderInfo {
-    let mut info = TaskHeaderInfo::default();
-    let mut phase = HeaderPhase::BeforeTail;
-    let mut saw_name = false;
-    let mut stage = 0usize;
-    let mut group_depth = 0usize;
-    let mut pending = PendingRef::default();
-    let mut collector = String::new();
-    let mut dependencies_started = false;
-    let mut shell_expectation = ShellExpectation::None;
-    let mut expect_param_name = false;
-
-    for token in node
-        .children_with_tokens()
-        .filter_map(|element| element.into_token())
-    {
-        let kind = token.kind();
-        if matches!(
-            kind,
-            SyntaxKind::Colon | SyntaxKind::Newline | SyntaxKind::Eof
-        ) {
-            pending.flush(&mut info.dependency_refs, stage);
-            flush_header_collector(&mut info, &phase, &collector, dependencies_started);
-            break;
-        }
-
-        if !saw_name {
-            if kind == SyntaxKind::Ident {
-                saw_name = true;
-            }
-            continue;
-        }
-
-        if !matches!(shell_expectation, ShellExpectation::None) {
-            match (shell_expectation, kind) {
-                (_, SyntaxKind::Whitespace | SyntaxKind::Indent) => continue,
-                (ShellExpectation::AllowEqOrName, SyntaxKind::Eq) => {
-                    shell_expectation = ShellExpectation::NeedName;
-                    continue;
-                }
-                (_, SyntaxKind::Ident) => {
-                    info.shell = Some(SmolStr::new(token.text()));
-                    shell_expectation = ShellExpectation::None;
-                    continue;
-                }
-                _ => {
-                    shell_expectation = ShellExpectation::None;
-                }
-            }
-        }
-
-        match &mut phase {
-            HeaderPhase::BeforeTail => match kind {
-                SyntaxKind::LParen => {
-                    collector.clear();
-                    expect_param_name = true;
-                    phase = HeaderPhase::Params { depth: 1 };
-                }
-                SyntaxKind::Question => {
-                    collector.clear();
-                    phase = HeaderPhase::Guard { depth: 0 };
-                }
-                SyntaxKind::Amp => {
-                    collector.clear();
-                    dependencies_started = true;
-                    phase = HeaderPhase::Dependencies;
-                }
-                SyntaxKind::ShellFallbackKw => {
-                    info.shell_fallback = true;
-                    shell_expectation = ShellExpectation::NeedName;
-                }
-                SyntaxKind::ShellKw => shell_expectation = ShellExpectation::AllowEqOrName,
-                _ => {}
-            },
-            HeaderPhase::Params { depth } => {
-                if *depth == 1 && expect_param_name {
-                    match kind {
-                        SyntaxKind::Whitespace | SyntaxKind::Indent => {}
-                        SyntaxKind::Ident | SyntaxKind::ShellKw => {
-                            info.param_refs.push(TaskParamRef {
-                                name: SmolStr::new(token.text()),
-                                range: token.text_range(),
-                            });
-                            expect_param_name = false;
-                        }
-                        _ => expect_param_name = false,
-                    }
-                }
-
-                match kind {
-                    SyntaxKind::LParen => {
-                        *depth += 1;
-                        collector.push_str(token.text());
-                    }
-                    SyntaxKind::RParen => {
-                        *depth -= 1;
-                        if *depth == 0 {
-                            let trimmed = collector.trim();
-                            if !trimmed.is_empty() {
-                                info.params = Some(SmolStr::new(trimmed));
-                            }
-                            collector.clear();
-                            expect_param_name = false;
-                            phase = HeaderPhase::BeforeTail;
-                        } else {
-                            collector.push_str(token.text());
-                        }
-                    }
-                    SyntaxKind::Unknown if *depth == 1 && token.text() == "," => {
-                        collector.push_str(token.text());
-                        expect_param_name = true;
-                    }
-                    _ => collector.push_str(token.text()),
-                }
-            }
-            HeaderPhase::Guard { depth } => match kind {
-                SyntaxKind::LParen => {
-                    *depth += 1;
-                    collector.push_str(token.text());
-                }
-                SyntaxKind::RParen => {
-                    if *depth > 0 {
-                        *depth -= 1;
-                    }
-                    collector.push_str(token.text());
-                    if *depth == 0 {
-                        let trimmed = collector.trim();
-                        if !trimmed.is_empty() {
-                            info.guard = Some(SmolStr::new(trimmed));
-                        }
-                        collector.clear();
-                        phase = HeaderPhase::BeforeTail;
-                    }
-                }
-                SyntaxKind::Amp => {
-                    let trimmed = collector.trim();
-                    if !trimmed.is_empty() {
-                        info.guard = Some(SmolStr::new(trimmed));
-                    }
-                    collector.clear();
-                    dependencies_started = true;
-                    phase = HeaderPhase::Dependencies;
-                }
-                SyntaxKind::ShellFallbackKw => {
-                    let trimmed = collector.trim();
-                    if !trimmed.is_empty() {
-                        info.guard = Some(SmolStr::new(trimmed));
-                    }
-                    collector.clear();
-                    info.shell_fallback = true;
-                    shell_expectation = ShellExpectation::NeedName;
-                    phase = HeaderPhase::BeforeTail;
-                }
-                SyntaxKind::ShellKw => {
-                    let trimmed = collector.trim();
-                    if !trimmed.is_empty() {
-                        info.guard = Some(SmolStr::new(trimmed));
-                    }
-                    collector.clear();
-                    shell_expectation = ShellExpectation::AllowEqOrName;
-                    phase = HeaderPhase::BeforeTail;
-                }
-                _ => collector.push_str(token.text()),
-            },
-            HeaderPhase::Dependencies => match kind {
-                SyntaxKind::Amp if group_depth == 0 => {
-                    pending.flush(&mut info.dependency_refs, stage);
-                    if !info.dependency_refs.is_empty() {
-                        stage += 1;
-                    }
-                    if !collector.trim().is_empty() {
-                        if !info.dependencies.as_deref().unwrap_or_default().is_empty() {
-                            collector.push(' ');
-                        }
-                        collector.push('&');
-                    }
-                }
-                SyntaxKind::LParen => {
-                    if group_depth > 0 {
-                        pending.extend(&token);
-                    }
-                    group_depth += 1;
-                    collector.push_str(token.text());
-                }
-                SyntaxKind::RParen => {
-                    if group_depth > 1 {
-                        pending.extend(&token);
-                    } else {
-                        pending.flush(&mut info.dependency_refs, stage);
-                    }
-                    group_depth = group_depth.saturating_sub(1);
-                    collector.push_str(token.text());
-                }
-                SyntaxKind::ShellFallbackKw if group_depth == 0 => {
-                    pending.flush(&mut info.dependency_refs, stage);
-                    let trimmed = collector.trim();
-                    if !trimmed.is_empty() {
-                        info.dependencies = Some(SmolStr::new(trimmed));
-                    }
-                    collector.clear();
-                    info.shell_fallback = true;
-                    shell_expectation = ShellExpectation::NeedName;
-                    phase = HeaderPhase::BeforeTail;
-                }
-                SyntaxKind::ShellKw if group_depth == 0 => {
-                    pending.flush(&mut info.dependency_refs, stage);
-                    let trimmed = collector.trim();
-                    if !trimmed.is_empty() {
-                        info.dependencies = Some(SmolStr::new(trimmed));
-                    }
-                    collector.clear();
-                    shell_expectation = ShellExpectation::AllowEqOrName;
-                    phase = HeaderPhase::BeforeTail;
-                }
-                SyntaxKind::Whitespace | SyntaxKind::Indent => {
-                    collector.push_str(token.text());
-                }
-                SyntaxKind::Unknown if token.text() == "," && group_depth > 0 => {
-                    pending.flush(&mut info.dependency_refs, stage);
-                    collector.push_str(token.text());
-                }
-                _ => {
-                    pending.extend(&token);
-                    collector.push_str(token.text());
-                }
-            },
-        }
+impl TaskHeaderNode {
+    pub fn cast(syntax: SyntaxNode) -> Option<Self> {
+        (syntax.kind() == SyntaxKind::TaskHeader).then_some(Self { syntax })
     }
 
-    if info.dependencies.is_none() {
-        let trimmed = collector.trim();
-        if dependencies_started && !trimmed.is_empty() {
-            info.dependencies = Some(SmolStr::new(trimmed));
+    pub fn range(&self) -> TextRange {
+        self.syntax.text_range()
+    }
+
+    pub fn name(&self) -> Option<SmolStr> {
+        self.name_node()?
+            .first_token()
+            .map(|token| SmolStr::new(token.text()))
+    }
+
+    pub fn name_range(&self) -> Option<TextRange> {
+        self.name_node()?
+            .first_token()
+            .map(|token| token.text_range())
+    }
+
+    pub fn parameter_list(&self) -> Option<ParameterListNode> {
+        self.syntax.children().find_map(ParameterListNode::cast)
+    }
+
+    pub fn guards(&self) -> impl Iterator<Item = GuardClauseNode> + '_ {
+        self.syntax.children().filter_map(GuardClauseNode::cast)
+    }
+
+    pub fn dependencies(&self) -> impl Iterator<Item = DependencyClauseNode> + '_ {
+        self.syntax
+            .children()
+            .filter_map(DependencyClauseNode::cast)
+    }
+
+    pub fn shell(&self) -> Option<ShellClauseNode> {
+        self.syntax.children().find_map(ShellClauseNode::cast)
+    }
+
+    pub fn terminator(&self) -> Option<HeaderTerminatorNode> {
+        self.syntax.children().find_map(HeaderTerminatorNode::cast)
+    }
+
+    pub fn info(&self) -> TaskHeaderInfo {
+        parse_task_header(self)
+    }
+
+    fn name_node(&self) -> Option<SyntaxNode> {
+        self.syntax
+            .children()
+            .find(|node| node.kind() == SyntaxKind::TaskName)
+    }
+}
+
+impl ParameterListNode {
+    pub fn cast(syntax: SyntaxNode) -> Option<Self> {
+        (syntax.kind() == SyntaxKind::ParameterList).then_some(Self { syntax })
+    }
+
+    pub fn range(&self) -> TextRange {
+        self.syntax.text_range()
+    }
+
+    pub fn parameters(&self) -> impl Iterator<Item = ParameterNode> + '_ {
+        self.syntax.children().filter_map(ParameterNode::cast)
+    }
+}
+
+impl ParameterNode {
+    pub fn cast(syntax: SyntaxNode) -> Option<Self> {
+        (syntax.kind() == SyntaxKind::Parameter).then_some(Self { syntax })
+    }
+
+    pub fn range(&self) -> TextRange {
+        self.syntax.text_range()
+    }
+
+    pub fn name(&self) -> Option<SmolStr> {
+        self.name_token().map(|token| SmolStr::new(token.text()))
+    }
+
+    pub fn name_range(&self) -> Option<TextRange> {
+        self.name_token().map(|token| token.text_range())
+    }
+
+    pub fn default_value(&self) -> Option<SmolStr> {
+        node_tokens(&self.syntax)
+            .find(|token| token.kind() == SyntaxKind::String)
+            .and_then(|token| {
+                token
+                    .text()
+                    .strip_prefix('"')?
+                    .strip_suffix('"')
+                    .map(SmolStr::new)
+            })
+    }
+
+    pub fn is_slice(&self) -> bool {
+        self.syntax
+            .text()
+            .to_string()
+            .split('=')
+            .next()
+            .is_some_and(|name| name.trim_end().ends_with(".."))
+    }
+
+    fn name_token(&self) -> Option<crate::cst::SyntaxToken> {
+        node_tokens(&self.syntax)
+            .find(|token| matches!(token.kind(), SyntaxKind::Ident | SyntaxKind::ShellKw))
+    }
+}
+
+macro_rules! clause_node {
+    ($type:ident, $kind:ident) => {
+        impl $type {
+            pub fn cast(syntax: SyntaxNode) -> Option<Self> {
+                (syntax.kind() == SyntaxKind::$kind).then_some(Self { syntax })
+            }
+
+            pub fn range(&self) -> TextRange {
+                self.syntax.text_range()
+            }
+
+            pub fn text(&self) -> SmolStr {
+                SmolStr::new(self.syntax.text().to_string().trim())
+            }
         }
+    };
+}
+
+clause_node!(GuardClauseNode, GuardClause);
+clause_node!(DependencyClauseNode, DependencyClause);
+clause_node!(ShellClauseNode, ShellClause);
+clause_node!(HeaderTerminatorNode, HeaderTerminator);
+
+fn parse_task_header(node: &TaskHeaderNode) -> TaskHeaderInfo {
+    let mut info = TaskHeaderInfo::default();
+
+    if let Some(parameters) = node.parameter_list() {
+        let refs = parameters
+            .parameters()
+            .filter_map(|parameter| {
+                Some(TaskParamRef {
+                    name: parameter.name()?,
+                    range: parameter.name_range()?,
+                    default_value: parameter.default_value(),
+                    is_slice: parameter.is_slice(),
+                })
+            })
+            .collect::<Vec<_>>();
+        if !refs.is_empty() {
+            info.params = Some(SmolStr::new(
+                refs.iter()
+                    .map(render_param_ref)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ));
+        }
+        info.param_refs = refs;
+    }
+
+    info.guards = node
+        .guards()
+        .map(|guard| TaskGuardRef {
+            text: SmolStr::new(guard.text().trim_start_matches('?').trim()),
+            range: guard.range(),
+        })
+        .collect();
+    info.guard = info.guards.first().map(|guard| guard.text.clone());
+
+    let mut dependency_text = Vec::new();
+    for (stage, clause) in node.dependencies().enumerate() {
+        dependency_text.push(clause.text().trim_start_matches('&').trim().to_string());
+        parse_dependency_clause(&clause.syntax, stage, &mut info.dependency_refs);
+    }
+    if !dependency_text.is_empty() {
+        info.dependencies = Some(SmolStr::new(dependency_text.join(" & ")));
+    }
+
+    if let Some(shell) = node.shell() {
+        let tokens = node_tokens(&shell.syntax)
+            .filter(|token| {
+                !matches!(
+                    token.kind(),
+                    SyntaxKind::Whitespace | SyntaxKind::Indent | SyntaxKind::Newline
+                )
+            })
+            .collect::<Vec<_>>();
+        info.shell_fallback = tokens
+            .first()
+            .is_some_and(|token| token.kind() == SyntaxKind::ShellFallbackKw);
+        info.shell = tokens
+            .iter()
+            .rev()
+            .find(|token| token.kind() == SyntaxKind::Ident)
+            .map(|token| SmolStr::new(token.text()));
     }
 
     info
 }
 
-fn flush_header_collector(
-    info: &mut TaskHeaderInfo,
-    phase: &HeaderPhase,
-    collector: &str,
-    dependencies_started: bool,
-) {
-    let trimmed = collector.trim();
-    if trimmed.is_empty() {
-        return;
+fn render_param_ref(parameter: &TaskParamRef) -> String {
+    let suffix = if parameter.is_slice { ".." } else { "" };
+    match &parameter.default_value {
+        Some(value) => format!("{}{suffix}=\"{value}\"", parameter.name),
+        None => format!("{}{suffix}", parameter.name),
     }
+}
 
-    match phase {
-        HeaderPhase::Guard { .. } => info.guard = Some(SmolStr::new(trimmed)),
-        HeaderPhase::Dependencies if dependencies_started => {
-            info.dependencies = Some(SmolStr::new(trimmed))
+fn parse_dependency_clause(node: &SyntaxNode, stage: usize, refs: &mut Vec<TaskDependencyRef>) {
+    let mut pending = PendingRef::default();
+    for token in node_tokens(node) {
+        match token.kind() {
+            SyntaxKind::Amp
+            | SyntaxKind::LParen
+            | SyntaxKind::Whitespace
+            | SyntaxKind::Indent
+            | SyntaxKind::Newline => {}
+            SyntaxKind::RParen => pending.flush(refs, stage),
+            SyntaxKind::Unknown if token.text() == "," => pending.flush(refs, stage),
+            _ => pending.extend(&token),
         }
-        _ => {}
     }
+    pending.flush(refs, stage);
+}
+
+fn node_tokens(node: &SyntaxNode) -> impl Iterator<Item = crate::cst::SyntaxToken> + '_ {
+    node.descendants_with_tokens()
+        .filter_map(|element| element.into_token())
 }
 
 fn non_trivia_token_texts(node: &SyntaxNode) -> impl Iterator<Item = SmolStr> + '_ {

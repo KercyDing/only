@@ -65,7 +65,7 @@ fn resolve_shell(shell: &str, shell_fallback: bool) -> Result<String, EngineErro
                 return Ok("powershell".to_string());
             }
             Err(EngineError::ShellNotFound(
-                "pwsh was not found\nhelp: install PowerShell 7+, or use `shell?=pwsh`".to_string(),
+                "pwsh was not found\nhelp: install PowerShell 7+, or use `shell~=pwsh`".to_string(),
             ))
         }
         "bash" => {
@@ -76,7 +76,7 @@ fn resolve_shell(shell: &str, shell_fallback: bool) -> Result<String, EngineErro
                 return Ok("sh".to_string());
             }
             Err(EngineError::ShellNotFound(
-                "bash was not found\nhelp: install bash, or use `shell?=bash`".to_string(),
+                "bash was not found\nhelp: install bash, or use `shell~=bash`".to_string(),
             ))
         }
         "powershell" => {

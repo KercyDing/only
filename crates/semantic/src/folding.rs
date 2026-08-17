@@ -73,6 +73,9 @@ pub fn folding_ranges(snapshot: &SemanticSnapshot) -> Vec<FoldingRange> {
             .fold(namespace.range, |range, task| {
                 TextRange::new(range.start(), range.end().max(task.range.end()))
             });
+        let namespace_range = namespace.close_range.map_or(namespace_range, |close| {
+            TextRange::new(namespace_range.start(), close.end())
+        });
 
         ranges.push(FoldingRange {
             range: namespace_range,
