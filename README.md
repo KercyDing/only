@@ -74,26 +74,21 @@ Dependencies, parallel execution, parameters, and environment-specific task vari
 
 ## Features
 
-- **Cross-platform by default** — common commands behave consistently across macOS, Linux, and Windows.
-- **Task dependencies** — describe ordering directly in the task signature.
-- **Parallel stages** — group independent dependencies with `(a, b)`.
-- **Guards** — select implementations with `@has`, `@os`, `@arch`, and `@env`.
-- **Namespaces** — organize larger projects with `[front]`, `[back]`, `[version]`, etc.
-- **Parameters** — use function-style task signatures and `{{ value }}` interpolation.
-- **Command blocks** — run consecutive `|` lines in one cross-platform shell process.
-- **Private helpers** — tasks beginning with `_` stay out of the normal task list.
-- **Dry run** — inspect the resolved execution plan before running it.
-- **Shell escape hatch** — request `bash`, `sh`, `pwsh`, or PowerShell when needed.
+- **Structured tasks** — parameters, dependencies, namespaces, and private helpers.
+- **Predictable execution** — ordered stages, parallel groups, and deduplicated dependencies.
+- **Environment-aware variants** — guards for the OS, architecture, environment, and installed commands.
+- **Cross-platform commands** — a built-in shell, command blocks, and optional host shells.
+- **Inspectable workflows** — validation, dynamic help, and dry-run execution plans.
 
-## Why not `just` or Task?
+## How it differs
 
-| Tool | Good for | Tradeoff |
+All three support dependencies and cross-platform workflows. The main difference is how they express them.
+
+| Tool | Configuration style | Emphasis |
 | --- | --- | --- |
-| [`just`](https://github.com/casey/just) | shell-oriented command recipes | workflow behavior still depends heavily on the host shell |
-| [`Task`](https://taskfile.dev/) | YAML-based automation | more configuration for projects that want a compact task language |
-| `only` | structured project workflows | introduces a small dedicated task syntax |
-
-`only` aims to stay close to the simplicity of a command runner while making workflow structure explicit.
+| [`just`](https://github.com/casey/just) | Make-inspired recipes in a `justfile` | mature, shell-oriented command recipes |
+| [`Task`](https://taskfile.dev/) | declarative YAML in `Taskfile.yml` | broad task configuration without a custom syntax |
+| `only` | function-style tasks in an `Onlyfile` | explicit stages, guarded variants, and namespaces in compact syntax |
 
 ## Install
 
