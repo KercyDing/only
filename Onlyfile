@@ -24,24 +24,34 @@ ci() & check & test:
 
 # Install the local only binary
 install() ? @os("windows") & _release_build shell?=pwsh:
+    | # Resolve paths and processes.
     | $installDir = Join-Path $env:LOCALAPPDATA "Programs\Only"
     | $installPath = Join-Path $installDir "only.exe"
     | $stagedPath = Join-Path $env:TEMP "only-install-staged.exe"
     | $parentPid = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID").ParentProcessId
     | $shellPath = (Get-Process -Id $PID).Path
+    |
+    | # Stage the replacement.
     | New-Item -ItemType Directory -Force -Path $installDir | Out-Null
     | Copy-Item target/release/only.exe -Destination $stagedPath -Force
     | $script = "Wait-Process -Id $parentPid; Copy-Item -LiteralPath '$stagedPath' -Destination '$installPath' -Force; Remove-Item -LiteralPath '$stagedPath' -Force"
     | $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script))
+    |
+    | # Install after only exits.
     | Start-Process -WindowStyle Hidden -FilePath $shellPath -ArgumentList "-NoProfile", "-EncodedCommand", $encoded
     | Write-Output "Install will complete after this only process exits: $installPath"
 
 install() & _release_build:
+    | # Resolve paths.
     | install_dir="$HOME/.local/bin"
     | staged_path="$install_dir/.only-install"
+    |
+    | # Stage the executable.
     | mkdir -p "$install_dir"
     | cp target/release/only "$staged_path"
     | chmod +x "$staged_path"
+    |
+    | # Replace the installed binary.
     | mv "$staged_path" "$install_dir/only"
     | echo "Installed only to $install_dir/only"
 
