@@ -17,33 +17,34 @@ Keep project workflows in one readable `Onlyfile`.
 ## Example
 
 ```Onlyfile
-!version 0.2
+!version 0.3
+!var cargo_flags = "--workspace"
 
 # Build the Rust app
-build(profile="dev"):
-    cargo build --profile {{profile}}
+build(profile = "dev"):
+    cargo build {{cargo_flags}} --profile {{profile}}
 
 # Run tests in parallel
 ci() & (back.test, front.test):
     echo "CI complete!"
 
 # Backend
-[back]
+[back] {
+    # Test the backend.
+    // Prefer nextest when available.
+    test() ? @env("CI") ? @has("cargo-nextest"):
+        cargo nextest run
 
-# Test the backend
-// Prefer nextest when available.
-test() ? @has("cargo-nextest"):
-    cargo nextest run
-
-test():
-    cargo test
+    test():
+        cargo test
+}
 
 # Frontend
-[front]
-
-# Test the frontend
-test():
-    pnpm test
+[front] {
+    # Test the frontend.
+    test():
+        pnpm test
+}
 ```
 
 Run it:
@@ -70,6 +71,12 @@ Dry run: ci()
    └─ ci (1 command)
 ```
 
+Format the Onlyfile with:
+
+```shell
+only --fmt
+```
+
 Dependencies, parallel execution, parameters, and environment-specific task variants stay in the task definition instead of shell control flow.
 
 ## Features
@@ -78,6 +85,7 @@ Dependencies, parallel execution, parameters, and environment-specific task vari
 - **Predictable execution** — ordered stages, parallel groups, and deduplicated dependencies.
 - **Environment-aware variants** — guards for the OS, architecture, environment, and installed commands.
 - **Cross-platform commands** — a built-in shell, command blocks, and optional host shells.
+- **Consistent files** — global string values, multiline headers, and a zero-config formatter.
 - **Inspectable workflows** — validation, dynamic help, and dry-run execution plans.
 
 ## How it differs

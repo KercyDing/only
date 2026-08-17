@@ -1,4 +1,5 @@
 !version 0.3
+!var cargo_flags = "--workspace --all-targets"
 
 // Example workflow for a Rust backend and web frontend.
 # Run all checks.
@@ -62,11 +63,11 @@ package() & (front.build, back.build):
     # Check the Rust workspace.
     check():
         cargo fmt --all -- --check
-        cargo check --workspace --all-targets
-        cargo clippy --workspace --all-targets -- -D warnings
+        cargo check {{cargo_flags}}
+        cargo clippy {{cargo_flags}} -- -D warnings
 
-    # Run tests with nextest when available.
-    test() ? @has("cargo-nextest"):
+    # Run CI tests with nextest when available.
+    test() ? @env("CI") ? @has("cargo-nextest"):
         cargo nextest run --no-fail-fast
 
     test():

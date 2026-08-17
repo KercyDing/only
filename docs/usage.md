@@ -36,7 +36,7 @@ For a complete workflow, see the [example Onlyfile](../examples/Onlyfile).
 Create a file named `Onlyfile` in your project root:
 
 ```Onlyfile
-!version 0.2
+!version 0.3
 
 hello():
     echo "hello from only"
@@ -82,7 +82,7 @@ The format is always:
 MAJOR.MINOR
 ```
 
-For example, `!version 0.2` requires language capability `0.2` or newer within the same major version.
+For example, `!version 0.3` requires language capability `0.3` or newer within the same major version.
 
 The declaration is optional. Older Onlyfiles without `!version` remain valid.
 
@@ -517,8 +517,6 @@ Available file-level directives are:
 Use namespaces when several parts of your project have similar tasks.
 
 ```Onlyfile
-!version 0.3
-
 [front] {
     check():
         pnpm lint
@@ -812,7 +810,7 @@ Common runtime errors include:
 | --- | --- |
 | `// text` | ordinary comment |
 | `# text` | document the next task or namespace |
-| `!version 0.2` | require language capability 0.2 or newer within 0.x |
+| `!version A.B` | require language capability A.B or newer within (A+1).0 |
 | `!shell bash` | set the file-level shell |
 | `task():` | define a task |
 | `task(name):` | required parameter |
