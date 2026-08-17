@@ -5,80 +5,116 @@
 
 **One `Onlyfile`. Same behavior everywhere.**
 
-`only` is a small task runner for projects that need to work the same on macOS, Linux, and Windows.
+`only` is a small cross-platform task runner for macOS, Linux, and Windows.
 
-Write this once:
+Dependencies, parallelism, environment-specific variants, namespaces, and common shell behavior all stay in one readable `Onlyfile`.
+
+## Example
 
 ```Onlyfile
-// Start small and keep common commands close to the project.
-# Start the development server.
-serve(port="3000", host="127.0.0.1"):
-    echo "Serving on {{host}}:{{port}}"
+# Start development.
+dev(port="3000"):
+    pnpm dev --port {{ port }}
 
 # Check the project.
 check():
     cargo check
 
-# Run tests.
+# Prefer nextest when available.
+test() ? @has("cargo-nextest"):
+    cargo nextest run
+
 test():
     cargo test
 
-# Run the local CI workflow.
-ci() & check & test:
-    echo "done"
+# Run checks and tests in parallel.
+ci() & (check, test):
+    echo "CI complete"
 ```
 
-Run it like this:
+Run it:
 
 ```shell
 only
-only serve
-only serve 8080
-only -s host=0.0.0.0 serve 8080
+only dev
+only dev 8080
 only ci
 ```
 
-That is the core idea: a readable task file, parameters when you need them, dependencies when tasks grow, and no per-platform shell surprises.
+Or inspect the execution plan first:
 
-## Why not just/taskfile?
+```shell
+only --dry-run ci
+```
+
+```text
+Dry run: ci()
+├─ stage 1 (parallel)
+│  ├─ check
+│  └─ test
+└─ stage 2
+   └─ ci
+```
+
+Dependencies, parallel execution, parameters, and environment-specific task variants stay in the task definition instead of shell control flow.
+
+For a larger frontend + Rust workflow, see the [usage guide](docs/usage.md).
+
+## Features
+
+- **Cross-platform by default** — common commands behave consistently across macOS, Linux, and Windows.
+- **Task dependencies** — describe ordering directly in the task signature.
+- **Parallel stages** — group independent dependencies with `(a, b)`.
+- **Guards** — select implementations with `@has`, `@os`, `@arch`, and `@env`.
+- **Namespaces** — organize larger projects with `[front]`, `[back]`, `[version]`, etc.
+- **Parameters** — use function-style task signatures and `{{ value }}` interpolation.
+- **Private helpers** — tasks beginning with `_` stay out of the normal task list.
+- **Dry run** — inspect the resolved execution plan before running it.
+- **Shell escape hatch** — request `bash`, `sh`, `pwsh`, or PowerShell when needed.
+
+## Why not `just` or Task?
 
 | Tool | Good for | Tradeoff |
 | --- | --- | --- |
-| `just` | simple command aliases | still depends a lot on the user's shell |
-| `taskfile` | bigger YAML workflows | more config than many projects need |
-| `only` | small tasks that may grow into tooling | a real task syntax instead of plain shell or YAML |
+| [`just`](https://github.com/casey/just) | shell-oriented command recipes | workflow behavior still depends heavily on the host shell |
+| [`Task`](https://taskfile.dev/) | YAML-based automation | more configuration for projects that want a compact task language |
+| `only` | structured project workflows | introduces a small dedicated task syntax |
+
+`only` aims to stay close to the simplicity of a command runner while making workflow structure explicit.
 
 ## Install
 
-On MacOS or Linux:
+### macOS / Linux
 
 ```shell
 curl -fsSL https://raw.githubusercontent.com/KercyDing/only/master/install.sh | sh
 ```
 
-On Windows PowerShell:
+### Windows PowerShell
 
 ```powershell
 irm https://raw.githubusercontent.com/KercyDing/only/master/install.ps1 | iex
 ```
 
-From crates.io:
+### Cargo
 
 ```shell
 cargo install only
 ```
 
-On Arch Linux:
+### Arch Linux
 
 ```shell
-# Stable release
 paru -S only-bin
+```
 
-# Git build
+For the latest Git version:
+
+```shell
 paru -S only-git
 ```
 
-From GitHub:
+### GitHub
 
 ```shell
 cargo install --git https://github.com/KercyDing/only only
@@ -88,19 +124,23 @@ cargo install --git https://github.com/KercyDing/only only
 
 ```shell
 only --upgrade
-# or: only --update
 ```
 
-## VSCode extension support
+or:
 
-The [Onlyfile extension](https://marketplace.visualstudio.com/items?itemName=kercyding.onlyfile) provides syntax highlighting and `only-lsp` integration for diagnostics, hover, document symbols, and folding.
+```shell
+only --update
+```
+
+## Editor support
+
+The [Onlyfile VS Code extension](https://marketplace.visualstudio.com/items?itemName=kercyding.onlyfile) provides syntax highlighting and `only-lsp` integration for diagnostics, hover, document symbols, and folding.
 
 ## Learn more
 
-See a complete example: [examples/Onlyfile](examples/Onlyfile).
+- [Complete example](examples/Onlyfile)
+- [Usage guide](docs/usage.md)
 
-See the full guide: [docs/usage.md](docs/usage.md).
-
-## LICENSE
+## License
 
 [MIT](LICENSE)
