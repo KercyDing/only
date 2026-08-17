@@ -29,7 +29,7 @@ pub fn semantic_tokens(snapshot: &DocumentSnapshot) -> Vec<LspSemanticToken> {
                 kind: LspSemanticTokenKind::Directive,
             });
         }
-        if directive.name().as_deref() == Some("var")
+        if directive.directive_kind() == Some(only_syntax::DirectiveKind::Var)
             && let Some(range) = directive.argument_name_range()
         {
             tokens.push(LspSemanticToken {

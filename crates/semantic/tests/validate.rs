@@ -118,21 +118,63 @@ fn fallback_shell_requires_version_0_3() {
 }
 
 #[test]
-fn rejects_unknown_shell_fallback() {
+fn suggests_required_shell() {
+    for shell in ["sh", "deno", "powershell"] {
+        let source = format!("!version 0.3\nbuild() shell~={shell}:\n    true\n");
+        let compiled = compile_document(&source);
+        let diagnostic = compiled
+            .diagnostics
+            .iter()
+            .find(|diagnostic| diagnostic.code.as_str() == "semantic.invalid-shell-fallback")
+            .expect("fallback should be rejected");
+
+        assert_eq!(
+            diagnostic.message,
+            format!("shell '{shell}' has no fallback; use `shell={shell}`")
+        );
+    }
+}
+
+#[test]
+fn rejects_unknown_shell() {
     let compiled = compile_document("!version 0.3\nbuild() shell~=pw:\n    true\n");
 
     let diagnostic = compiled
         .diagnostics
         .iter()
-        .find(|diagnostic| diagnostic.code.as_str() == "semantic.invalid-shell-fallback")
-        .expect("unknown fallback shell should be rejected");
-    assert!(diagnostic.message.contains("shell 'pw' has no fallback"));
-    assert!(diagnostic.message.contains("'pwsh' -> 'powershell'"));
+        .find(|diagnostic| diagnostic.code.as_str() == "semantic.unknown-shell")
+        .expect("unknown shell should be rejected");
+    assert!(diagnostic.message.contains("shell 'pw' is not supported"));
+    assert!(diagnostic.message.contains("'pwsh'"));
     let start = "!version 0.3\nbuild() ".len();
     assert_eq!(
         usize::from(diagnostic.primary_range.start()),
         start,
         "diagnostic should start at the shell clause"
+    );
+}
+
+#[test]
+fn rejects_unknown_default_shell() {
+    let compiled = compile_document("!shell custom\nbuild():\n    true\n");
+
+    assert!(
+        compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "semantic.unknown-shell")
+    );
+}
+
+#[test]
+fn rejects_unknown_required_shell() {
+    let compiled = compile_document("build() shell=custom:\n    true\n");
+
+    assert!(
+        compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "semantic.unknown-shell")
     );
 }
 

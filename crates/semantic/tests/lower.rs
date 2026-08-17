@@ -1,4 +1,4 @@
-use only_semantic::compile_document;
+use only_semantic::{GuardKind, compile_document};
 
 #[test]
 fn lowers_directives_with_crlf_line_endings() {
@@ -99,8 +99,8 @@ fn lowers_multiple_guards_in_order() {
     let guards = &compiled.document.tasks[0].guards;
 
     assert_eq!(guards.len(), 2);
-    assert_eq!(guards[0].kind, "has");
-    assert_eq!(guards[1].kind, "env");
+    assert_eq!(guards[0].kind, GuardKind::Has);
+    assert_eq!(guards[1].kind, GuardKind::Env);
     assert!(guards[0].range.start() < guards[1].range.start());
 }
 

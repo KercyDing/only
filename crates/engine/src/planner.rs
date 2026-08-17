@@ -1,7 +1,7 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use only_semantic::{DirectiveAst, DocumentAst, TaskAst};
+use only_semantic::{DirectiveAst, DocumentAst, ShellKind, ShellSelection, TaskAst};
 
 use crate::dag::expand_execution_order;
 use crate::resolve::{
@@ -24,8 +24,7 @@ pub struct ExecutionNode {
     pub name: String,
     pub steps: Vec<ExecutionStep>,
     pub params: Vec<PlanParam>,
-    pub shell: Option<String>,
-    pub shell_fallback: bool,
+    pub shell: Option<ShellSelection>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,7 +56,7 @@ pub struct PlanParam {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ExecutionPlan {
     pub nodes: Vec<ExecutionNode>,
-    pub shell: Option<String>,
+    pub shell: Option<ShellKind>,
     pub working_dir: PathBuf,
 }
 

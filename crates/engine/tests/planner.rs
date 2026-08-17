@@ -1,5 +1,5 @@
 use only_engine::{Invocation, build_execution_plan, try_build_execution_plan};
-use only_semantic::compile_document;
+use only_semantic::{ShellKind, ShellOperator, compile_document};
 
 #[test]
 fn builds_dag_order_from_semantic_ast() {
@@ -133,10 +133,11 @@ fn carries_shell_and_default_params_into_plan() {
         },
     );
 
-    assert_eq!(plan.shell.as_deref(), Some("bash"));
+    assert_eq!(plan.shell, Some(ShellKind::Bash));
     assert_eq!(plan.nodes.len(), 1);
-    assert_eq!(plan.nodes[0].shell.as_deref(), Some("pwsh"));
-    assert!(plan.nodes[0].shell_fallback);
+    let shell = plan.nodes[0].shell.as_ref().expect("shell should exist");
+    assert_eq!(shell.kind, ShellKind::Pwsh);
+    assert_eq!(shell.operator, ShellOperator::Fallback);
     assert_eq!(plan.nodes[0].params.len(), 1);
     assert_eq!(plan.nodes[0].params[0].name, "tag");
     assert_eq!(plan.nodes[0].params[0].default_value.as_deref(), Some("v1"));
@@ -155,8 +156,9 @@ fn carries_exact_task_shell_assignment_into_plan() {
     );
 
     assert_eq!(plan.nodes.len(), 1);
-    assert_eq!(plan.nodes[0].shell.as_deref(), Some("powershell"));
-    assert!(!plan.nodes[0].shell_fallback);
+    let shell = plan.nodes[0].shell.as_ref().expect("shell should exist");
+    assert_eq!(shell.kind, ShellKind::Powershell);
+    assert_eq!(shell.operator, ShellOperator::Required);
 }
 
 #[test]

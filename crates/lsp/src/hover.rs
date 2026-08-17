@@ -1,3 +1,4 @@
+use only_semantic::{GuardKind, ShellKind, ShellOperator};
 use text_size::{TextRange, TextSize};
 
 use crate::DocumentSnapshot;
@@ -112,14 +113,18 @@ fn command_block_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<
         .directives
         .iter()
         .find_map(|directive| match directive {
-            only_semantic::DirectiveAst::Shell { shell, .. } => Some(shell.as_str()),
+            only_semantic::DirectiveAst::Shell { shell, .. } => Some(shell.clone()),
             only_semantic::DirectiveAst::Version { .. } => None,
             only_semantic::DirectiveAst::Variable { .. } => None,
         })
-        .unwrap_or("deno");
+        .unwrap_or(ShellKind::Deno);
 
     for task in &snapshot.semantic.document.tasks {
-        let shell = task.shell.as_deref().unwrap_or(default_shell);
+        let shell = task
+            .shell
+            .as_ref()
+            .map(|shell| &shell.selection.kind)
+            .unwrap_or(&default_shell);
         for step in &task.steps {
             let only_semantic::TaskStepAst::CommandBlock(block) = step else {
                 continue;
@@ -148,15 +153,10 @@ fn directive_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspH
             continue;
         }
 
-        let name = directive.name()?.to_string();
+        let kind = directive.directive_kind()?;
+        let name = kind.as_str().to_string();
         let value = directive.value().map(|value| value.to_string());
-        let docs = match name.as_str() {
-            "version" => "Declares the minimum Onlyfile language capability required by this file."
-                .to_string(),
-            "shell" => "Sets the default shell host used for task commands.".to_string(),
-            "var" => "Defines a global string value.".to_string(),
-            _ => return None,
-        };
+        let docs = kind.description()?.to_string();
 
         return Some(LspHover {
             kind: LspHoverKind::Directive,
@@ -207,14 +207,9 @@ fn probe_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover
             continue;
         }
 
-        let name = ident.text.to_string();
-        let docs = match name.as_str() {
-            "os" => "Checks whether the current operating system matches the requested value.",
-            "arch" => "Checks whether the current CPU architecture matches the requested value.",
-            "env" => "Checks whether the named environment variable is present.",
-            "has" => "Checks whether a command is available in the current environment.",
-            _ => return None,
-        };
+        let kind = GuardKind::parse(&ident.text);
+        let name = kind.as_str().to_string();
+        let docs = kind.description()?;
         let argument = snapshot
             .semantic
             .document
@@ -225,7 +220,7 @@ fn probe_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover
                 task.guards
                     .iter()
                     .find(|guard| guard.range.contains(at.range.start()))
-                    .or_else(|| task.guards.iter().find(|guard| guard.kind.as_str() == name))
+                    .or_else(|| task.guards.iter().find(|guard| guard.kind == kind))
             })
             .map(|guard| guard.argument.to_string());
         let signature = match &argument {
@@ -262,20 +257,19 @@ fn shell_operator_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option
             continue;
         }
 
-        let shell = clause.shell_name()?.to_string();
+        let shell = ShellKind::parse(&clause.shell_name()?);
         let operator = clause.operator()?;
-        let signature = match operator {
-            only_syntax::ShellOperator::Required => format!("shell={shell}"),
-            only_syntax::ShellOperator::Fallback => format!("shell~={shell}"),
-        };
+        let signature = format!("{operator}{shell}");
         let docs = match operator {
-            only_syntax::ShellOperator::Required => {
+            ShellOperator::Required => {
                 format!("Uses {shell}. The task fails if it is unavailable.")
             }
-            only_syntax::ShellOperator::Fallback => {
-                let fallback = fallback_shell(&shell)?;
-                format!("Prefers {shell} and falls back to {fallback} when unavailable.")
-            }
+            ShellOperator::Fallback => match shell.fallback() {
+                Some(fallback) => {
+                    format!("Prefers {shell} and falls back to {fallback} when unavailable.")
+                }
+                None => format!("{shell} has no fallback. Use `shell={shell}`."),
+            },
         };
 
         return Some(LspHover {
@@ -289,14 +283,6 @@ fn shell_operator_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option
     }
 
     None
-}
-
-fn fallback_shell(shell: &str) -> Option<&'static str> {
-    match shell {
-        "pwsh" => Some("powershell"),
-        "bash" => Some("sh"),
-        _ => None,
-    }
 }
 
 fn interpolation_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {

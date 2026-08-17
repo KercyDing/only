@@ -3,7 +3,10 @@ use std::collections::HashSet;
 use only_diagnostic::{Diagnostic, DiagnosticCode, DiagnosticPhase, DiagnosticSeverity};
 use text_size::TextRange;
 
-use crate::{DirectiveAst, DocumentAst, SymbolIndex, TaskAst};
+use crate::{
+    DirectiveAst, DirectiveKind, DocumentAst, GuardKind, ShellKind, ShellOperator, ShellSelection,
+    SymbolIndex, TaskAst,
+};
 
 pub(crate) fn validate_document(document: &DocumentAst, symbols: &SymbolIndex) -> Vec<Diagnostic> {
     let mut diagnostics = Vec::new();
@@ -35,6 +38,16 @@ pub(crate) fn validate_document(document: &DocumentAst, symbols: &SymbolIndex) -
             _ => None,
         })
         .collect::<HashSet<_>>();
+
+    for directive in &document.directives {
+        if let DirectiveAst::Shell { shell, range } = directive {
+            validate_shell(
+                &ShellSelection::required(shell.clone()),
+                *range,
+                &mut diagnostics,
+            );
+        }
+    }
 
     if !supports_engineering && (!globals.is_empty() || document.uses_braced_namespaces) {
         let range = document
@@ -142,8 +155,12 @@ fn validate_task(
         }
     }
 
+    let uses_shell_fallback = task
+        .shell
+        .as_ref()
+        .is_some_and(|shell| shell.selection.operator == ShellOperator::Fallback);
     if !supports_engineering
-        && (task.guards.len() > 1 || task.uses_multiline_header || task.shell_fallback)
+        && (task.guards.len() > 1 || task.uses_multiline_header || uses_shell_fallback)
     {
         diagnostics.push(error(
             "semantic.engineering-version",
@@ -152,25 +169,19 @@ fn validate_task(
         ));
     }
 
-    if task.shell_fallback && !matches!(task.shell.as_deref(), Some("pwsh") | Some("bash")) {
-        diagnostics.push(error(
-            "semantic.invalid-shell-fallback",
-            format!(
-                "shell '{}' has no fallback; shell~= supports 'pwsh' -> 'powershell' and 'bash' -> 'sh'",
-                task.shell.as_deref().unwrap_or("an empty shell")
-            ),
-            task.shell_range.unwrap_or(task.range),
-        ));
+    if let Some(shell) = &task.shell {
+        validate_shell(&shell.selection, shell.range, diagnostics);
     }
 
     let mut guards = HashSet::new();
     for guard in &task.guards {
-        if !matches!(guard.kind.as_str(), "os" | "arch" | "env" | "has") {
+        if !guard.kind.is_supported() {
             diagnostics.push(error(
                 "semantic.unknown-guard",
                 format!(
-                    "guard '@{}' is not supported; use '@os', '@arch', '@env', or '@has'",
-                    guard.kind
+                    "guard '@{}' is not supported; use {}",
+                    guard.kind,
+                    supported_guards()
                 ),
                 guard.range,
             ));
@@ -229,6 +240,57 @@ fn validate_task(
     }
 }
 
+fn validate_shell(shell: &ShellSelection, range: TextRange, diagnostics: &mut Vec<Diagnostic>) {
+    if !shell.kind.is_supported() {
+        diagnostics.push(error(
+            "semantic.unknown-shell",
+            format!(
+                "shell '{}' is not supported; use {}",
+                shell.kind,
+                supported_shells()
+            ),
+            range,
+        ));
+    } else if shell.operator == ShellOperator::Fallback && shell.kind.fallback().is_none() {
+        diagnostics.push(error(
+            "semantic.invalid-shell-fallback",
+            format!(
+                "shell '{}' has no fallback; use `shell={}`",
+                shell.kind, shell.kind
+            ),
+            range,
+        ));
+    }
+}
+
+fn supported_shells() -> String {
+    format_choices(
+        ShellKind::SUPPORTED
+            .iter()
+            .map(|shell| format!("'{}'", shell.as_str()))
+            .collect(),
+    )
+}
+
+fn supported_guards() -> String {
+    format_choices(
+        GuardKind::SUPPORTED
+            .iter()
+            .map(|guard| format!("'@{}'", guard.as_str()))
+            .collect(),
+    )
+}
+
+fn format_choices(mut choices: Vec<String>) -> String {
+    let Some(last) = choices.pop() else {
+        return String::new();
+    };
+    if choices.is_empty() {
+        return last;
+    }
+    format!("{}, or {last}", choices.join(", "))
+}
+
 fn error(code: &str, message: String, range: TextRange) -> Diagnostic {
     Diagnostic::new(
         DiagnosticSeverity::Error,
@@ -270,16 +332,16 @@ fn report_duplicate_tasks(document: &DocumentAst, diagnostics: &mut Vec<Diagnost
 }
 
 fn report_duplicate_directives(document: &DocumentAst, diagnostics: &mut Vec<Diagnostic>) {
-    let mut seen = std::collections::HashMap::<&'static str, TextRange>::new();
+    let mut seen = std::collections::HashMap::<DirectiveKind, TextRange>::new();
 
     for directive in &document.directives {
         let (name, range) = match directive {
             DirectiveAst::Version { .. } => continue,
-            DirectiveAst::Shell { range, .. } => ("shell", *range),
+            DirectiveAst::Shell { range, .. } => (DirectiveKind::Shell, *range),
             DirectiveAst::Variable { .. } => continue,
         };
 
-        if let Some(previous_range) = seen.insert(name, range) {
+        if let Some(previous_range) = seen.insert(name.clone(), range) {
             diagnostics.push(error(
                 "semantic.duplicate-directive",
                 format!("`!{name}` is used more than once"),

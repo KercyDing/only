@@ -134,12 +134,18 @@ fn describes_required_shell() {
 }
 
 #[test]
-fn hides_invalid_fallback_hover() {
+fn describes_invalid_fallback() {
     let source = "!version 0.3\nbuild() shell~=sh:\n    echo ok\n";
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
     let offset = TextSize::from(source.find("shell~=").expect("operator should exist") as u32);
 
-    assert!(hover(&snapshot, offset).is_none());
+    let info = hover(&snapshot, offset).expect("shell hover should exist");
+
+    assert_eq!(info.signature, "shell~=sh");
+    assert_eq!(
+        info.docs.as_deref(),
+        Some("sh has no fallback. Use `shell=sh`.")
+    );
 }
 
 #[test]

@@ -1,7 +1,10 @@
 use smol_str::SmolStr;
 use text_size::{TextRange, TextSize};
 
-use crate::{SyntaxKind, SyntaxNode};
+use crate::{
+    DirectiveKind, GuardKind, ShellKind, ShellOperator, ShellSelection, SyntaxKind, SyntaxNode,
+    TaskShellRef,
+};
 
 /// Typed document CST wrapper.
 ///
@@ -93,15 +96,6 @@ pub struct ShellClauseNode {
     syntax: SyntaxNode,
 }
 
-/// Shell selection behavior expressed by a task header.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ShellOperator {
-    /// Requires the selected shell.
-    Required,
-    /// Allows a compatible fallback shell.
-    Fallback,
-}
-
 #[derive(Debug, Clone)]
 pub struct HeaderTerminatorNode {
     syntax: SyntaxNode,
@@ -155,7 +149,8 @@ pub struct TaskParamRef {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskGuardRef {
-    pub text: SmolStr,
+    pub kind: GuardKind,
+    pub argument: SmolStr,
     pub range: TextRange,
 }
 
@@ -173,8 +168,7 @@ pub struct TaskHeaderInfo {
     pub guard: Option<SmolStr>,
     pub guards: Vec<TaskGuardRef>,
     pub dependencies: Option<SmolStr>,
-    pub shell: Option<SmolStr>,
-    pub shell_fallback: bool,
+    pub shell: Option<TaskShellRef>,
     pub dependency_refs: Vec<TaskDependencyRef>,
 }
 
@@ -315,6 +309,11 @@ impl DirectiveNode {
     /// Directive name when present.
     pub fn name(&self) -> Option<SmolStr> {
         non_trivia_token_texts(&self.syntax).nth(1)
+    }
+
+    /// Returns the typed directive kind.
+    pub fn directive_kind(&self) -> Option<DirectiveKind> {
+        self.name().map(|name| DirectiveKind::parse(&name))
     }
 
     /// Returns the directive value text after the directive name.
@@ -955,14 +954,11 @@ fn parse_task_header(node: &TaskHeaderNode) -> TaskHeaderInfo {
         info.param_refs = refs;
     }
 
-    info.guards = node
-        .guards()
-        .map(|guard| TaskGuardRef {
-            text: SmolStr::new(guard.text().trim_start_matches('?').trim()),
-            range: guard.range(),
-        })
-        .collect();
-    info.guard = info.guards.first().map(|guard| guard.text.clone());
+    info.guards = node.guards().filter_map(parse_guard_ref).collect();
+    info.guard = info
+        .guards
+        .first()
+        .map(|guard| SmolStr::new(format!("@{}(\"{}\")", guard.kind, guard.argument)));
 
     let mut dependency_text = Vec::new();
     for (stage, clause) in node.dependencies().enumerate() {
@@ -982,14 +978,20 @@ fn parse_task_header(node: &TaskHeaderNode) -> TaskHeaderInfo {
                 )
             })
             .collect::<Vec<_>>();
-        info.shell_fallback = tokens
-            .first()
-            .is_some_and(|token| token.kind() == SyntaxKind::ShellFallbackKw);
-        info.shell = tokens
+        let operator = tokens.first().and_then(|token| match token.kind() {
+            SyntaxKind::ShellKw => Some(ShellOperator::Required),
+            SyntaxKind::ShellFallbackKw => Some(ShellOperator::Fallback),
+            _ => None,
+        });
+        let kind = tokens
             .iter()
             .rev()
             .find(|token| token.kind() == SyntaxKind::Ident)
-            .map(|token| SmolStr::new(token.text()));
+            .map(|token| ShellKind::parse(token.text()));
+        info.shell = operator.zip(kind).map(|(operator, kind)| TaskShellRef {
+            selection: ShellSelection { kind, operator },
+            range: shell.content_range().unwrap_or_else(|| shell.range()),
+        });
     }
 
     info
@@ -1001,6 +1003,33 @@ fn render_param_ref(parameter: &TaskParamRef) -> String {
         Some(value) => format!("{}{suffix}=\"{value}\"", parameter.name),
         None => format!("{}{suffix}", parameter.name),
     }
+}
+
+fn parse_guard_ref(clause: GuardClauseNode) -> Option<TaskGuardRef> {
+    let tokens = node_tokens(&clause.syntax)
+        .filter(|token| {
+            !matches!(
+                token.kind(),
+                SyntaxKind::Whitespace | SyntaxKind::Indent | SyntaxKind::Newline
+            )
+        })
+        .collect::<Vec<_>>();
+    let name = tokens
+        .iter()
+        .find(|token| token.kind() == SyntaxKind::Ident)?
+        .text();
+    let argument = tokens
+        .iter()
+        .find(|token| token.kind() == SyntaxKind::String)?
+        .text()
+        .strip_prefix('"')?
+        .strip_suffix('"')?;
+
+    Some(TaskGuardRef {
+        kind: GuardKind::parse(name),
+        argument: SmolStr::new(argument),
+        range: clause.range(),
+    })
 }
 
 fn parse_dependency_clause(node: &SyntaxNode, stage: usize, refs: &mut Vec<TaskDependencyRef>) {

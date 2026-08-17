@@ -1,4 +1,4 @@
-use only_semantic::{compile_document, compile_syntax};
+use only_semantic::{ShellKind, ShellOperator, compile_document, compile_syntax};
 use only_syntax::snapshot;
 
 #[test]
@@ -184,8 +184,9 @@ fn lowers_parameter_defaults_guard_and_shell() {
         task.guards.first().map(|guard| guard.argument.as_str()),
         Some("CI")
     );
-    assert_eq!(task.shell.as_deref(), Some("bash"));
-    assert!(task.shell_fallback);
+    let shell = task.shell.as_ref().expect("shell should exist");
+    assert_eq!(shell.selection.kind, ShellKind::Bash);
+    assert_eq!(shell.selection.operator, ShellOperator::Fallback);
 }
 
 #[test]
@@ -194,8 +195,9 @@ fn lowers_exact_task_shell_assignment() {
 
     assert!(compiled.diagnostics.is_empty());
     let task = &compiled.document.tasks[0];
-    assert_eq!(task.shell.as_deref(), Some("powershell"));
-    assert!(!task.shell_fallback);
+    let shell = task.shell.as_ref().expect("shell should exist");
+    assert_eq!(shell.selection.kind, ShellKind::Powershell);
+    assert_eq!(shell.selection.operator, ShellOperator::Required);
 }
 
 #[test]

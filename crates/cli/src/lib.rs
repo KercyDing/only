@@ -17,7 +17,7 @@ pub use compile::{
 pub use discover::{DiscoveredOnlyfile, discover_onlyfile};
 pub use error::{OnlyError, Result};
 pub use only_engine::ExecutionPlan;
-pub use only_semantic::{DirectiveAst, DocumentAst, NamespaceAst, ParamAst, TaskAst};
+pub use only_semantic::{DirectiveAst, DocumentAst, NamespaceAst, ParamAst, ShellKind, TaskAst};
 pub use render::{
     build_cli, build_global_cli, render_available_tasks, render_error_message, render_global_help,
     render_help, render_help_hint, render_namespace_help,

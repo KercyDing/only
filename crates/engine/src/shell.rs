@@ -5,6 +5,8 @@ use std::process::ExitCode;
 use std::rc::Rc;
 use std::sync::mpsc::Sender;
 
+use only_semantic::{ShellKind, ShellOperator, ShellSelection};
+
 use crate::EngineError;
 use crate::path_lookup::command_exists_in_path;
 use crate::process::{
@@ -15,88 +17,88 @@ use crate::process::{
 pub(crate) fn run_command(
     command: &str,
     working_dir: &Path,
-    shell: &str,
-    shell_fallback: bool,
+    shell: &ShellSelection,
     output: Sender<OutputChunk>,
 ) -> Result<ExitCode, EngineError> {
-    let resolved_shell = resolve_shell(shell, shell_fallback)?;
-    match resolved_shell.as_str() {
-        "deno" => run_with_deno_task_shell(command, working_dir, output),
-        "sh" => run_with_system_shell("sh", "-c", command, working_dir, output),
-        "bash" => run_with_system_shell("bash", "-c", command, working_dir, output),
-        "powershell" => run_with_system_shell(
+    let resolved_shell = resolve_shell(shell)?;
+    match resolved_shell {
+        ShellKind::Deno => run_with_deno_task_shell(command, working_dir, output),
+        ShellKind::Sh => run_with_system_shell("sh", "-c", command, working_dir, output),
+        ShellKind::Bash => run_with_system_shell("bash", "-c", command, working_dir, output),
+        ShellKind::Powershell => run_with_system_shell(
             power_shell_command(),
             "-Command",
             command,
             working_dir,
             output,
         ),
-        "pwsh" => run_with_system_shell("pwsh", "-Command", command, working_dir, output),
-        other => Err(EngineError::UnsupportedShell(other.to_string())),
+        ShellKind::Pwsh => run_with_system_shell("pwsh", "-Command", command, working_dir, output),
+        ShellKind::Unknown(name) => Err(EngineError::UnsupportedShell(name.to_string())),
     }
 }
 
 pub(crate) fn run_command_inherit(
     command: &str,
     working_dir: &Path,
-    shell: &str,
-    shell_fallback: bool,
+    shell: &ShellSelection,
 ) -> Result<ExitCode, EngineError> {
-    let resolved_shell = resolve_shell(shell, shell_fallback)?;
-    match resolved_shell.as_str() {
-        "deno" => run_with_deno_task_shell_inherit(command, working_dir),
-        "sh" => run_with_system_shell_inherit("sh", "-c", command, working_dir),
-        "bash" => run_with_system_shell_inherit("bash", "-c", command, working_dir),
-        "powershell" => {
+    let resolved_shell = resolve_shell(shell)?;
+    match resolved_shell {
+        ShellKind::Deno => run_with_deno_task_shell_inherit(command, working_dir),
+        ShellKind::Sh => run_with_system_shell_inherit("sh", "-c", command, working_dir),
+        ShellKind::Bash => run_with_system_shell_inherit("bash", "-c", command, working_dir),
+        ShellKind::Powershell => {
             run_with_system_shell_inherit(power_shell_command(), "-Command", command, working_dir)
         }
-        "pwsh" => run_with_system_shell_inherit("pwsh", "-Command", command, working_dir),
-        other => Err(EngineError::UnsupportedShell(other.to_string())),
+        ShellKind::Pwsh => run_with_system_shell_inherit("pwsh", "-Command", command, working_dir),
+        ShellKind::Unknown(name) => Err(EngineError::UnsupportedShell(name.to_string())),
     }
 }
 
-fn resolve_shell(shell: &str, shell_fallback: bool) -> Result<String, EngineError> {
-    match shell {
-        "pwsh" => {
+fn resolve_shell(shell: &ShellSelection) -> Result<ShellKind, EngineError> {
+    match &shell.kind {
+        ShellKind::Pwsh => {
             if command_exists_in_path("pwsh") {
-                return Ok("pwsh".to_string());
+                return Ok(ShellKind::Pwsh);
             }
-            if shell_fallback && command_exists_in_path(power_shell_command()) {
-                return Ok("powershell".to_string());
+            if shell.operator == ShellOperator::Fallback
+                && command_exists_in_path(power_shell_command())
+            {
+                return Ok(ShellKind::Powershell);
             }
             Err(EngineError::ShellNotFound(
                 "pwsh was not found\nhelp: install PowerShell 7+, or use `shell~=pwsh`".to_string(),
             ))
         }
-        "bash" => {
+        ShellKind::Bash => {
             if command_exists_in_path("bash") {
-                return Ok("bash".to_string());
+                return Ok(ShellKind::Bash);
             }
-            if shell_fallback && command_exists_in_path("sh") {
-                return Ok("sh".to_string());
+            if shell.operator == ShellOperator::Fallback && command_exists_in_path("sh") {
+                return Ok(ShellKind::Sh);
             }
             Err(EngineError::ShellNotFound(
                 "bash was not found\nhelp: install bash, or use `shell~=bash`".to_string(),
             ))
         }
-        "powershell" => {
+        ShellKind::Powershell => {
             if command_exists_in_path(power_shell_command()) {
-                return Ok("powershell".to_string());
+                return Ok(ShellKind::Powershell);
             }
             Err(EngineError::ShellNotFound(
                 "powershell was not found\nhelp: install Windows PowerShell".to_string(),
             ))
         }
-        "sh" => {
+        ShellKind::Sh => {
             if command_exists_in_path("sh") {
-                return Ok("sh".to_string());
+                return Ok(ShellKind::Sh);
             }
             Err(EngineError::ShellNotFound(
                 "sh was not found\nhelp: install a POSIX shell".to_string(),
             ))
         }
-        "deno" => Ok("deno".to_string()),
-        other => Ok(other.to_string()),
+        ShellKind::Deno => Ok(ShellKind::Deno),
+        ShellKind::Unknown(name) => Err(EngineError::UnsupportedShell(name.to_string())),
     }
 }
 

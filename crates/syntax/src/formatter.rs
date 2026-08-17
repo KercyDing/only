@@ -2,8 +2,8 @@ use rowan::NodeOrToken;
 use text_size::TextRange;
 
 use crate::{
-    DirectiveNode, DocCommentNode, NamespaceNode, ParameterNode, SyntaxKind, SyntaxNode,
-    TaskHeaderNode, TaskNode, snapshot,
+    DirectiveKind, DirectiveNode, DocCommentNode, NamespaceNode, ParameterNode, SyntaxKind,
+    SyntaxNode, TaskHeaderNode, TaskNode, snapshot,
 };
 
 const INDENT: &str = "    ";
@@ -302,7 +302,7 @@ fn format_directive(directive: &DirectiveNode, source: &str) -> Result<String, S
         .name()
         .ok_or_else(|| "invalid directive".to_owned())?;
     let raw_value = directive.raw_value().unwrap_or_default();
-    if name == "var" {
+    if directive.directive_kind() == Some(DirectiveKind::Var) {
         let (variable, value) = raw_value
             .split_once('=')
             .ok_or_else(|| "invalid variable directive".to_owned())?;

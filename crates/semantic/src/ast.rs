@@ -1,6 +1,8 @@
 use smol_str::SmolStr;
 use text_size::TextRange;
 
+use crate::{GuardKind, ShellKind, ShellSelection};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocumentAst {
     pub directives: Vec<DirectiveAst>,
@@ -17,7 +19,7 @@ pub enum DirectiveAst {
         range: TextRange,
     },
     Shell {
-        shell: SmolStr,
+        shell: ShellKind,
         range: TextRange,
     },
     Variable {
@@ -45,9 +47,7 @@ pub struct TaskAst {
     pub params: Vec<ParamAst>,
     pub guards: Vec<GuardAst>,
     pub dependencies: Vec<DependencyAst>,
-    pub shell: Option<SmolStr>,
-    pub shell_range: Option<TextRange>,
-    pub shell_fallback: bool,
+    pub shell: Option<ShellAst>,
     pub steps: Vec<TaskStepAst>,
     pub range: TextRange,
     pub uses_multiline_header: bool,
@@ -105,8 +105,14 @@ pub struct ParamAst {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GuardAst {
-    pub kind: SmolStr,
+    pub kind: GuardKind,
     pub argument: SmolStr,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShellAst {
+    pub selection: ShellSelection,
     pub range: TextRange,
 }
 

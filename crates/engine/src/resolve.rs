@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use only_semantic::{DirectiveAst, DocumentAst, TaskAst, TaskStepAst};
+use only_semantic::{DirectiveAst, DocumentAst, ShellKind, TaskAst, TaskStepAst};
 
 use crate::planner::PlanError;
 use crate::probe::probe_matches;
@@ -81,8 +81,7 @@ pub(crate) fn build_execution_nodes(
                 })
                 .collect(),
             params: build_plan_params(task, &bindings),
-            shell: task.shell.as_ref().map(ToString::to_string),
-            shell_fallback: task.shell_fallback,
+            shell: task.shell.as_ref().map(|shell| shell.selection.clone()),
         })
         .collect()
 }
@@ -125,7 +124,7 @@ pub(crate) fn select_task_variant<'a>(variants: &[&'a TaskAst]) -> Option<&'a Ta
         } else if task
             .guards
             .iter()
-            .all(|guard| probe_matches(guard.kind.as_str(), guard.argument.as_str()))
+            .all(|guard| probe_matches(&guard.kind, guard.argument.as_str()))
         {
             return Some(task);
         }
@@ -134,13 +133,13 @@ pub(crate) fn select_task_variant<'a>(variants: &[&'a TaskAst]) -> Option<&'a Ta
     fallback
 }
 
-pub(crate) fn document_shell(document: &DocumentAst) -> Option<String> {
+pub(crate) fn document_shell(document: &DocumentAst) -> Option<ShellKind> {
     document
         .directives
         .iter()
         .find_map(|directive| match directive {
             DirectiveAst::Version { .. } => None,
-            DirectiveAst::Shell { shell, .. } => Some(shell.to_string()),
+            DirectiveAst::Shell { shell, .. } => Some(shell.clone()),
             DirectiveAst::Variable { .. } => None,
         })
 }

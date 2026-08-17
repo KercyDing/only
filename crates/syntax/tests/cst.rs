@@ -1,5 +1,4 @@
-use only_syntax::TaskStepNode;
-use only_syntax::snapshot;
+use only_syntax::{ShellKind, ShellOperator, TaskStepNode, snapshot};
 
 #[test]
 fn exposes_typed_top_level_nodes() {
@@ -78,8 +77,9 @@ fn exposes_structured_task_header_sections() {
     assert_eq!(header.params.as_deref(), Some("tag=\"v1\""));
     assert_eq!(header.guard.as_deref(), Some("@env(\"CI\")"));
     assert_eq!(header.dependencies.as_deref(), Some("install & bootstrap"));
-    assert_eq!(header.shell.as_deref(), Some("bash"));
-    assert!(header.shell_fallback);
+    let shell = header.shell.expect("shell should exist");
+    assert_eq!(shell.selection.kind, ShellKind::Bash);
+    assert_eq!(shell.selection.operator, ShellOperator::Fallback);
 
     let dependency_refs = header.dependency_refs;
     assert_eq!(dependency_refs.len(), 2);
@@ -95,8 +95,9 @@ fn exposes_exact_shell_assignment_in_task_header() {
     let task = syntax.document().tasks().next().expect("task should exist");
     let header = task.header_info();
 
-    assert_eq!(header.shell.as_deref(), Some("powershell"));
-    assert!(!header.shell_fallback);
+    let shell = header.shell.expect("shell should exist");
+    assert_eq!(shell.selection.kind, ShellKind::Powershell);
+    assert_eq!(shell.selection.operator, ShellOperator::Required);
 }
 
 #[test]
@@ -291,12 +292,12 @@ fn multiline_and_single_line_headers_match() {
         single_info
             .guards
             .iter()
-            .map(|guard| &guard.text)
+            .map(|guard| (&guard.kind, &guard.argument))
             .collect::<Vec<_>>(),
         multiline_info
             .guards
             .iter()
-            .map(|guard| &guard.text)
+            .map(|guard| (&guard.kind, &guard.argument))
             .collect::<Vec<_>>()
     );
     assert_eq!(
@@ -311,6 +312,8 @@ fn multiline_and_single_line_headers_match() {
             .map(|dependency| (&dependency.name, dependency.stage))
             .collect::<Vec<_>>()
     );
-    assert_eq!(single_info.shell, multiline_info.shell);
-    assert_eq!(single_info.shell_fallback, multiline_info.shell_fallback);
+    assert_eq!(
+        single_info.shell.map(|shell| shell.selection),
+        multiline_info.shell.map(|shell| shell.selection)
+    );
 }

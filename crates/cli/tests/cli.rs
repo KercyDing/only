@@ -1,5 +1,5 @@
 use only::{
-    CliInput, DirectiveAst, DocumentAst, ExecutionPlan, OnlyError, TaskAst, build_cli,
+    CliInput, DirectiveAst, DocumentAst, ExecutionPlan, OnlyError, ShellKind, TaskAst, build_cli,
     compile_for_cli_input, discover_onlyfile, parse_onlyfile, run_plan, run_with, version_string,
 };
 use std::env;
@@ -282,7 +282,7 @@ fn parses_minimal_document_shape() {
 
     assert!(matches!(
         document.directives[0],
-        DirectiveAst::Shell { ref shell, .. } if shell == "sh"
+        DirectiveAst::Shell { ref shell, .. } if shell == &ShellKind::Sh
     ));
     assert_eq!(
         task(&document, None, "hello").steps[0].source(),
@@ -612,7 +612,7 @@ hello():
 ",
         &cli(&["hello"]),
     );
-    assert_eq!(plan.shell.as_deref(), Some("sh"));
+    assert_eq!(plan.shell, Some(ShellKind::Sh));
 
     let code = run_plan(&plan).expect("shell runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
@@ -629,7 +629,7 @@ hello():
 ",
         &cli(&["hello"]),
     );
-    assert_eq!(plan.shell.as_deref(), Some("powershell"));
+    assert_eq!(plan.shell, Some(ShellKind::Powershell));
 
     let code = run_plan(&plan).expect("shell runtime should succeed");
     assert_eq!(code, ExitCode::SUCCESS);
@@ -716,7 +716,7 @@ fn uses_deno_task_shell_by_default() {
 ",
         &cli(&["hello"]),
     );
-    assert_eq!(plan.shell.as_deref(), None);
+    assert_eq!(plan.shell, None);
 }
 
 #[test]

@@ -11,7 +11,7 @@ use crate::render::{
 use only_engine::{
     ExecutionPlan, RuntimeOptions, render_command, run_plan_with_options, select_root_task_variant,
 };
-use only_semantic::{DocumentAst, GuardAst, TaskAst};
+use only_semantic::{DocumentAst, GuardAst, ShellKind, TaskAst};
 use only_syntax::format_source;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -224,9 +224,10 @@ fn render_dry_run(plan: &ExecutionPlan, variant: &TaskAst, full: bool) -> Result
 
             let shell = node
                 .shell
-                .as_deref()
-                .or(plan.shell.as_deref())
-                .unwrap_or("deno");
+                .as_ref()
+                .map(|shell| shell.kind.as_str())
+                .or_else(|| plan.shell.as_ref().map(ShellKind::as_str))
+                .unwrap_or(ShellKind::Deno.as_str());
             for (step_index, step) in node.steps.iter().enumerate() {
                 let rendered = render_command(step.source(), &node.params)
                     .map_err(|error| OnlyError::runtime(error.to_string()))?;

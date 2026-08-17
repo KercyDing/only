@@ -4,6 +4,8 @@ use std::process::ExitCode;
 use std::sync::mpsc;
 use std::thread;
 
+use only_semantic::{ShellKind, ShellSelection};
+
 use crate::error::{command_block_failed, command_block_start_failed, command_failed};
 use crate::interpolate::interpolate;
 use crate::process::{OutputChunk, OutputStream};
@@ -66,9 +68,9 @@ pub fn run_plan_with_options(
         }
 
         if stage_nodes.len() == 1 {
-            run_node_inherit(&stage_nodes[0], &plan.working_dir, plan.shell.as_deref())?;
+            run_node_inherit(&stage_nodes[0], &plan.working_dir, plan.shell.as_ref())?;
         } else {
-            execute_stage(stage_nodes, &plan.working_dir, plan.shell.as_deref())?;
+            execute_stage(stage_nodes, &plan.working_dir, plan.shell.as_ref())?;
         }
     }
 
@@ -78,7 +80,7 @@ pub fn run_plan_with_options(
 fn execute_stage(
     stage_nodes: &[ExecutionNode],
     working_dir: &std::path::Path,
-    default_shell: Option<&str>,
+    default_shell: Option<&ShellKind>,
 ) -> Result<(), EngineError> {
     let stage_len = stage_nodes.len();
     let (event_tx, event_rx) = mpsc::channel::<StageEvent>();
@@ -88,12 +90,10 @@ fn execute_stage(
 
         for (index, node) in stage_nodes.iter().cloned().enumerate() {
             let working_dir = working_dir.to_path_buf();
-            let shell = default_shell.map(str::to_string);
+            let shell = default_shell.cloned();
             let event_tx = event_tx.clone();
             handles.push(
-                scope.spawn(move || {
-                    run_node(index, &node, &working_dir, shell.as_deref(), event_tx)
-                }),
+                scope.spawn(move || run_node(index, &node, &working_dir, shell.as_ref(), event_tx)),
             );
         }
         drop(event_tx);
@@ -177,7 +177,7 @@ fn run_node(
     task_index: usize,
     node: &ExecutionNode,
     working_dir: &std::path::Path,
-    default_shell: Option<&str>,
+    default_shell: Option<&ShellKind>,
     event_tx: mpsc::Sender<StageEvent>,
 ) -> Result<(), EngineError> {
     let (output_tx, output_rx) = mpsc::channel::<OutputChunk>();
@@ -207,18 +207,12 @@ fn run_node(
             }
         };
 
-        let shell = node.shell.as_deref().or(default_shell).unwrap_or("deno");
-        let code = match run_command(
-            &rendered,
-            working_dir,
-            shell,
-            node.shell_fallback,
-            output_tx.clone(),
-        ) {
+        let shell = select_shell(node, default_shell);
+        let code = match run_command(&rendered, working_dir, &shell, output_tx.clone()) {
             Ok(code) => code,
             Err(error) => {
                 task_error = Some(if step.is_block() {
-                    command_block_start_failed(shell, error)
+                    command_block_start_failed(shell.kind.as_str(), error)
                 } else {
                     error
                 });
@@ -265,21 +259,20 @@ fn run_node(
 fn run_node_inherit(
     node: &ExecutionNode,
     working_dir: &std::path::Path,
-    default_shell: Option<&str>,
+    default_shell: Option<&ShellKind>,
 ) -> Result<(), EngineError> {
     let total_steps = node.steps.len();
 
     for (index, step) in node.steps.iter().enumerate() {
         let rendered = interpolate(step.source(), &node.params)?;
-        let shell = node.shell.as_deref().or(default_shell).unwrap_or("deno");
-        let code = run_command_inherit(&rendered, working_dir, shell, node.shell_fallback)
-            .map_err(|error| {
-                if step.is_block() {
-                    command_block_start_failed(shell, error)
-                } else {
-                    error
-                }
-            })?;
+        let shell = select_shell(node, default_shell);
+        let code = run_command_inherit(&rendered, working_dir, &shell).map_err(|error| {
+            if step.is_block() {
+                command_block_start_failed(shell.kind.as_str(), error)
+            } else {
+                error
+            }
+        })?;
 
         if code != ExitCode::SUCCESS {
             return Err(if step.is_block() {
@@ -291,6 +284,12 @@ fn run_node_inherit(
     }
 
     Ok(())
+}
+
+fn select_shell(node: &ExecutionNode, default_shell: Option<&ShellKind>) -> ShellSelection {
+    node.shell.clone().unwrap_or_else(|| {
+        ShellSelection::required(default_shell.cloned().unwrap_or(ShellKind::Deno))
+    })
 }
 
 #[derive(Debug)]

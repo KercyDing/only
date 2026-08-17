@@ -1,7 +1,7 @@
 use only_diagnostic::{Diagnostic, DiagnosticCode, DiagnosticPhase, DiagnosticSeverity};
 use only_syntax::{
-    DirectiveNode, DocCommentNode, NamespaceNode, SyntaxKind, SyntaxSnapshot, TaskNode,
-    parse_version_requirement,
+    DirectiveKind, DirectiveNode, DocCommentNode, NamespaceNode, ShellKind, SyntaxKind,
+    SyntaxSnapshot, TaskNode, parse_version_requirement,
 };
 use smol_str::SmolStr;
 use text_size::TextRange;
@@ -10,7 +10,7 @@ use crate::interpolation::scan_interpolations;
 use crate::names::resolve_dependency_names;
 use crate::{
     CommandAst, CommandBlockAst, DependencyAst, DirectiveAst, DocumentAst, GuardAst, NamespaceAst,
-    ParamAst, TaskAst, TaskStepAst,
+    ParamAst, ShellAst, TaskAst, TaskStepAst,
 };
 
 pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagnostic>) {
@@ -28,14 +28,15 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
 
     for node in document.syntax().children() {
         if let Some(directive) = DirectiveNode::cast(node.clone()) {
-            if directive.name().as_deref() == Some("var") && left_directive_region {
+            let directive_kind = directive.directive_kind();
+            if directive_kind == Some(DirectiveKind::Var) && left_directive_region {
                 diagnostics.push(semantic_error(
                     "variable.directive-placement",
                     "`!var` must be near the top of the file",
                     directive.range(),
                 ));
             }
-            if directive.name().as_deref() == Some("version") {
+            if directive_kind == Some(DirectiveKind::Version) {
                 if saw_version {
                     diagnostics.push(semantic_error(
                         "version.duplicate",
@@ -136,8 +137,8 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
 
 fn lower_directive(node: &DirectiveNode) -> Result<DirectiveAst, Diagnostic> {
     let range = node.range();
-    match (node.name().as_deref(), node.value().as_deref()) {
-        (Some("version"), Some(_)) => {
+    match (node.directive_kind(), node.value()) {
+        (Some(DirectiveKind::Version), Some(_)) => {
             let value = node.raw_value().ok_or_else(|| {
                 lower_error(
                     "version.invalid-format",
@@ -152,27 +153,27 @@ fn lower_directive(node: &DirectiveNode) -> Result<DirectiveAst, Diagnostic> {
                 range,
             })
         }
-        (Some("version"), None) => Err(lower_error(
+        (Some(DirectiveKind::Version), None) => Err(lower_error(
             "version.invalid-format",
             "use `!version A.B`, for example `!version 0.1`",
             range,
         )),
-        (Some("shell"), Some(shell)) => Ok(DirectiveAst::Shell {
-            shell: SmolStr::new(shell),
+        (Some(DirectiveKind::Shell), Some(shell)) => Ok(DirectiveAst::Shell {
+            shell: ShellKind::parse(&shell),
             range,
         }),
-        (Some("shell"), None) => Err(lower_error(
+        (Some(DirectiveKind::Shell), None) => Err(lower_error(
             "lower.invalid-directive",
             "`!shell` needs a value",
             range,
         )),
-        (Some("var"), Some(value)) => lower_variable(node, value, range),
-        (Some("var"), None) => Err(lower_error(
+        (Some(DirectiveKind::Var), Some(value)) => lower_variable(node, &value, range),
+        (Some(DirectiveKind::Var), None) => Err(lower_error(
             "variable.non-literal",
             "use `!var name = \"value\"`",
             range,
         )),
-        (Some(name), _) => Err(lower_error(
+        (Some(DirectiveKind::Unknown(name)), _) => Err(lower_error(
             "lower.invalid-directive",
             &format!("`!{name}` is not supported"),
             range,
@@ -269,10 +270,10 @@ fn lower_task(
         .name()
         .ok_or_else(|| lower_error("lower.invalid-task", "invalid task", range))?;
     let header = node.header_info();
-    let shell_range = node
-        .header()
-        .and_then(|header| header.shell())
-        .and_then(|shell| shell.content_range());
+    let shell = header.shell.as_ref().map(|shell| ShellAst {
+        selection: shell.selection.clone(),
+        range: shell.range,
+    });
 
     let params = header
         .param_refs
@@ -288,8 +289,12 @@ fn lower_task(
     let guards = header
         .guards
         .iter()
-        .map(|guard| parse_guard(guard.text.as_str(), guard.range))
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|guard| GuardAst {
+            kind: guard.kind.clone(),
+            argument: guard.argument.clone(),
+            range: guard.range,
+        })
+        .collect();
 
     let dependencies = header
         .dependency_refs
@@ -327,40 +332,11 @@ fn lower_task(
         params,
         guards,
         dependencies,
-        shell: header.shell,
-        shell_range,
-        shell_fallback: header.shell_fallback,
+        shell,
         steps,
         range,
         uses_multiline_header: node.uses_multiline_header(),
     })
-}
-
-fn parse_guard(input: &str, range: TextRange) -> Result<GuardAst, Diagnostic> {
-    let trimmed = input.trim_start();
-    let Some(after_at) = trimmed.strip_prefix('@') else {
-        return Err(lower_error("lower.invalid-guard", "invalid guard", range));
-    };
-    let Some(open) = after_at.find('(') else {
-        return Err(lower_error("lower.invalid-guard", "invalid guard", range));
-    };
-    let Some(close) = after_at[open + 1..].find(')') else {
-        return Err(lower_error("lower.invalid-guard", "invalid guard", range));
-    };
-
-    let kind = after_at[..open].trim();
-    let argument = parse_string_literal(after_at[open + 1..open + 1 + close].trim())
-        .ok_or_else(|| lower_error("lower.invalid-guard", "invalid guard", range))?;
-
-    Ok(GuardAst {
-        kind: SmolStr::new(kind),
-        argument: SmolStr::new(argument),
-        range,
-    })
-}
-
-fn parse_string_literal(input: &str) -> Option<&str> {
-    input.strip_prefix('"')?.strip_suffix('"')
 }
 
 fn lower_error(code: &str, message: &str, range: TextRange) -> Diagnostic {
@@ -371,4 +347,8 @@ fn lower_error(code: &str, message: &str, range: TextRange) -> Diagnostic {
         DiagnosticPhase::Lower,
         range,
     )
+}
+
+fn parse_string_literal(input: &str) -> Option<&str> {
+    input.strip_prefix('"')?.strip_suffix('"')
 }

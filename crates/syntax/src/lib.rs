@@ -1,5 +1,6 @@
 mod ast_view;
 mod builder;
+mod builtin;
 mod cst;
 mod cursor;
 mod formatter;
@@ -15,8 +16,11 @@ mod version;
 pub use ast_view::{
     DependencyClauseNode, DirectiveNode, DocCommentNode, DocumentNode, GuardClauseNode,
     HeaderTerminatorNode, NamespaceNode, ParameterListNode, ParameterNode, ShellClauseNode,
-    ShellOperator, TaskCommandBlockNode, TaskCommandNode, TaskDependencyRef, TaskGuardRef,
-    TaskHeaderInfo, TaskHeaderNode, TaskNode, TaskParamRef, TaskStepNode,
+    TaskCommandBlockNode, TaskCommandNode, TaskDependencyRef, TaskGuardRef, TaskHeaderInfo,
+    TaskHeaderNode, TaskNode, TaskParamRef, TaskStepNode,
+};
+pub use builtin::{
+    DirectiveKind, GuardKind, ShellKind, ShellOperator, ShellSelection, TaskShellRef,
 };
 pub use cst::{SyntaxNode, SyntaxToken};
 pub use formatter::{format_range, format_source};
