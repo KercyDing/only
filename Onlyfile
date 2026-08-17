@@ -1,10 +1,38 @@
 !version 0.3
 !var cargo_flags = "--workspace --all-targets"
 
-// This is for prerelease.
-# Internal helper for release builds
-_release_build():
+# Development builds
+[dev]
+
+# Build the project in development mode.
+build():
+    cargo build
+
+# Run the project in development mode
+run():
+    cargo run
+
+[/dev]
+
+# Release builds
+[rel]
+
+# Build the project in release mode.
+build():
     cargo build --release
+
+# Run the project in release mode
+run():
+    cargo run --release
+
+# Run the release test suite
+test() ? @has("cargo-nextest"):
+    cargo nextest run --release
+
+test():
+    cargo test --release
+
+[/rel]
 
 # Run cargo check
 check():
@@ -26,7 +54,7 @@ ci() & check & test:
 # Install the local only binary
 install()
     ? @os("windows")
-    & _release_build
+    & rel.build
     shell~=pwsh
 :
     | # Resolve paths and processes.
@@ -46,7 +74,7 @@ install()
     | Start-Process -WindowStyle Hidden -FilePath $shellPath -ArgumentList "-NoProfile", "-EncodedCommand", $encoded
     | Write-Output "Install will complete after this only process exits: $installPath"
 
-install() & _release_build:
+install() & rel.build:
     | # Resolve paths.
     | install_dir="$HOME/.local/bin"
     | staged_path="$install_dir/.only-install"
@@ -59,32 +87,3 @@ install() & _release_build:
     | # Replace the installed binary.
     | mv "$staged_path" "$install_dir/only"
     | echo "Installed only to $install_dir/only"
-
-# Development builds
-[dev]
-
-# Build the project in development mode.
-build():
-    cargo build
-
-# Run the project in development mode
-run():
-    cargo run
-
-# Release builds
-[rel]
-
-# Build the project in release mode.
-build():
-    cargo build --release
-
-# Run the project in release mode
-run():
-    cargo run --release
-
-# Run the release test suite
-test() ? @has("cargo-nextest"):
-    cargo nextest run --release
-
-test():
-    cargo test --release
