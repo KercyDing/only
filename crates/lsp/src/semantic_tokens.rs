@@ -24,12 +24,18 @@ pub fn semantic_tokens(snapshot: &DocumentSnapshot) -> Vec<LspSemanticToken> {
     let mut tokens = Vec::new();
     for directive in snapshot.syntax.document().directives() {
         if let Some(range) = directive.keyword_range() {
-            let kind = if directive.name().as_deref() == Some("var") {
-                LspSemanticTokenKind::Variable
-            } else {
-                LspSemanticTokenKind::Directive
-            };
-            tokens.push(LspSemanticToken { range, kind });
+            tokens.push(LspSemanticToken {
+                range,
+                kind: LspSemanticTokenKind::Directive,
+            });
+        }
+        if directive.name().as_deref() == Some("var")
+            && let Some(range) = directive.argument_name_range()
+        {
+            tokens.push(LspSemanticToken {
+                range,
+                kind: LspSemanticTokenKind::Variable,
+            });
         }
     }
     for namespace in snapshot.syntax.document().namespaces() {

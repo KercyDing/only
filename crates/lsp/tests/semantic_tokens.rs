@@ -12,11 +12,21 @@ fn classifies_engineering_syntax() {
     );
     let tokens = semantic_tokens(&DocumentSnapshot::new("file:///Onlyfile", 1, source));
 
-    assert!(
-        tokens
-            .iter()
-            .any(|token| token.kind == LspSemanticTokenKind::Variable)
+    let variable = tokens
+        .iter()
+        .find(|token| token.kind == LspSemanticTokenKind::Variable)
+        .expect("variable name should have variable highlighting");
+    assert_eq!(
+        &source[usize::from(variable.range.start())..usize::from(variable.range.end())],
+        "profile"
     );
+    let directives = tokens
+        .iter()
+        .filter(|token| token.kind == LspSemanticTokenKind::Directive)
+        .map(|token| &source[usize::from(token.range.start())..usize::from(token.range.end())])
+        .collect::<Vec<_>>();
+    assert!(directives.contains(&"!version"));
+    assert!(directives.contains(&"!var"));
     assert!(
         tokens
             .iter()
