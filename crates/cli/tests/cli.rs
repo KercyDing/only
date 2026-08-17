@@ -5,7 +5,9 @@ use only::{
 use std::env;
 use std::error::Error as _;
 use std::fs;
-use std::io::{BufRead, BufReader, Read};
+#[cfg(unix)]
+use std::io::Read;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::process::ExitCode;
