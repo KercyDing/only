@@ -5,6 +5,12 @@ use clap::{Arg, ArgAction, Command};
 use only_semantic::{DocumentAst, NamespaceAst, TaskAst};
 use std::collections::HashSet;
 
+const NAMESPACE_HELP_TEMPLATE: &str = "\
+{about-with-newline}
+{usage-heading} {usage}{after-help}
+Options:
+{options}";
+
 /// Builds the global CLI skeleton shared by bootstrap and dynamic help.
 ///
 /// Args:
@@ -15,7 +21,7 @@ use std::collections::HashSet;
 pub fn build_global_cli() -> Command {
     Command::new("only")
         .bin_name("only")
-        .about("A minimalist, deterministic task runner")
+        .about("A minimalist, deterministic task runner\nRepo: https://github.com/KercyDing/only")
         .version(env!("CARGO_PKG_VERSION"))
         .styles(cli_styles())
         .disable_help_subcommand(true)
@@ -26,7 +32,7 @@ pub fn build_global_cli() -> Command {
                 .long("file")
                 .value_name("PATH")
                 .global(true)
-                .help("Use a specific Onlyfile path"),
+                .help("Use a specific Onlyfile"),
         )
         .arg(
             Arg::new("print-path")
@@ -34,7 +40,7 @@ pub fn build_global_cli() -> Command {
                 .long("path")
                 .action(ArgAction::SetTrue)
                 .global(true)
-                .help("Print the resolved Onlyfile path and exit successfully"),
+                .help("Show the Onlyfile path"),
         )
         .arg(
             Arg::new("set")
@@ -43,21 +49,21 @@ pub fn build_global_cli() -> Command {
                 .value_name("NAME=VALUE")
                 .action(ArgAction::Append)
                 .global(true)
-                .help("Override a target task parameter"),
+                .help("Set a task value"),
         )
         .arg(
             Arg::new("dry-run")
                 .long("dry-run")
                 .action(ArgAction::SetTrue)
                 .global(true)
-                .help("Print the selected task plan without executing it"),
+                .help("Show the task plan"),
         )
         .arg(
             Arg::new("full")
                 .long("full")
                 .action(ArgAction::SetTrue)
                 .global(true)
-                .help("Expand commands in dry-run output"),
+                .help("Show the full dry-run"),
         )
         .arg(
             Arg::new("quiet")
@@ -65,7 +71,7 @@ pub fn build_global_cli() -> Command {
                 .long("quiet")
                 .action(ArgAction::SetTrue)
                 .global(true)
-                .help("Hide only progress lines while preserving command output"),
+                .help("Hide Only progress"),
         )
         .arg(
             Arg::new("fmt")
@@ -79,19 +85,19 @@ pub fn build_global_cli() -> Command {
                 .long("check")
                 .action(ArgAction::SetTrue)
                 .global(true)
-                .help("Check formatting without changing the file"),
+                .help("Check formatting"),
         )
         .arg(
             Arg::new("upgrade")
                 .long("upgrade")
                 .action(ArgAction::SetTrue)
-                .help("Upgrade only from the latest GitHub release"),
+                .help("Upgrade Only"),
         )
         .arg(
             Arg::new("update")
                 .long("update")
                 .action(ArgAction::SetTrue)
-                .help("Alias for --upgrade"),
+                .help("Same as --upgrade"),
         )
 }
 
@@ -140,78 +146,74 @@ pub fn render_help(document: &DocumentAst) -> StyledStr {
 /// Returns:
 /// User-facing task list with global tasks and namespaces.
 pub fn render_available_tasks(document: &DocumentAst) -> String {
-    let entries = unique_tasks(global_tasks(document).filter(|task| !task.is_helper()))
-        .into_iter()
-        .map(|task| {
-            (
-                task.name.to_string(),
-                task.doc
-                    .as_ref()
-                    .map(ToString::to_string)
-                    .unwrap_or_default(),
-                false,
-            )
-        })
-        .chain(
-            document
-                .namespaces
-                .iter()
-                .filter(|namespace| namespace_has_visible_tasks(document, namespace.name.as_str()))
-                .map(|namespace| {
-                    (
-                        namespace.name.to_string(),
-                        namespace_summary(namespace),
-                        true,
-                    )
-                }),
-        )
+    let tasks = task_listing_entries(global_tasks(document));
+    let namespaces = document
+        .namespaces
+        .iter()
+        .filter(|namespace| namespace_has_visible_tasks(document, namespace.name.as_str()))
+        .map(|namespace| (namespace.name.to_string(), namespace_summary(namespace)))
         .collect::<Vec<_>>();
 
-    if entries.is_empty() {
-        return "Available tasks:\n".to_string();
-    }
-
-    let width = entries
+    let name_width = tasks
         .iter()
-        .map(|(name, _, is_group)| name.len() + if *is_group { 8 } else { 0 })
+        .chain(&namespaces)
+        .map(|(name, _)| name.len())
         .max()
         .unwrap_or_default();
 
+    let mut sections = Vec::new();
+    if !tasks.is_empty() {
+        sections.push(render_listing_section(
+            "Tasks",
+            &tasks,
+            name_width,
+            TermAnsiColor::BrightCyan,
+        ));
+    }
+    if !namespaces.is_empty() {
+        sections.push(render_listing_section(
+            "Namespaces",
+            &namespaces,
+            name_width,
+            TermAnsiColor::BrightYellow,
+        ));
+    }
+
+    if sections.is_empty() {
+        "Tasks:\n".to_string()
+    } else {
+        sections.join("\n")
+    }
+}
+
+fn render_listing_section(
+    title: &str,
+    entries: &[(String, String)],
+    name_width: usize,
+    name_color: TermAnsiColor,
+) -> String {
     let header_style = TermStyle::new()
         .fg_color(Some(TermAnsiColor::BrightGreen.into()))
         .bold();
-    let task_style = TermStyle::new()
-        .fg_color(Some(TermAnsiColor::BrightCyan.into()))
-        .bold();
-    let group_style = TermStyle::new()
-        .fg_color(Some(TermAnsiColor::BrightYellow.into()))
-        .bold();
-
+    let name_style = TermStyle::new().fg_color(Some(name_color.into())).bold();
     let mut output = format!(
-        "{}Available tasks:{}\n",
+        "{}{title}:{}\n",
         header_style.render(),
         header_style.render_reset()
     );
-    for (name, doc, is_group) in entries {
-        let suffix = if is_group { " [group]" } else { "" };
-        let padding = " ".repeat(width.saturating_sub(name.len() + suffix.len()));
-        let group_marker = if is_group {
-            format!(
-                " {}[group]{}",
-                group_style.render(),
-                group_style.render_reset()
-            )
-        } else {
-            String::new()
-        };
+
+    for (name, doc) in entries {
         output.push_str(&format!(
-            "  {}{}{}{}{} {doc}\n",
-            task_style.render(),
+            "  {}{}{}",
+            name_style.render(),
             name,
-            task_style.render_reset(),
-            group_marker,
-            padding
+            name_style.render_reset()
         ));
+        if !doc.is_empty() {
+            let padding = " ".repeat(name_width.saturating_sub(name.len()) + 4);
+            output.push_str(&format!("{padding}# {doc}"));
+        }
+        output.push('\n');
     }
 
     output
@@ -226,8 +228,8 @@ pub fn render_available_tasks(document: &DocumentAst) -> String {
 /// Returns:
 /// Help text for the namespace subcommand.
 pub fn render_namespace_help(document: &DocumentAst, namespace: &NamespaceAst) -> StyledStr {
-    let mut cmd = build_namespace_command(document, namespace);
-    cmd.render_help()
+    let mut command = build_namespace_command(document, namespace);
+    command.render_help()
 }
 
 /// Renders bootstrap help used before `Onlyfile` discovery succeeds.
@@ -285,10 +287,23 @@ pub fn render_help_hint() -> String {
 }
 
 fn build_namespace_command(document: &DocumentAst, namespace: &NamespaceAst) -> Command {
+    let entries = task_listing_entries(namespace_tasks(document, namespace.name.as_str()));
+    let name_width = entries
+        .iter()
+        .map(|(name, _)| name.len())
+        .max()
+        .unwrap_or_default();
+    let listing = if entries.is_empty() {
+        "Tasks:\n".to_string()
+    } else {
+        render_listing_section("Tasks", &entries, name_width, TermAnsiColor::BrightCyan)
+    };
     let mut cmd = Command::new(namespace.name.to_string())
         .bin_name(format!("only {}", namespace.name))
         .disable_help_subcommand(true)
-        .styles(cli_styles());
+        .styles(cli_styles())
+        .help_template(NAMESPACE_HELP_TEMPLATE)
+        .after_help(StyledStr::from(listing));
 
     if let Some(doc) = &namespace.doc {
         cmd = cmd.about(doc.to_string());
@@ -358,6 +373,22 @@ fn unique_tasks<'a>(tasks: impl IntoIterator<Item = &'a TaskAst>) -> Vec<&'a Tas
     }
 
     unique
+}
+
+fn task_listing_entries<'a>(tasks: impl IntoIterator<Item = &'a TaskAst>) -> Vec<(String, String)> {
+    unique_tasks(tasks)
+        .into_iter()
+        .filter(|task| !task.is_helper())
+        .map(|task| {
+            (
+                task.name.to_string(),
+                task.doc
+                    .as_ref()
+                    .map(ToString::to_string)
+                    .unwrap_or_default(),
+            )
+        })
+        .collect()
 }
 
 fn global_tasks(document: &DocumentAst) -> impl Iterator<Item = &TaskAst> {
@@ -449,6 +480,10 @@ workflow():
             .expect_err("help should short-circuit parsing");
 
         assert_eq!(matches.kind(), ErrorKind::DisplayHelp);
+        let help = matches.to_string();
+        assert!(help.contains("Tasks:"));
+        assert!(help.contains("# Default developer workflow."));
+        assert!(!help.contains("Commands:"));
     }
 
     #[test]
@@ -460,6 +495,7 @@ workflow():
         assert!(help.contains("--update"));
         assert!(help.contains("--upgrade"));
         assert!(help.contains("--version"));
+        assert!(help.contains("Repo: https://github.com/KercyDing/only"));
     }
 
     #[test]
@@ -523,9 +559,12 @@ smoke():
 
         let help = render_namespace_help(&document, &document.namespaces[0]).to_string();
         assert!(help.contains("Usage: only dev [COMMAND]"));
+        assert!(help.contains("Tasks:"));
         assert!(help.contains("workflow"));
+        assert!(help.contains("# Default developer workflow."));
         assert!(help.contains("smoke"));
-        assert!(!help.contains("\n  help"));
+        assert!(help.contains("# Run a namespaced smoke command."));
+        assert!(!help.contains("Commands:"));
     }
 
     #[test]
@@ -558,10 +597,12 @@ workflow():
         .expect("document should parse");
 
         let listing = render_available_tasks(&document);
-        assert!(listing.contains("Available tasks:"));
+        assert!(listing.contains("Tasks:"));
+        assert!(listing.contains("Namespaces:"));
         assert!(listing.contains("test"));
-        assert!(listing.contains("Run tests."));
+        assert!(listing.contains("# Run tests."));
         assert!(listing.contains("dev"));
+        assert!(!listing.contains("[group]"));
         assert!(!listing.contains("Default developer workflow."));
     }
 
@@ -644,6 +685,7 @@ smoke():
         let namespace_help = render_namespace_help(&document, &document.namespaces[0]).to_string();
         assert!(namespace_help.contains("Hidden namespace."));
         assert!(namespace_help.contains("Usage: only dev"));
+        assert!(namespace_help.contains("Tasks:"));
         assert!(namespace_help.contains("Options:"));
         assert!(!namespace_help.contains("Commands:"));
         assert!(!namespace_help.contains("_hidden"));

@@ -1455,7 +1455,7 @@ fn dry_run_without_task_reports_target_error() {
     assert_ne!(output.status.code(), Some(0));
     assert!(plain_stdout.is_empty(), "stdout was: {plain_stdout}");
     assert!(plain_stderr.contains("--dry-run needs a task"));
-    assert!(!plain_stderr.contains("Available tasks:"));
+    assert!(!plain_stderr.contains("Tasks:"));
 }
 
 #[test]
