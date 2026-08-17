@@ -1,5 +1,5 @@
-use only_semantic::{SemanticSnapshot, compile_document_with_runner};
-use only_syntax::SyntaxSnapshot;
+use only_semantic::{SemanticSnapshot, compile_syntax};
+use only_syntax::{SyntaxSnapshot, snapshot};
 
 /// In-memory LSP document snapshot with syntax and semantic compilation results.
 ///
@@ -28,7 +28,8 @@ impl DocumentSnapshot {
     /// Returns:
     /// Snapshot containing source text plus matching syntax and semantic results.
     pub fn new(uri: &str, version: i32, source: &str) -> Self {
-        let (syntax, semantic) = compile_document_with_runner(source, env!("CARGO_PKG_VERSION"));
+        let syntax = snapshot(source);
+        let semantic = compile_syntax(&syntax);
 
         Self {
             uri: uri.to_owned(),

@@ -24,7 +24,7 @@ fn maps_semantic_diagnostics_into_lsp_values() {
 }
 
 #[test]
-fn reports_version_gate_diagnostic() {
+fn leaves_runner_version_checks_to_the_cli() {
     let snapshot = DocumentSnapshot::new(
         "file:///workspace/Onlyfile",
         1,
@@ -32,7 +32,6 @@ fn reports_version_gate_diagnostic() {
     );
     let diagnostics = diagnostics(&snapshot);
 
-    assert_eq!(diagnostics.len(), 1);
-    assert_eq!(diagnostics[0].code, "version.incompatible");
-    assert!(snapshot.semantic.document.tasks.is_empty());
+    assert!(diagnostics.is_empty());
+    assert_eq!(snapshot.semantic.document.tasks.len(), 1);
 }
