@@ -55,11 +55,11 @@ fn preserves_comments_and_namespace_boundaries() {
     let source = concat!(
         "!version 0.3\n",
         "# Build tools.\n",
-        "[ tools ]\n",
+        "[ tools ] {\n",
         "// Keep this comment.  \n",
         "build():\n",
         "    cargo build  \n",
-        "[ /tools ]\n",
+        "}\n",
         "root():\n",
         "    true\n",
     );
@@ -70,17 +70,25 @@ fn preserves_comments_and_namespace_boundaries() {
             "!version 0.3\n",
             "\n",
             "# Build tools.\n",
-            "[tools]\n",
-            "\n",
-            "// Keep this comment.\n",
-            "build():\n",
-            "    cargo build  \n",
-            "\n",
-            "[/tools]\n",
+            "[tools] {\n",
+            "    // Keep this comment.\n",
+            "    build():\n",
+            "        cargo build  \n",
+            "}\n",
             "\n",
             "root():\n",
             "    true\n",
         )
+    );
+}
+
+#[test]
+fn formats_namespace_indentation() {
+    let source = "!version 0.3\n[dev] {\nrun():\n    true\n    }\n";
+
+    assert_eq!(
+        format_source(source).expect("valid source should format"),
+        "!version 0.3\n\n[dev] {\n    run():\n        true\n}\n"
     );
 }
 
@@ -99,6 +107,22 @@ fn range_formats_one_declaration() {
         "second( value=\"x\" ):\n\t|echo ok\n"
     );
     assert_eq!(formatted, "second(value = \"x\"):\n    | echo ok\n");
+}
+
+#[test]
+fn range_formats_namespaced_task_indentation() {
+    let source = "!version 0.3\n[dev] {\n    build( value=\"x\" ):\n        echo ok\n}\n";
+    let start = TextSize::from(source.find("build").expect("task should exist") as u32);
+
+    let (range, formatted) = format_range(source, TextRange::empty(start))
+        .expect("valid source should format")
+        .expect("selection should touch a task");
+
+    assert_eq!(
+        &source[usize::from(range.start())..usize::from(range.end())],
+        "    build( value=\"x\" ):\n        echo ok\n"
+    );
+    assert_eq!(formatted, "    build(value = \"x\"):\n        echo ok\n");
 }
 
 #[test]

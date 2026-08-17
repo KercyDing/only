@@ -6,7 +6,7 @@ pub struct DocumentAst {
     pub directives: Vec<DirectiveAst>,
     pub namespaces: Vec<NamespaceAst>,
     pub tasks: Vec<TaskAst>,
-    pub uses_namespace_close: bool,
+    pub uses_braced_namespaces: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +34,7 @@ pub struct NamespaceAst {
     pub doc: Option<SmolStr>,
     pub range: TextRange,
     pub close_range: Option<TextRange>,
+    pub is_braced: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

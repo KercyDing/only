@@ -34,6 +34,10 @@ enum RawTokenKind {
     LBracket,
     #[token("]")]
     RBracket,
+    #[token("{")]
+    LBrace,
+    #[token("}")]
+    RBrace,
     #[regex(r#""([^"\n]|\\.)*""#)]
     String,
     #[regex(r"[A-Za-z_-][A-Za-z0-9_-]*")]
@@ -79,6 +83,8 @@ pub fn lex(source: &str) -> Vec<LexToken> {
             Ok(RawTokenKind::RParen) => SyntaxKind::RParen,
             Ok(RawTokenKind::LBracket) => SyntaxKind::LBracket,
             Ok(RawTokenKind::RBracket) => SyntaxKind::RBracket,
+            Ok(RawTokenKind::LBrace) => SyntaxKind::LBrace,
+            Ok(RawTokenKind::RBrace) => SyntaxKind::RBrace,
             Ok(RawTokenKind::String) => SyntaxKind::String,
             Ok(RawTokenKind::Ident) => SyntaxKind::Ident,
             Ok(RawTokenKind::Comment) => SyntaxKind::Comment,

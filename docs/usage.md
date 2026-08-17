@@ -517,21 +517,23 @@ Available file-level directives are:
 Use namespaces when several parts of your project have similar tasks.
 
 ```Onlyfile
-[front]
+!version 0.3
 
-check():
-    pnpm lint
+[front] {
+    check():
+        pnpm lint
 
-test():
-    pnpm test
+    test():
+        pnpm test
+}
 
-[back]
+[back] {
+    check():
+        cargo check
 
-check():
-    cargo check
-
-test():
-    cargo test
+    test():
+        cargo test
+}
 ```
 
 Run a namespaced task by placing the namespace before the task:
@@ -567,7 +569,7 @@ You can combine tasks, parameters, guards, namespaces, and parallel dependencies
 Here is a small frontend + Rust example:
 
 ```Onlyfile
-!version 0.2
+!version 0.3
 
 build(profile="dev"):
     cargo build --profile {{profile}}
@@ -575,18 +577,18 @@ build(profile="dev"):
 ci() & (back.test, front.test):
     echo "CI complete"
 
-[back]
+[back] {
+    test() ? @has("cargo-nextest"):
+        cargo nextest run
 
-test() ? @has("cargo-nextest"):
-    cargo nextest run
+    test():
+        cargo test
+}
 
-test():
-    cargo test
-
-[front]
-
-test():
-    pnpm test
+[front] {
+    test():
+        pnpm test
+}
 ```
 
 Now you can run:
@@ -824,4 +826,4 @@ Common runtime errors include:
 | `task() shell=bash:` | require an exact shell |
 | `task() shell~=bash:` | prefer a shell with fallback |
 | `\| command` | continue a command block in one shell process |
-| `[namespace]` | place following tasks in a namespace |
+| `[namespace] { ... }` | group tasks in a namespace |

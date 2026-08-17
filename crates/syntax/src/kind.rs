@@ -21,6 +21,8 @@ pub enum SyntaxKind {
     RParen,
     LBracket,
     RBracket,
+    LBrace,
+    RBrace,
     ShellKw,
     ShellFallbackKw,
     Unknown,

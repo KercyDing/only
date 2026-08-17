@@ -49,8 +49,13 @@ pub fn format_range(source: &str, range: TextRange) -> Result<Option<(TextRange,
         return Ok(None);
     }
 
-    let node_range = node.text_range();
+    let syntax_range = node.text_range();
+    let node_range = include_leading_indent(&cst_source, syntax_range);
+    let indent = is_inside_braced_namespace(parsed.root(), syntax_range.start());
     let (_, mut formatted) = format_top_level_node(node, &cst_source)?;
+    if indent {
+        formatted = indent_lines(&formatted);
+    }
     formatted.push('\n');
     Ok(Some((node_range, formatted)))
 }
@@ -60,7 +65,9 @@ enum ItemKind {
     Directive,
     Comment,
     DocComment,
-    Namespace,
+    LegacyNamespace,
+    NamespaceOpen,
+    NamespaceClose,
     Task,
 }
 
@@ -69,6 +76,7 @@ struct DocumentFormatter<'a> {
     output: String,
     previous: Option<ItemKind>,
     pending_newlines: usize,
+    in_braced_namespace: bool,
 }
 
 impl<'a> DocumentFormatter<'a> {
@@ -78,6 +86,7 @@ impl<'a> DocumentFormatter<'a> {
             output: String::new(),
             previous: None,
             pending_newlines: 0,
+            in_braced_namespace: false,
         }
     }
 
@@ -106,6 +115,12 @@ impl<'a> DocumentFormatter<'a> {
     }
 
     fn push_item(&mut self, kind: ItemKind, text: &str) {
+        if matches!(
+            kind,
+            ItemKind::LegacyNamespace | ItemKind::NamespaceOpen | ItemKind::NamespaceClose
+        ) {
+            self.in_braced_namespace = false;
+        }
         if !self.output.is_empty() && !self.output.ends_with('\n') {
             self.output.push('\n');
         }
@@ -114,16 +129,26 @@ impl<'a> DocumentFormatter<'a> {
         let source_has_blank = self.pending_newlines > line_breaks_after_comment;
         let consecutive_directives =
             self.previous == Some(ItemKind::Directive) && kind == ItemKind::Directive;
+        let namespace_boundary =
+            self.previous == Some(ItemKind::NamespaceOpen) || kind == ItemKind::NamespaceClose;
         if !self.output.is_empty()
-            && ((source_has_blank && !consecutive_directives)
+            && ((source_has_blank && !consecutive_directives && !namespace_boundary)
                 || needs_structural_blank(self.previous, kind))
             && !self.output.ends_with("\n\n")
         {
             self.output.push('\n');
         }
 
-        self.output.push_str(text.trim_end_matches(['\n', '\r']));
+        let text = text.trim_end_matches(['\n', '\r']);
+        if self.in_braced_namespace {
+            self.output.push_str(&indent_lines(text));
+        } else {
+            self.output.push_str(text);
+        }
         self.output.push('\n');
+        if kind == ItemKind::NamespaceOpen {
+            self.in_braced_namespace = true;
+        }
         self.previous = Some(kind);
         self.pending_newlines = 0;
     }
@@ -159,15 +184,18 @@ fn format_top_level_node(node: SyntaxNode, source: &str) -> Result<(ItemKind, St
         }
         SyntaxKind::NamespaceBlock => {
             let namespace = NamespaceNode::cast(node).expect("namespace kind must cast");
-            let name = namespace
-                .name()
-                .ok_or_else(|| "invalid namespace".to_owned())?;
-            let text = if namespace.is_close() {
-                format!("[/{name}]")
+            if namespace.is_close() {
+                Ok((ItemKind::NamespaceClose, "}".to_owned()))
             } else {
-                format!("[{name}]")
-            };
-            Ok((ItemKind::Namespace, text))
+                let name = namespace
+                    .name()
+                    .ok_or_else(|| "invalid namespace".to_owned())?;
+                if namespace.has_open_brace() {
+                    Ok((ItemKind::NamespaceOpen, format!("[{name}] {{")))
+                } else {
+                    Ok((ItemKind::LegacyNamespace, format!("[{name}]")))
+                }
+            }
         }
         SyntaxKind::TaskDecl => {
             let task = TaskNode::cast(node).expect("task kind must cast");
@@ -200,13 +228,20 @@ fn needs_structural_blank(previous: Option<ItemKind>, current: ItemKind) -> bool
     let Some(previous) = previous else {
         return false;
     };
+    if current == ItemKind::NamespaceClose || previous == ItemKind::NamespaceOpen {
+        return false;
+    }
     if previous == ItemKind::DocComment || previous == ItemKind::Comment {
         return false;
     }
     if current == ItemKind::DocComment || current == ItemKind::Comment {
         return !matches!(previous, ItemKind::DocComment | ItemKind::Comment);
     }
-    if previous == ItemKind::Namespace || current == ItemKind::Namespace {
+    if matches!(
+        previous,
+        ItemKind::LegacyNamespace | ItemKind::NamespaceClose
+    ) || matches!(current, ItemKind::LegacyNamespace | ItemKind::NamespaceOpen)
+    {
         return true;
     }
     if previous == ItemKind::Directive && current == ItemKind::Directive {
@@ -216,6 +251,50 @@ fn needs_structural_blank(previous: Option<ItemKind>, current: ItemKind) -> bool
         || current == ItemKind::Task
         || previous == ItemKind::Directive
         || current == ItemKind::Directive
+}
+
+fn is_inside_braced_namespace(root: &SyntaxNode, offset: text_size::TextSize) -> bool {
+    let mut inside = false;
+    for node in root.children() {
+        if node.text_range().start() >= offset {
+            break;
+        }
+        let Some(namespace) = NamespaceNode::cast(node) else {
+            continue;
+        };
+        if namespace.is_close() {
+            inside = false;
+        } else {
+            inside = namespace.has_open_brace();
+        }
+    }
+    inside
+}
+
+fn indent_lines(text: &str) -> String {
+    text.lines()
+        .map(|line| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                format!("{INDENT}{line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn include_leading_indent(source: &str, range: TextRange) -> TextRange {
+    let start = usize::from(range.start());
+    let line_start = source[..start].rfind('\n').map_or(0, |index| index + 1);
+    if source[line_start..start]
+        .chars()
+        .all(|character| matches!(character, ' ' | '\t'))
+    {
+        TextRange::new((line_start as u32).into(), range.end())
+    } else {
+        range
+    }
 }
 
 fn format_directive(directive: &DirectiveNode, source: &str) -> Result<String, String> {

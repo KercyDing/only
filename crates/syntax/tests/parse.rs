@@ -116,6 +116,18 @@ fn reports_inline_comment_in_namespace_header() {
 }
 
 #[test]
+fn treats_indented_namespace_braces_as_structure() {
+    let parsed = parse("!version 0.3\n    [dev] {\nrun():\n    true\n    }\nroot():\n    true\n");
+    let namespaces = parsed
+        .root_children()
+        .filter(|node| node.kind() == SyntaxKind::NamespaceBlock)
+        .count();
+
+    assert_eq!(namespaces, 2);
+    assert!(parsed.diagnostics().is_empty());
+}
+
+#[test]
 fn reports_malformed_directive_and_recovers() {
     let parsed = parse("!\nbuild():\n    cargo build\n");
     let task_count = parsed

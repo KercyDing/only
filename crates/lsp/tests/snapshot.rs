@@ -172,6 +172,32 @@ fn resolves_local_namespace_dependency_hover() {
 }
 
 #[test]
+fn returns_braced_namespace_hover() {
+    let source = concat!(
+        "!version 0.3\n",
+        "# Development tasks.\n",
+        "[dev] {\n",
+        "    run():\n",
+        "        true\n",
+        "}\n",
+    );
+    let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
+    let open_offset = TextSize::from(source.find("dev").expect("namespace should exist") as u32);
+    let close_offset = TextSize::from(source.rfind('}').expect("close brace should exist") as u32);
+
+    let open = hover(&snapshot, open_offset).expect("namespace hover should exist");
+    let close = hover(&snapshot, close_offset).expect("close hover should exist");
+
+    assert_eq!(open.kind, LspHoverKind::Namespace);
+    assert_eq!(open.name, "dev");
+    assert_eq!(open.signature, "[dev] {");
+    assert_eq!(open.docs.as_deref(), Some("Development tasks."));
+    assert_eq!(close.kind, LspHoverKind::Namespace);
+    assert_eq!(close.name, "dev");
+    assert_eq!(close.signature, "}");
+}
+
+#[test]
 fn returns_task_and_parameter_hover() {
     let source = "build(name=\"dev\", args..):\n    echo {{name}}\n";
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);

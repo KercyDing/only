@@ -1,4 +1,4 @@
-!version 0.2
+!version 0.3
 
 // Example workflow for a Rust backend and web frontend.
 # Run all checks.
@@ -10,7 +10,11 @@ release() & ci & package:
     echo "Release ready in dist"
 
 # Package Windows artifacts.
-package() ? @os("windows") & (front.build, back.build) shell~=pwsh:
+package()
+    ? @os("windows")
+    & (front.build, back.build)
+    shell~=pwsh
+:
     | $archive = "dist/app.zip"
     | New-Item -ItemType Directory -Force -Path dist | Out-Null
     | Compress-Archive -Path target/release/app.exe, web/dist -DestinationPath $archive -Force
@@ -24,55 +28,55 @@ package() & (front.build, back.build):
     | echo "Created $archive"
 
 # Frontend tasks.
-[front]
+[front] {
+    _prepare() ? @has("pnpm"):
+        pnpm --dir web install --frozen-lockfile
 
-_prepare() ? @has("pnpm"):
-    pnpm --dir web install --frozen-lockfile
+    _prepare():
+        echo "pnpm is required"
+        exit 1
 
-_prepare():
-    echo "pnpm is required"
-    exit 1
+    # Start the dev server.
+    dev(port = "5173") & _prepare:
+        pnpm --dir web dev -- --port {{port}}
 
-# Start the dev server.
-dev(port="5173") & _prepare:
-    pnpm --dir web dev -- --port {{port}}
+    # Check the frontend.
+    check() & _prepare:
+        pnpm --dir web lint
 
-# Check the frontend.
-check() & _prepare:
-    pnpm --dir web lint
+    # Test the frontend.
+    test() & _prepare:
+        pnpm --dir web test
 
-# Test the frontend.
-test() & _prepare:
-    pnpm --dir web test
+    # Build the frontend.
+    build() & _prepare:
+        pnpm --dir web build
 
-# Build the frontend.
-build() & _prepare:
-    pnpm --dir web build
-
-# Run frontend checks.
-ci() & (check, test):
-    echo "Frontend CI complete"
+    # Run frontend checks.
+    ci() & (check, test):
+        echo "Frontend CI complete"
+}
 
 # Backend tasks.
-[back]
+[back] {
+    # Check the Rust workspace.
+    check():
+        cargo fmt --all -- --check
+        cargo check --workspace --all-targets
+        cargo clippy --workspace --all-targets -- -D warnings
 
-# Check the Rust workspace.
-check():
-    cargo fmt --all -- --check
-    cargo check --workspace --all-targets
-    cargo clippy --workspace --all-targets -- -D warnings
+    # Run tests with nextest when available.
+    test() ? @has("cargo-nextest"):
+        cargo nextest run --no-fail-fast
 
-# Run tests with nextest when available.
-test() ? @has("cargo-nextest"):
-    cargo nextest run --no-fail-fast
+    test():
+        cargo test --workspace --all-targets
 
-test():
-    cargo test --workspace --all-targets
+    # Build the release binary.
+    build():
+        cargo build --release
 
-# Build the release binary.
-build():
-    cargo build --release
-
-# Run backend checks in order.
-ci() & check & test:
-    echo "Backend CI complete"
+    # Run backend checks in order.
+    ci() & check & test:
+        echo "Backend CI complete"
+}

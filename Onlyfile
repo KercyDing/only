@@ -2,37 +2,33 @@
 !var cargo_flags = "--workspace --all-targets"
 
 # Development builds
-[dev]
+[dev] {
+    # Build the project in development mode.
+    build():
+        cargo build
 
-# Build the project in development mode.
-build():
-    cargo build
-
-# Run the project in development mode
-run():
-    cargo run
-
-[/dev]
+    # Run the project in development mode
+    run():
+        cargo run
+}
 
 # Release builds
-[rel]
+[rel] {
+    # Build the project in release mode.
+    build():
+        cargo build --release
 
-# Build the project in release mode.
-build():
-    cargo build --release
+    # Run the project in release mode
+    run():
+        cargo run --release
 
-# Run the project in release mode
-run():
-    cargo run --release
+    # Run the release test suite
+    test() ? @has("cargo-nextest"):
+        cargo nextest run --release
 
-# Run the release test suite
-test() ? @has("cargo-nextest"):
-    cargo nextest run --release
-
-test():
-    cargo test --release
-
-[/rel]
+    test():
+        cargo test --release
+}
 
 # Run cargo check
 check():

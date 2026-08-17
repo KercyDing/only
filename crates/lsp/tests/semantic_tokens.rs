@@ -5,10 +5,10 @@ fn classifies_engineering_syntax() {
     let source = concat!(
         "!version 0.3\n",
         "!var profile = \"release\"\n",
-        "[dev]\n",
+        "[dev] {\n",
         "build(target=\"x\") ? @env(\"CI\") & prepare shell=bash:\n",
         "    echo {{target}}\n",
-        "[/dev]\n",
+        "}\n",
     );
     let tokens = semantic_tokens(&DocumentSnapshot::new("file:///Onlyfile", 1, source));
 

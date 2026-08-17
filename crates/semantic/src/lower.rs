@@ -24,7 +24,7 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
     let mut saw_declaration = false;
     let mut saw_version = false;
     let mut left_directive_region = false;
-    let mut uses_namespace_close = false;
+    let mut uses_braced_namespaces = false;
 
     for node in document.syntax().children() {
         if let Some(directive) = DirectiveNode::cast(node.clone()) {
@@ -67,36 +67,15 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
 
         if let Some(namespace) = NamespaceNode::cast(node.clone()) {
             left_directive_region = true;
-            if namespace.is_empty() {
-                diagnostics.push(semantic_error(
-                    "namespace.empty-label",
-                    "namespace name cannot be empty",
-                    namespace.range(),
-                ));
-            } else if namespace.is_close() {
-                uses_namespace_close = true;
-                match (current_namespace.as_deref(), namespace.name()) {
-                    (None, _) => diagnostics.push(semantic_error(
+            uses_braced_namespaces |= namespace.is_close() || namespace.has_open_brace();
+            if namespace.is_close() {
+                match current_namespace.as_deref() {
+                    None => diagnostics.push(semantic_error(
                         "namespace.close-without-open",
                         "there is no namespace to close",
                         namespace.range(),
                     )),
-                    (Some(current), Some(name)) if current != name => {
-                        let mut diagnostic = semantic_error(
-                            "namespace.close-mismatch",
-                            &format!("close namespace '{current}' with '[/{current}]'"),
-                            namespace.range(),
-                        );
-                        if let Some(open) = namespaces
-                            .iter()
-                            .rev()
-                            .find(|open: &&NamespaceAst| open.name == current)
-                        {
-                            diagnostic.secondary_ranges.push(open.range);
-                        }
-                        diagnostics.push(diagnostic);
-                    }
-                    (Some(current), Some(_)) => {
+                    Some(current) => {
                         if let Some(open) = namespaces
                             .iter_mut()
                             .rev()
@@ -106,9 +85,14 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
                         }
                         current_namespace = None;
                     }
-                    _ => {}
                 }
                 pending_doc = None;
+            } else if namespace.is_empty() {
+                diagnostics.push(semantic_error(
+                    "namespace.empty-label",
+                    "namespace name cannot be empty",
+                    namespace.range(),
+                ));
             } else {
                 match lower_namespace(&namespace, pending_doc.take()) {
                     Ok(namespace) => {
@@ -144,7 +128,7 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
             directives,
             namespaces,
             tasks,
-            uses_namespace_close,
+            uses_braced_namespaces,
         },
         diagnostics,
     )
@@ -271,6 +255,7 @@ fn lower_namespace(node: &NamespaceNode, doc: Option<SmolStr>) -> Result<Namespa
         doc,
         range,
         close_range: None,
+        is_braced: node.has_open_brace(),
     })
 }
 

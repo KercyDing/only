@@ -36,7 +36,7 @@ pub(crate) fn validate_document(document: &DocumentAst, symbols: &SymbolIndex) -
         })
         .collect::<HashSet<_>>();
 
-    if !supports_engineering && (!globals.is_empty() || document.uses_namespace_close) {
+    if !supports_engineering && (!globals.is_empty() || document.uses_braced_namespaces) {
         let range = document
             .directives
             .iter()
@@ -54,6 +54,22 @@ pub(crate) fn validate_document(document: &DocumentAst, symbols: &SymbolIndex) -
     }
 
     for namespace in &document.namespaces {
+        if supports_engineering && !namespace.is_braced {
+            diagnostics.push(error(
+                "namespace.missing-open-brace",
+                format!(
+                    "use '[{}] {{' and end the namespace with '}}'",
+                    namespace.name
+                ),
+                namespace.range,
+            ));
+        } else if supports_engineering && namespace.close_range.is_none() {
+            diagnostics.push(error(
+                "namespace.missing-close",
+                format!("namespace '{}' must end with '}}'", namespace.name),
+                namespace.range,
+            ));
+        }
         if global_task_names.contains(&namespace.name) {
             diagnostics.push(error(
                 "semantic.namespace-conflict",

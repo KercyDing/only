@@ -10,7 +10,10 @@ use crate::ast_view::DocumentNode;
 use crate::builder::ParseTreeBuilder;
 use crate::cst::SyntaxNode;
 use crate::cursor::TokenCursor;
-use crate::recover::{advance, consume_line, starts_top_level_item};
+use crate::recover::{
+    advance, consume_line, starts_indented_namespace_boundary, starts_indented_namespace_member,
+    starts_top_level_item,
+};
 use crate::trivia::{is_trivia, line_contains_kind, line_has_non_trivia};
 use crate::{LexToken, SyntaxKind, lex};
 
@@ -69,6 +72,7 @@ pub(crate) fn parse_tokens(tokens: &[LexToken]) -> ParseResult {
     let mut diagnostics = Vec::new();
     let kinds = tokens.iter().map(|token| token.kind).collect::<Vec<_>>();
     let mut cursor = TokenCursor::new(tokens, &kinds);
+    let mut in_braced_namespace = false;
 
     loop {
         let trivia = cursor.skip_trivia();
@@ -82,10 +86,11 @@ pub(crate) fn parse_tokens(tokens: &[LexToken]) -> ParseResult {
         }
 
         let mut input = cursor.remaining();
-        let (item, consumed) = parse_top_level_item
-            .with_taken()
-            .parse_next(&mut input)
-            .expect("top-level parser should always consume a non-EOF item");
+        let (item, consumed) =
+            (|input: &mut &[SyntaxKind]| parse_top_level_item(input, in_braced_namespace))
+                .with_taken()
+                .parse_next(&mut input)
+                .expect("top-level parser should always consume a non-EOF item");
         let token_slice = cursor.consume(consumed.len());
 
         match item {
@@ -104,7 +109,11 @@ pub(crate) fn parse_tokens(tokens: &[LexToken]) -> ParseResult {
             ParsedTopLevelItem::DocComment => {
                 builder.push_node(SyntaxKind::DocComment, token_slice);
             }
-            ParsedTopLevelItem::Namespace { malformed } => {
+            ParsedTopLevelItem::Namespace {
+                malformed,
+                is_close,
+                has_open_brace,
+            } => {
                 if malformed {
                     diagnostics.push(parse_error(
                         "parse.malformed-namespace-header",
@@ -115,6 +124,7 @@ pub(crate) fn parse_tokens(tokens: &[LexToken]) -> ParseResult {
                     continue;
                 }
                 builder.push_node(SyntaxKind::NamespaceBlock, token_slice);
+                in_braced_namespace = has_open_brace && !is_close;
             }
             ParsedTopLevelItem::Task {
                 saw_colon,
@@ -150,19 +160,31 @@ pub(crate) fn parse_tokens(tokens: &[LexToken]) -> ParseResult {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ParsedTopLevelItem {
-    Directive { malformed: bool },
+    Directive {
+        malformed: bool,
+    },
     DocComment,
-    Namespace { malformed: bool },
-    Task { saw_colon: bool, malformed: bool },
+    Namespace {
+        malformed: bool,
+        is_close: bool,
+        has_open_brace: bool,
+    },
+    Task {
+        saw_colon: bool,
+        malformed: bool,
+    },
     Unexpected,
 }
 
-fn parse_top_level_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem> {
+fn parse_top_level_item(
+    input: &mut &[SyntaxKind],
+    in_braced_namespace: bool,
+) -> ModalResult<ParsedTopLevelItem> {
     alt((
         parse_directive_item,
         parse_doc_comment_item,
         parse_namespace_item,
-        parse_task_item,
+        |input: &mut &[SyntaxKind]| parse_task_item(input, in_braced_namespace),
         parse_unexpected_item,
     ))
     .parse_next(input)
@@ -182,14 +204,70 @@ fn parse_doc_comment_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLev
 }
 
 fn parse_namespace_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem> {
+    if input.first() == Some(&SyntaxKind::RBrace) {
+        advance(input);
+        let malformed =
+            line_has_non_trivia(input) || line_contains_kind(input, SyntaxKind::Comment);
+        consume_line(input);
+        return Ok(ParsedTopLevelItem::Namespace {
+            malformed,
+            is_close: true,
+            has_open_brace: false,
+        });
+    }
+
     token_kind(input, SyntaxKind::LBracket)?;
-    let malformed = !line_contains_kind(input, SyntaxKind::RBracket)
-        || line_contains_kind(input, SyntaxKind::Comment);
+    let has_open_brace = line_contains_kind(input, SyntaxKind::LBrace);
+    let malformed = namespace_open_is_malformed(input);
     consume_line(input);
-    Ok(ParsedTopLevelItem::Namespace { malformed })
+    Ok(ParsedTopLevelItem::Namespace {
+        malformed,
+        is_close: false,
+        has_open_brace,
+    })
 }
 
-fn parse_task_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem> {
+fn namespace_open_is_malformed(input: &[SyntaxKind]) -> bool {
+    let line = input
+        .iter()
+        .copied()
+        .take_while(|kind| !matches!(kind, SyntaxKind::Newline | SyntaxKind::Eof))
+        .collect::<Vec<_>>();
+    let mut index = 0;
+
+    while line.get(index) == Some(&SyntaxKind::Whitespace) {
+        index += 1;
+    }
+    if line.get(index) == Some(&SyntaxKind::Ident) {
+        index += 1;
+    }
+    while line.get(index) == Some(&SyntaxKind::Whitespace) {
+        index += 1;
+    }
+    if line.get(index) != Some(&SyntaxKind::RBracket) {
+        return true;
+    }
+    index += 1;
+    while line.get(index) == Some(&SyntaxKind::Whitespace) {
+        index += 1;
+    }
+    if index == line.len() {
+        return false;
+    }
+    if line.get(index) != Some(&SyntaxKind::LBrace) {
+        return true;
+    }
+    index += 1;
+    while line.get(index) == Some(&SyntaxKind::Whitespace) {
+        index += 1;
+    }
+    index != line.len()
+}
+
+fn parse_task_item(
+    input: &mut &[SyntaxKind],
+    in_braced_namespace: bool,
+) -> ModalResult<ParsedTopLevelItem> {
     token_kind(input, SyntaxKind::Ident)?;
     let mut saw_colon = false;
     let mut header_complete = false;
@@ -204,7 +282,12 @@ fn parse_task_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem>
     let mut expect_param_indent = false;
 
     while let Some(kind) = input.first().copied() {
-        if header_complete && line_start && starts_top_level_item(kind) {
+        if header_complete
+            && line_start
+            && (starts_top_level_item(kind)
+                || starts_indented_namespace_boundary(input)
+                || (in_braced_namespace && starts_indented_namespace_member(input)))
+        {
             break;
         }
 

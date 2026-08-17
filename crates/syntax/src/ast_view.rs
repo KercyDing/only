@@ -439,32 +439,37 @@ impl NamespaceNode {
         let label = source
             .trim()
             .strip_prefix('[')
-            .and_then(|text| text.strip_suffix(']'))
+            .and_then(|text| text.split_once(']'))
+            .map(|(label, _)| label)
             .map(str::trim)?;
-        let label = label.strip_prefix('/').unwrap_or(label).trim();
         (!label.is_empty()).then(|| SmolStr::new(label))
     }
 
-    /// Returns whether this label closes the current namespace.
+    /// Returns whether this node closes the current namespace.
     pub fn is_close(&self) -> bool {
+        self.syntax.text().to_string().trim() == "}"
+    }
+
+    /// Returns whether this namespace starts a braced scope.
+    pub fn has_open_brace(&self) -> bool {
         self.syntax
-            .text()
-            .to_string()
-            .trim()
-            .strip_prefix('[')
-            .and_then(|text| text.strip_suffix(']'))
-            .map(str::trim)
-            .is_some_and(|label| label.starts_with('/'))
+            .descendants_with_tokens()
+            .filter_map(|element| element.into_token())
+            .any(|token| token.kind() == SyntaxKind::LBrace)
     }
 
     /// Returns whether this label is empty.
     pub fn is_empty(&self) -> bool {
+        if self.is_close() {
+            return false;
+        }
         self.syntax
             .text()
             .to_string()
             .trim()
             .strip_prefix('[')
-            .and_then(|text| text.strip_suffix(']'))
+            .and_then(|text| text.split_once(']'))
+            .map(|(label, _)| label)
             .map(str::trim)
             .filter(|text| !text.is_empty())
             .is_none()

@@ -66,14 +66,14 @@ fn lowers_directives_and_namespaced_tasks() {
 }
 
 #[test]
-fn lowers_global_variables_and_namespace_close() {
+fn lowers_braced_namespace() {
     let compiled = compile_document(concat!(
         "!version 0.3\n",
         "!var target = \"release\"\n",
-        "[dev]\n",
+        "[dev] {\n",
         "build():\n",
         "    echo {{target}}\n",
-        "[/dev]\n",
+        "}\n",
         "clean():\n",
         "    echo clean\n",
     ));

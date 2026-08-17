@@ -394,24 +394,34 @@ fn task_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover>
 fn namespace_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {
     for syntax in snapshot.syntax.document().namespaces() {
         if syntax.range().contains(offset) {
-            let name = syntax.name()?;
-            let namespace = snapshot
-                .semantic
-                .document
-                .namespaces
-                .iter()
-                .find(|namespace| namespace.name == name);
+            let namespace = if syntax.is_close() {
+                snapshot
+                    .semantic
+                    .document
+                    .namespaces
+                    .iter()
+                    .find(|namespace| namespace.close_range == Some(syntax.range()))
+            } else {
+                let name = syntax.name()?;
+                snapshot
+                    .semantic
+                    .document
+                    .namespaces
+                    .iter()
+                    .find(|namespace| namespace.name == name)
+            }?;
+            let name = namespace.name.to_string();
             return Some(LspHover {
                 kind: LspHoverKind::Namespace,
-                name: name.to_string(),
+                name: name.clone(),
                 signature: if syntax.is_close() {
-                    format!("[/{name}]")
+                    "}".to_owned()
+                } else if syntax.has_open_brace() {
+                    format!("[{name}] {{")
                 } else {
                     format!("[{name}]")
                 },
-                docs: namespace
-                    .and_then(|namespace| namespace.doc.clone())
-                    .map(|docs| docs.to_string()),
+                docs: namespace.doc.clone().map(|docs| docs.to_string()),
                 range: syntax.range(),
                 container_name: None,
             });

@@ -46,15 +46,61 @@ fn reports_duplicate_global_variables() {
 }
 
 #[test]
-fn reports_namespace_close_mismatch() {
-    let compiled = compile_document("!version 0.3\n[front]\n[/back]\n");
+fn reports_close_without_namespace() {
+    let compiled = compile_document("!version 0.3\n}\n");
 
     assert!(
         compiled
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.code.as_str() == "namespace.close-mismatch")
+            .any(|diagnostic| diagnostic.code.as_str() == "namespace.close-without-open")
     );
+}
+
+#[test]
+fn requires_namespace_close_in_version_0_3() {
+    let compiled = compile_document("!version 0.3\n[front] {\nrun():\n    true\n");
+
+    assert!(
+        compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "namespace.missing-close")
+    );
+}
+
+#[test]
+fn requires_namespace_open_brace_in_version_0_3() {
+    let compiled = compile_document("!version 0.3\n[front]\nrun():\n    true\n");
+
+    assert!(
+        compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "namespace.missing-open-brace")
+    );
+}
+
+#[test]
+fn rejects_implicit_namespace_switch() {
+    let compiled = compile_document(
+        "!version 0.3\n[front] {\ncheck():\n    true\n[back] {\ncheck():\n    true\n}\n",
+    );
+    let missing_close = compiled
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code.as_str() == "namespace.missing-close")
+        .collect::<Vec<_>>();
+
+    assert_eq!(missing_close.len(), 1);
+    assert!(missing_close[0].message.contains("'front'"));
+}
+
+#[test]
+fn keeps_legacy_namespaces_compatible_before_version_0_3() {
+    let compiled = compile_document("[front]\nrun():\n    true\n");
+
+    assert!(compiled.diagnostics.is_empty());
 }
 
 #[test]

@@ -2,7 +2,7 @@
 
 ## 0.3.0 - 2026-08-17
 
-- Added multiple guards, multiline task headers, file-level `!var` values, and explicit namespace closing tags.
+- Added multiple guards, multiline task headers, file-level `!var` values, and braced namespace scopes.
 - Replaced fallback shell selection with the unambiguous `shell~=` syntax.
 - Added deterministic `only --fmt` and `only --fmt --check` formatting.
 - Added LSP formatting and semantic tokens.
