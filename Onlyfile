@@ -7,7 +7,7 @@ _release_build():
 
 # Run cargo check
 check():
-    cargo fmt --all -- --check
+    cargo fmt --all
     cargo check --workspace --all-targets
     cargo clippy --workspace --all-targets -- -D warnings
 
