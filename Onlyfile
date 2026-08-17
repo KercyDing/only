@@ -58,6 +58,7 @@ install() & _release_build:
 
 # Development builds
 [dev]
+
 # Build the project in development mode.
 build():
     cargo build
@@ -68,6 +69,7 @@ run():
 
 # Release builds
 [rel]
+
 # Build the project in release mode.
 build():
     cargo build --release

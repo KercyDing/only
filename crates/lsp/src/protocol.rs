@@ -4,11 +4,11 @@ use std::sync::RwLock;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
-    DidOpenTextDocumentParams, DocumentFormattingParams, DocumentSymbolResponse, FoldingRange,
-    FoldingRangeProviderCapability, Hover, HoverContents, HoverParams, InitializeParams,
-    InitializeResult, InitializedParams, MarkupContent, MarkupKind, MessageType, OneOf, Position,
-    SemanticToken, SemanticTokenType, SemanticTokens, SemanticTokensFullOptions,
-    SemanticTokensLegend, SemanticTokensParams, SemanticTokensResult,
+    DidOpenTextDocumentParams, DocumentFormattingParams, DocumentRangeFormattingParams,
+    DocumentSymbolResponse, FoldingRange, FoldingRangeProviderCapability, Hover, HoverContents,
+    HoverParams, InitializeParams, InitializeResult, InitializedParams, MarkupContent, MarkupKind,
+    MessageType, OneOf, Position, SemanticToken, SemanticTokenType, SemanticTokens,
+    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensParams, SemanticTokensResult,
     SemanticTokensServerCapabilities, ServerCapabilities, SymbolInformation, SymbolKind,
     TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
 };
@@ -182,6 +182,7 @@ impl LanguageServerProtocol for Backend {
                 document_symbol_provider: Some(OneOf::Left(true)),
                 folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
                 document_formatting_provider: Some(OneOf::Left(true)),
+                document_range_formatting_provider: Some(OneOf::Left(true)),
                 semantic_tokens_provider: Some(
                     SemanticTokensServerCapabilities::SemanticTokensOptions(
                         tower_lsp::lsp_types::SemanticTokensOptions {
@@ -285,6 +286,43 @@ impl LanguageServerProtocol for Backend {
                 &snapshot.source,
                 text_size::TextRange::up_to(text_size::TextSize::of(snapshot.source.as_str())),
             ),
+            new_text: formatted,
+        }]))
+    }
+
+    async fn range_formatting(
+        &self,
+        params: DocumentRangeFormattingParams,
+    ) -> Result<Option<Vec<TextEdit>>> {
+        let Some(snapshot) = self.snapshot_for_uri(&params.text_document.uri) else {
+            return Ok(None);
+        };
+        if snapshot
+            .semantic
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.severity == only_diagnostic::DiagnosticSeverity::Error)
+        {
+            return Ok(None);
+        }
+
+        let range = text_size::TextRange::new(
+            position_to_offset(&snapshot.source, params.range.start),
+            position_to_offset(&snapshot.source, params.range.end),
+        );
+        let Ok(Some((formatted_range, formatted))) =
+            only_syntax::format_range(&snapshot.source, range)
+        else {
+            return Ok(None);
+        };
+        if formatted
+            == snapshot.source
+                [usize::from(formatted_range.start())..usize::from(formatted_range.end())]
+        {
+            return Ok(Some(Vec::new()));
+        }
+        Ok(Some(vec![TextEdit {
+            range: range_to_lsp_range(&snapshot.source, formatted_range),
             new_text: formatted,
         }]))
     }

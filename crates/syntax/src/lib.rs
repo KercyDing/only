@@ -19,7 +19,7 @@ pub use ast_view::{
     TaskHeaderNode, TaskNode, TaskParamRef, TaskStepNode,
 };
 pub use cst::{SyntaxNode, SyntaxToken};
-pub use formatter::format_source;
+pub use formatter::{format_range, format_source};
 pub use kind::SyntaxKind;
 pub use lex::lex;
 pub use only_diagnostic::DiagnosticCode;

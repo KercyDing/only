@@ -371,7 +371,11 @@ fn run_inner() -> Result<ExitCode> {
         let formatted = format_source(&discovered.contents).map_err(OnlyError::parse)?;
         if partial.format_check {
             if formatted != discovered.contents {
-                println!("{} needs formatting", discovered.path.display());
+                let line = first_changed_line(&discovered.contents, &formatted);
+                println!(
+                    "{} needs formatting (first change: line {line})",
+                    discovered.path.display()
+                );
                 return Ok(ExitCode::from(1));
             }
             return Ok(ExitCode::SUCCESS);
@@ -417,6 +421,17 @@ fn run_inner() -> Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
     run_compiled_plan(&compiled.plan, &cli)
+}
+
+fn first_changed_line(original: &str, formatted: &str) -> usize {
+    original
+        .lines()
+        .zip(formatted.lines())
+        .position(|(left, right)| left != right)
+        .map_or_else(
+            || usize::min(original.lines().count(), formatted.lines().count()) + 1,
+            |index| index + 1,
+        )
 }
 
 fn write_formatted_file(path: &Path, contents: &str) -> Result<()> {

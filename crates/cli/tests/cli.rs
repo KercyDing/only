@@ -123,6 +123,17 @@ fn formats_onlyfile_and_checks_without_writing() {
     fs::write(&path, "!version 0.3\n\n\nbuild():\n\t| echo one\n")
         .expect("test Onlyfile should be written");
 
+    let unformatted_check = Command::new(cli_binary_path())
+        .args(["--fmt", "--check", "-f"])
+        .arg(&path)
+        .output()
+        .expect("formatter check should run");
+    assert_eq!(unformatted_check.status.code(), Some(1));
+    assert!(
+        String::from_utf8_lossy(&unformatted_check.stdout)
+            .contains("needs formatting (first change: line 3)")
+    );
+
     let output = Command::new(cli_binary_path())
         .args(["--fmt", "-f"])
         .arg(&path)

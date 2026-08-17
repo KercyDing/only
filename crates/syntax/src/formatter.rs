@@ -1,4 +1,13 @@
-use crate::snapshot;
+use rowan::NodeOrToken;
+use text_size::TextRange;
+
+use crate::{
+    DirectiveNode, DocCommentNode, NamespaceNode, ParameterNode, SyntaxKind, SyntaxNode,
+    TaskHeaderNode, TaskNode, snapshot,
+};
+
+const MAX_HEADER_WIDTH: usize = 88;
+const INDENT: &str = "    ";
 
 /// Formats an Onlyfile using the built-in deterministic style.
 pub fn format_source(source: &str) -> Result<String, String> {
@@ -12,157 +21,412 @@ pub fn format_source(source: &str) -> Result<String, String> {
     }
 
     let cst_source = parsed.root().text().to_string();
-    let mut output = String::new();
-    let mut lines = cst_source.lines().peekable();
-    let mut pending_blank = false;
-    while let Some(line) = lines.next() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            pending_blank = true;
-            continue;
-        }
+    let mut formatter = DocumentFormatter::new(&cst_source);
+    formatter.format(parsed.root())?;
+    Ok(formatter.finish())
+}
 
-        let top_level = !line.starts_with([' ', '\t']);
-        if top_level
-            && (trimmed.starts_with('!') || trimmed.starts_with('#') || trimmed.starts_with('['))
-        {
-            emit_blank(&mut output, &mut pending_blank);
-            output.push_str(&format_top_level(trimmed));
-            output.push('\n');
-            continue;
-        }
+/// Formats the single top-level declaration touched by a source range.
+pub fn format_range(source: &str, range: TextRange) -> Result<Option<(TextRange, String)>, String> {
+    let parsed = snapshot(source);
+    if let Some(diagnostic) = parsed
+        .diagnostics()
+        .iter()
+        .find(|item| item.severity == only_diagnostic::DiagnosticSeverity::Error)
+    {
+        return Err(diagnostic.message.clone());
+    }
 
-        if top_level && looks_like_task_header(trimmed) {
-            emit_blank(&mut output, &mut pending_blank);
-            let mut header = vec![trimmed.to_owned()];
-            while !header_ends(&header) {
-                let Some(next) = lines.next() else { break };
-                header.push(next.trim().to_owned());
-            }
-            output.push_str(&format_header(&header));
-            output.push('\n');
-            while let Some(next) = lines.peek().copied() {
-                if !next.starts_with([' ', '\t']) || next.trim().is_empty() {
-                    break;
-                }
-                let body = lines.next().expect("peeked body line");
-                let body = body.trim_start_matches([' ', '\t']);
-                if let Some(block) = body.strip_prefix('|') {
-                    let suffix = block.strip_prefix(' ').unwrap_or(block);
-                    output.push_str("    |");
-                    if !suffix.is_empty() {
-                        output.push(' ');
-                        output.push_str(suffix);
+    let cst_source = parsed.root().text().to_string();
+    let mut matches = parsed
+        .root()
+        .children()
+        .filter(|node| is_formattable_node(node.kind()))
+        .filter(|node| ranges_touch(node.text_range(), range));
+    let Some(node) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Ok(None);
+    }
+
+    let node_range = node.text_range();
+    let (_, mut formatted) = format_top_level_node(node, &cst_source)?;
+    formatted.push('\n');
+    Ok(Some((node_range, formatted)))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ItemKind {
+    Directive,
+    Comment,
+    DocComment,
+    Namespace,
+    Task,
+}
+
+struct DocumentFormatter<'a> {
+    source: &'a str,
+    output: String,
+    previous: Option<ItemKind>,
+    pending_newlines: usize,
+}
+
+impl<'a> DocumentFormatter<'a> {
+    fn new(source: &'a str) -> Self {
+        Self {
+            source,
+            output: String::new(),
+            previous: None,
+            pending_newlines: 0,
+        }
+    }
+
+    fn format(&mut self, root: &SyntaxNode) -> Result<(), String> {
+        for element in root.children_with_tokens() {
+            match element {
+                NodeOrToken::Token(token) => match token.kind() {
+                    SyntaxKind::Bom => self.output.push_str(token.text()),
+                    SyntaxKind::Newline => self.pending_newlines += 1,
+                    SyntaxKind::Comment => {
+                        self.push_item(ItemKind::Comment, token.text().trim_end())
                     }
-                    output.push('\n');
-                } else {
-                    output.push_str("    ");
-                    output.push_str(body);
-                    output.push('\n');
-                }
+                    SyntaxKind::Whitespace | SyntaxKind::Indent | SyntaxKind::Eof => {}
+                    _ => self.push_raw(token.text()),
+                },
+                NodeOrToken::Node(node) => self.format_node(node)?,
             }
-            continue;
+        }
+        Ok(())
+    }
+
+    fn format_node(&mut self, node: SyntaxNode) -> Result<(), String> {
+        let (kind, text) = format_top_level_node(node, self.source)?;
+        self.push_item(kind, &text);
+        Ok(())
+    }
+
+    fn push_item(&mut self, kind: ItemKind, text: &str) {
+        if !self.output.is_empty() && !self.output.ends_with('\n') {
+            self.output.push('\n');
         }
 
-        emit_blank(&mut output, &mut pending_blank);
-        output.push_str(line.trim_end());
-        output.push('\n');
+        let line_breaks_after_comment = usize::from(self.previous == Some(ItemKind::Comment));
+        let source_has_blank = self.pending_newlines > line_breaks_after_comment;
+        let consecutive_directives =
+            self.previous == Some(ItemKind::Directive) && kind == ItemKind::Directive;
+        if !self.output.is_empty()
+            && ((source_has_blank && !consecutive_directives)
+                || needs_structural_blank(self.previous, kind))
+            && !self.output.ends_with("\n\n")
+        {
+            self.output.push('\n');
+        }
+
+        self.output.push_str(text.trim_end_matches(['\n', '\r']));
+        self.output.push('\n');
+        self.previous = Some(kind);
+        self.pending_newlines = 0;
     }
 
-    while output.ends_with("\n\n") {
-        output.pop();
+    fn push_raw(&mut self, text: &str) {
+        self.output.push_str(text);
+        self.pending_newlines = 0;
     }
-    if !output.ends_with('\n') && !output.is_empty() {
+
+    fn finish(mut self) -> String {
+        while self.output.ends_with("\n\n") {
+            self.output.pop();
+        }
+        if !self.output.is_empty() && !self.output.ends_with('\n') {
+            self.output.push('\n');
+        }
+        self.output
+    }
+}
+
+fn format_top_level_node(node: SyntaxNode, source: &str) -> Result<(ItemKind, String), String> {
+    match node.kind() {
+        SyntaxKind::Directive => {
+            let directive = DirectiveNode::cast(node).expect("directive kind must cast");
+            Ok((ItemKind::Directive, format_directive(&directive, source)?))
+        }
+        SyntaxKind::DocComment => {
+            let comment = DocCommentNode::cast(node).expect("doc comment kind must cast");
+            let text = comment
+                .text()
+                .map_or_else(|| "#".to_owned(), |text| format!("# {text}"));
+            Ok((ItemKind::DocComment, text))
+        }
+        SyntaxKind::NamespaceBlock => {
+            let namespace = NamespaceNode::cast(node).expect("namespace kind must cast");
+            let name = namespace
+                .name()
+                .ok_or_else(|| "invalid namespace".to_owned())?;
+            let text = if namespace.is_close() {
+                format!("[/{name}]")
+            } else {
+                format!("[{name}]")
+            };
+            Ok((ItemKind::Namespace, text))
+        }
+        SyntaxKind::TaskDecl => {
+            let task = TaskNode::cast(node).expect("task kind must cast");
+            Ok((ItemKind::Task, format_task(&task, source)?))
+        }
+        SyntaxKind::Error => Err("cannot format invalid syntax".to_owned()),
+        _ => Err("range does not contain a declaration".to_owned()),
+    }
+}
+
+fn is_formattable_node(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::Directive
+            | SyntaxKind::DocComment
+            | SyntaxKind::NamespaceBlock
+            | SyntaxKind::TaskDecl
+    )
+}
+
+fn ranges_touch(node: TextRange, requested: TextRange) -> bool {
+    if requested.is_empty() {
+        node.start() <= requested.start() && requested.start() < node.end()
+    } else {
+        node.start() < requested.end() && requested.start() < node.end()
+    }
+}
+
+fn needs_structural_blank(previous: Option<ItemKind>, current: ItemKind) -> bool {
+    let Some(previous) = previous else {
+        return false;
+    };
+    if previous == ItemKind::DocComment || previous == ItemKind::Comment {
+        return false;
+    }
+    if current == ItemKind::DocComment || current == ItemKind::Comment {
+        return !matches!(previous, ItemKind::DocComment | ItemKind::Comment);
+    }
+    if previous == ItemKind::Namespace || current == ItemKind::Namespace {
+        return true;
+    }
+    if previous == ItemKind::Directive && current == ItemKind::Directive {
+        return false;
+    }
+    previous == ItemKind::Task
+        || current == ItemKind::Task
+        || previous == ItemKind::Directive
+        || current == ItemKind::Directive
+}
+
+fn format_directive(directive: &DirectiveNode, source: &str) -> Result<String, String> {
+    let name = directive
+        .name()
+        .ok_or_else(|| "invalid directive".to_owned())?;
+    let raw_value = directive.raw_value().unwrap_or_default();
+    if name == "var" {
+        let (variable, value) = raw_value
+            .split_once('=')
+            .ok_or_else(|| "invalid variable directive".to_owned())?;
+        return Ok(format!("!var {} = {}", variable.trim(), value.trim()));
+    }
+    if raw_value.is_empty() {
+        return Ok(format!("!{name}"));
+    }
+
+    // Slice CST-owned text to retain the original string spelling.
+    let raw = source_range(source, directive.range());
+    let value = raw
+        .trim()
+        .strip_prefix('!')
+        .and_then(|text| text.strip_prefix(name.as_str()))
+        .map(str::trim)
+        .unwrap_or(raw_value.as_str());
+    Ok(format!("!{name} {value}"))
+}
+
+fn format_task(task: &TaskNode, source: &str) -> Result<String, String> {
+    let header = task
+        .header()
+        .ok_or_else(|| "task has no header".to_owned())?;
+    let mut output = format_header(&header, source)?;
+    let body = source_range(
+        source,
+        TextRange::new(header.range().end(), task.range().end()),
+    );
+    let body = format_task_body(body);
+    if !body.is_empty() {
         output.push('\n');
+        output.push_str(&body);
     }
     Ok(output)
 }
 
-fn format_top_level(line: &str) -> String {
-    if line.starts_with("//") || line.starts_with('#') {
-        return line.to_owned();
+fn format_header(header: &TaskHeaderNode, source: &str) -> Result<String, String> {
+    let name = header
+        .name()
+        .ok_or_else(|| "task header has no name".to_owned())?;
+    let parameters = header
+        .parameter_list()
+        .map(|list| {
+            list.parameters()
+                .map(|parameter| format_parameter(&parameter, source))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let guards = header
+        .guards()
+        .map(|guard| format_guard(guard.text().as_str()))
+        .collect::<Vec<_>>();
+    let dependencies = header
+        .dependencies()
+        .map(|dependency| format_dependency(dependency.text().as_str()))
+        .collect::<Vec<_>>();
+    let shell = header
+        .shell()
+        .map(|shell| format_shell(shell.text().as_str()));
+
+    let params_inline = parameters.join(", ");
+    let prefix = format!("{name}({params_inline})");
+    let mut clauses =
+        Vec::with_capacity(guards.len() + dependencies.len() + usize::from(shell.is_some()));
+    clauses.extend(guards);
+    clauses.extend(dependencies);
+    if let Some(shell) = shell {
+        clauses.push(shell);
     }
-    if line.starts_with('[') {
-        let label = line
-            .trim_matches(['[', ']'])
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ");
-        return format!("[{label}]");
+
+    let mut inline = prefix.clone();
+    for clause in &clauses {
+        inline.push(' ');
+        inline.push_str(clause);
     }
-    for keyword in ["!version", "!shell", "!var"] {
-        if let Some(rest) = line.strip_prefix(keyword) {
-            if keyword == "!var"
-                && let Some((name, value)) = rest.trim().split_once('=')
-            {
-                return format!("{keyword} {} = {}", name.trim(), value.trim());
-            }
-            return format!("{keyword} {}", rest.trim());
+    inline.push(':');
+    if inline.chars().count() <= MAX_HEADER_WIDTH {
+        return Ok(inline);
+    }
+
+    let params_need_lines = !parameters.is_empty() && prefix.chars().count() > MAX_HEADER_WIDTH;
+    let mut output = String::new();
+    if params_need_lines {
+        output.push_str(name.as_str());
+        output.push('(');
+        for parameter in &parameters {
+            output.push('\n');
+            output.push_str(INDENT);
+            output.push_str(parameter);
+            output.push(',');
         }
+        output.push('\n');
+        output.push(')');
+    } else {
+        output.push_str(&prefix);
     }
-    line.to_owned()
-}
 
-fn looks_like_task_header(line: &str) -> bool {
-    line.contains('(') && (line.contains(':') || line.ends_with(')'))
-}
-
-fn header_ends(lines: &[String]) -> bool {
-    let joined = lines.join(" ");
-    joined.contains(':') && joined.matches('(').count() == joined.matches(')').count()
-}
-
-fn format_header(lines: &[String]) -> String {
-    let joined = lines.join(" ");
-    let joined = joined.trim().trim_end_matches(':').trim();
-    let joined = normalize_header_spacing(joined);
-    if joined.len() <= 88 && lines.len() == 1 {
-        return format!("{joined}:");
+    if clauses.is_empty() {
+        output.push(':');
+        return Ok(output);
     }
-    let Some(open) = joined.find('(') else {
-        return format!("{joined}:");
+    for clause in clauses {
+        output.push('\n');
+        output.push_str(INDENT);
+        output.push_str(&clause);
+    }
+    output.push_str("\n:");
+    Ok(output)
+}
+
+fn format_parameter(parameter: &ParameterNode, source: &str) -> String {
+    let raw = source_range(source, parameter.range()).trim();
+    let Some(equal) = find_unquoted(raw, '=') else {
+        return collapse_whitespace(raw);
     };
-    let Some(close) = joined[open..].find(')').map(|index| open + index) else {
-        return format!("{joined}:");
-    };
-    let name = &joined[..open];
-    let params = joined[open + 1..close].trim();
-    let tail = joined[close + 1..].trim();
-    let mut out = format!("{name}(");
-    for param in split_top_level(params, ',') {
-        let param = param.trim();
-        if param.is_empty() {
+    let name = collapse_whitespace(raw[..equal].trim());
+    let value = raw[equal + 1..].trim();
+    format!("{name} = {value}")
+}
+
+fn format_guard(raw: &str) -> String {
+    let guard = raw.trim().trim_start_matches('?').trim();
+    format!("? {}", normalize_delimiters(guard))
+}
+
+fn format_dependency(raw: &str) -> String {
+    let dependency = raw.trim().trim_start_matches('&').trim();
+    if let Some(group) = dependency
+        .strip_prefix('(')
+        .and_then(|text| text.strip_suffix(')'))
+    {
+        let members = group
+            .split(',')
+            .map(str::trim)
+            .filter(|member| !member.is_empty())
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("& ({members})")
+    } else {
+        format!("& {}", collapse_whitespace(dependency))
+    }
+}
+
+fn format_shell(raw: &str) -> String {
+    let compact = raw
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect::<String>();
+    if let Some(shell) = compact.strip_prefix("shell~=") {
+        format!("shell~={shell}")
+    } else if let Some(shell) = compact.strip_prefix("shell=") {
+        format!("shell={shell}")
+    } else {
+        compact
+    }
+}
+
+fn format_task_body(raw: &str) -> String {
+    let normalized = raw.replace("\r\n", "\n").replace('\r', "\n");
+    let mut lines = normalized.split('\n').peekable();
+    if lines.peek().is_some_and(|line| line.is_empty()) {
+        lines.next();
+    }
+
+    let mut output = Vec::new();
+    let mut pending_blank = false;
+    for line in lines {
+        let body = line.trim_start_matches([' ', '\t']);
+        if body.is_empty() {
+            pending_blank = !output.is_empty();
             continue;
         }
-        out.push_str("\n    ");
-        out.push_str(param);
-        out.push(',');
-    }
-    if !params.is_empty() {
-        out.push('\n');
-    }
-    out.push(')');
-    if tail.is_empty() {
-        out.push(':');
-    } else {
-        for clause in split_clauses(tail) {
-            out.push_str("\n    ");
-            out.push_str(&clause);
+        if pending_blank {
+            output.push(String::new());
+            pending_blank = false;
         }
-        out.push_str("\n:");
+
+        let formatted = if let Some(block) = body.strip_prefix('|') {
+            let content = block.strip_prefix([' ', '\t']).unwrap_or(block);
+            if content.is_empty() {
+                format!("{INDENT}|")
+            } else {
+                format!("{INDENT}| {content}")
+            }
+        } else {
+            format!("{INDENT}{body}")
+        };
+        output.push(formatted);
     }
-    out
+    output.join("\n")
 }
 
-fn split_clauses(tail: &str) -> Vec<String> {
-    let mut clauses = Vec::new();
-    let mut current = String::new();
-    let mut depth = 0usize;
+fn source_range(source: &str, range: TextRange) -> &str {
+    &source[usize::from(range.start())..usize::from(range.end())]
+}
+
+fn find_unquoted(input: &str, needle: char) -> Option<usize> {
     let mut quoted = false;
     let mut escaped = false;
-    for character in tail.chars() {
+    for (index, character) in input.char_indices() {
         if quoted {
-            current.push(character);
             if escaped {
                 escaped = false;
             } else if character == '\\' {
@@ -170,37 +434,25 @@ fn split_clauses(tail: &str) -> Vec<String> {
             } else if character == '"' {
                 quoted = false;
             }
-            continue;
-        }
-        if character == '"' {
+        } else if character == '"' {
             quoted = true;
-            current.push(character);
-            continue;
+        } else if character == needle {
+            return Some(index);
         }
-        match character {
-            '(' => depth += 1,
-            ')' => depth = depth.saturating_sub(1),
-            '?' | '&' if depth == 0 && !current.trim().is_empty() => {
-                clauses.push(current.trim().to_owned());
-                current.clear();
-            }
-            _ => {}
-        }
-        current.push(character);
     }
-    if !current.trim().is_empty() {
-        clauses.push(current.trim().to_owned());
-    }
-    clauses
+    None
 }
 
-fn normalize_header_spacing(input: &str) -> String {
+fn collapse_whitespace(input: &str) -> String {
+    input.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn normalize_delimiters(input: &str) -> String {
     let mut output = String::new();
     let mut quoted = false;
     let mut escaped = false;
     let mut pending_space = false;
-    let mut characters = input.chars().peekable();
-    while let Some(character) = characters.next() {
+    for character in input.chars() {
         if quoted {
             output.push(character);
             if escaped {
@@ -213,31 +465,22 @@ fn normalize_header_spacing(input: &str) -> String {
             continue;
         }
         if character == '"' {
-            if pending_space && !output.is_empty() {
+            if pending_space && !matches!(output.chars().last(), Some('(')) {
                 output.push(' ');
             }
             pending_space = false;
             quoted = true;
             output.push(character);
-        } else if character == ',' {
-            while output.ends_with(' ') {
-                output.pop();
-            }
-            output.push(',');
-            pending_space = true;
-        } else if character == '&' || (character == '?' && characters.peek() != Some(&'=')) {
-            while output.ends_with(' ') {
-                output.pop();
-            }
-            if !output.is_empty() {
-                output.push(' ');
-            }
-            output.push(character);
-            pending_space = true;
         } else if character.is_whitespace() {
             pending_space = true;
+        } else if matches!(character, '(' | ')') {
+            while output.ends_with(' ') {
+                output.pop();
+            }
+            output.push(character);
+            pending_space = false;
         } else {
-            if pending_space && !output.is_empty() {
+            if pending_space && !output.is_empty() && !output.ends_with('(') {
                 output.push(' ');
             }
             pending_space = false;
@@ -245,45 +488,4 @@ fn normalize_header_spacing(input: &str) -> String {
         }
     }
     output.trim().to_owned()
-}
-
-fn split_top_level(input: &str, separator: char) -> Vec<String> {
-    let mut pieces = Vec::new();
-    let mut current = String::new();
-    let mut depth = 0usize;
-    let mut quoted = false;
-    let mut escaped = false;
-    for character in input.chars() {
-        if quoted {
-            current.push(character);
-            if escaped {
-                escaped = false;
-            } else if character == '\\' {
-                escaped = true;
-            } else if character == '"' {
-                quoted = false;
-            }
-            continue;
-        }
-        match character {
-            '"' => quoted = true,
-            '(' | '[' => depth += 1,
-            ')' | ']' => depth = depth.saturating_sub(1),
-            _ => {}
-        }
-        if character == separator && depth == 0 {
-            pieces.push(std::mem::take(&mut current));
-        } else {
-            current.push(character);
-        }
-    }
-    pieces.push(current);
-    pieces
-}
-
-fn emit_blank(output: &mut String, pending_blank: &mut bool) {
-    if *pending_blank && !output.is_empty() && !output.ends_with("\n\n") {
-        output.push('\n');
-    }
-    *pending_blank = false;
 }
