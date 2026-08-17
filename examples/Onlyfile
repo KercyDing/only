@@ -1,54 +1,78 @@
 !version 0.2
 
-// This file demonstrates the full task shape.
-# Say hello with an optional name.
-hello(name="world"):
-    echo "hello, {{name}}"
+// Example workflow for a Rust backend and web frontend.
+# Run all checks.
+ci() & (front.ci, back.ci):
+    echo "CI complete"
 
-# Start a local service with configurable bind settings.
-serve(port="3000", host="127.0.0.1"):
-    echo "Serving on http://{{host}}:{{port}}"
+# Package a verified release.
+release() & ci & package:
+    echo "Release ready in dist"
 
-# Format the workspace.
-fmt():
-    cargo fmt --all --check
+# Package Windows artifacts.
+package() ? @os("windows") & (front.build, back.build) shell?=pwsh:
+    | $archive = "dist/app.zip"
+    | New-Item -ItemType Directory -Force -Path dist | Out-Null
+    | Compress-Archive -Path target/release/app.exe, web/dist -DestinationPath $archive -Force
+    | Write-Output "Created $archive"
 
-# Check the workspace.
+// macOS/Linux fallback.
+package() & (front.build, back.build):
+    | archive="dist/app.tar.gz"
+    | mkdir -p dist
+    | tar -czf "$archive" target/release/app web/dist
+    | echo "Created $archive"
+
+# Frontend tasks.
+[front]
+
+_prepare() ? @has("pnpm"):
+    pnpm --dir web install --frozen-lockfile
+
+_prepare():
+    echo "pnpm is required"
+    exit 1
+
+# Start the dev server.
+dev(port="5173") & _prepare:
+    pnpm --dir web dev -- --port {{port}}
+
+# Check the frontend.
+check() & _prepare:
+    pnpm --dir web lint
+
+# Test the frontend.
+test() & _prepare:
+    pnpm --dir web test
+
+# Build the frontend.
+build() & _prepare:
+    pnpm --dir web build
+
+# Run frontend checks.
+ci() & (check, test):
+    echo "Frontend CI complete"
+
+# Backend tasks.
+[back]
+
+# Check the Rust workspace.
 check():
-    cargo check --workspace
-    cargo clippy --workspace -- -D warnings
+    cargo fmt --all -- --check
+    cargo check --workspace --all-targets
+    cargo clippy --workspace --all-targets -- -D warnings
 
-# Run tests with nextest when it is installed.
+# Run tests with nextest when available.
 test() ? @has("cargo-nextest"):
-    cargo nextest run
+    cargo nextest run --no-fail-fast
 
 test():
-    cargo test --workspace
+    cargo test --workspace --all-targets
 
 # Build the release binary.
 build():
     cargo build --release
 
-# Run a multi-line script in one shell process.
-block-demo() shell?=bash:
-    | value="shared"
-    | echo "block value: $value"
-
-# Hidden helper used by release packaging tasks.
-_prepare_dist():
-    mkdir -p ../dist
-
-# Package the release binary.
-package() ? @os("windows") & build & _prepare_dist shell?=pwsh:
-    Copy-Item ../target/release/only.exe ../dist/only.exe -Force
-
-package() & build & _prepare_dist:
-    cp ../target/release/only ../dist/only
-
-# Run the normal local verification workflow.
-ci() & fmt & check & test:
-    echo "CI complete"
-
-# Build and package after CI passes.
-release() & ci & package:
-    echo "Release ready in dist/"
+# Run backend checks in order.
+ci() & check & test:
+    echo "Backend CI complete"

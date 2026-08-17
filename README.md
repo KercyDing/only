@@ -1,43 +1,57 @@
+<div align="center">
+
 # Only
 
-[![crates.io](https://img.shields.io/crates/v/only.svg)](https://crates.io/crates/only)
-[![license](https://img.shields.io/crates/l/only.svg)](LICENSE)
+**⚡️A small cross-platform task runner.⚡️**
 
-**One `Onlyfile`. Same behavior everywhere.**
+Keep project workflows in one readable `Onlyfile`.
 
-`only` is a small cross-platform task runner for macOS, Linux, and Windows.
+[![Crates.io](https://img.shields.io/crates/v/only.svg)](https://crates.io/crates/only)
+[![CI](https://github.com/KercyDing/only/actions/workflows/check.yml/badge.svg)](https://github.com/KercyDing/only/actions/workflows/check.yml)
+[![License](https://img.shields.io/crates/l/only.svg)](LICENSE)
 
-Dependencies, parallelism, environment-specific variants, namespaces, and common shell behavior all stay in one readable `Onlyfile`.
+<kbd>[Usage guide](docs/usage.md)</kbd> <kbd>[Complete example](examples/Onlyfile)</kbd> <kbd>[VSCode extension](https://marketplace.visualstudio.com/items?itemName=kercyding.onlyfile)</kbd>
+
+</div>
 
 ## Example
 
 ```Onlyfile
-# Start development.
-dev(port="3000"):
-    pnpm dev --port {{ port }}
+!version 0.2
 
-# Check the project.
-check():
-    cargo check
+# Build the Rust app
+build(profile="dev"):
+    cargo build --profile {{profile}}
 
-# Prefer nextest when available.
+# Run tests in parallel
+ci() & (back.test, front.test):
+    echo "CI complete!"
+
+# Backend
+[back]
+
+# Test the backend
+// Prefer nextest when available.
 test() ? @has("cargo-nextest"):
     cargo nextest run
 
 test():
     cargo test
 
-# Run checks and tests in parallel.
-ci() & (check, test):
-    echo "CI complete"
+# Frontend
+[front]
+
+# Test the frontend
+test():
+    pnpm test
 ```
 
 Run it:
 
 ```shell
 only
-only dev
-only dev 8080
+only build
+only build release
 only ci
 ```
 
@@ -50,15 +64,13 @@ only --dry-run ci
 ```text
 Dry run: ci()
 ├─ stage 1 (parallel)
-│  ├─ check
-│  └─ test
+│  ├─ back.test (1 command)
+│  └─ front.test (1 command)
 └─ stage 2
-   └─ ci
+   └─ ci (1 command)
 ```
 
 Dependencies, parallel execution, parameters, and environment-specific task variants stay in the task definition instead of shell control flow.
-
-For a larger frontend + Rust workflow, see the [usage guide](docs/usage.md).
 
 ## Features
 
@@ -68,6 +80,7 @@ For a larger frontend + Rust workflow, see the [usage guide](docs/usage.md).
 - **Guards** — select implementations with `@has`, `@os`, `@arch`, and `@env`.
 - **Namespaces** — organize larger projects with `[front]`, `[back]`, `[version]`, etc.
 - **Parameters** — use function-style task signatures and `{{ value }}` interpolation.
+- **Command blocks** — run consecutive `|` lines in one cross-platform shell process.
 - **Private helpers** — tasks beginning with `_` stay out of the normal task list.
 - **Dry run** — inspect the resolved execution plan before running it.
 - **Shell escape hatch** — request `bash`, `sh`, `pwsh`, or PowerShell when needed.
@@ -131,15 +144,6 @@ or:
 ```shell
 only --update
 ```
-
-## Editor support
-
-The [Onlyfile VS Code extension](https://marketplace.visualstudio.com/items?itemName=kercyding.onlyfile) provides syntax highlighting and `only-lsp` integration for diagnostics, hover, document symbols, and folding.
-
-## Learn more
-
-- [Complete example](examples/Onlyfile)
-- [Usage guide](docs/usage.md)
 
 ## License
 
