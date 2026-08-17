@@ -1,10 +1,12 @@
 # Usage
 
-`only` is a cross-platform task runner driven by an `Onlyfile`. This guide starts small, then adds parameters, dependencies, guards, shells, namespaces, and troubleshooting.
+`only` is a cross-platform task runner driven by an `Onlyfile`.
+
+This guide starts with a minimal task, then introduces parameters, dependencies, parallel execution, helpers, guards, shells, namespaces, diagnostics, and CLI reference.
 
 ## 1. Create your first Onlyfile
 
-Create a file named `Onlyfile` in your project root:
+Create an `Onlyfile` in your project root:
 
 ```Onlyfile
 # Minimal task.
@@ -18,19 +20,21 @@ Run it:
 only hello
 ```
 
-Run `only` with no task to list what the file exposes:
+Run `only` without a task to list available commands:
 
 ```bash
 only
 ```
 
-`only` discovers `Onlyfile` or `onlyfile` from the current directory upward. To see which file was found:
+`only` searches for `Onlyfile` or `onlyfile` from the current directory upward.
+
+Print the discovered path:
 
 ```bash
 only -p
 ```
 
-To use a specific file:
+Or use a specific file:
 
 ```bash
 only -f ./examples/Onlyfile hello
@@ -38,13 +42,15 @@ only -f ./examples/Onlyfile hello
 
 ## 2. Add task descriptions
 
-Use standalone `//` lines for ordinary comments. They can appear between top-level items or inside a task body. Lines starting with `#` document the next task or namespace, and show up in `only` and `only --help` output.
+Use `//` for ordinary comments.
+
+Use `#` to document the next task or namespace. These descriptions appear in `only` and `only --help`.
 
 ```Onlyfile
 // Ordinary comments are ignored.
+
 # Format the codebase.
 fmt():
-    // Task-body comments are ignored too.
     cargo fmt --all
 
 # Run tests.
@@ -52,11 +58,13 @@ test():
     cargo test
 ```
 
-Now `only` gives a readable task list instead of just names.
+This keeps the task list readable without adding separate metadata.
 
 ## 3. Use parameters
 
-Tasks use function-style signatures. A parameter without a default is required; a parameter with a default is optional.
+Tasks use function-style signatures.
+
+A parameter without a default is required. A parameter with a default is optional.
 
 ```Onlyfile
 # Serve the dev site.
@@ -64,7 +72,7 @@ serve(port="3000", host="127.0.0.1"):
     echo "Serving on {{host}}:{{port}}"
 ```
 
-Run it with defaults:
+Use the defaults:
 
 ```bash
 only serve
@@ -81,7 +89,7 @@ only serve 8080 0.0.0.0
 # Serving on 0.0.0.0:8080
 ```
 
-Override by name with `-s` / `--set`:
+Override parameters by name with `-s` / `--set`:
 
 ```bash
 only -s host=0.0.0.0 serve
@@ -91,13 +99,13 @@ only -s host=0.0.0.0 serve 8080
 # Serving on 0.0.0.0:8080
 ```
 
-`-s` is a global option, so put it before the task path. It can be repeated:
+`-s` is a global option, so place it before the task path. It can be repeated:
 
 ```bash
 only -s host=0.0.0.0 -s port=8080 serve
 ```
 
-Parameter binding precedence is:
+Parameter precedence is:
 
 1. `-s NAME=VALUE` / `--set NAME=VALUE`
 2. positional arguments
@@ -115,11 +123,11 @@ only greet Ada
 # Hello, Ada
 ```
 
-Running `only greet` fails before any command runs because `name` has no default.
+Running `only greet` fails before any command executes because `name` has no default.
 
 ### Slice parameters
 
-Use a slice parameter when the last parameter should capture every remaining positional argument.
+Use a slice parameter to capture all remaining positional arguments:
 
 ```Onlyfile
 run(args..):
@@ -130,18 +138,24 @@ run(args..):
 only run --release --bin demo
 ```
 
-`args..` binds to `--release --bin demo`. A slice parameter can also follow fixed parameters:
+`args..` binds to `--release --bin demo`.
+
+A slice may follow fixed parameters:
 
 ```Onlyfile
 tool(name, args..):
     {{name}} {{args}}
 ```
 
-Slice parameters can receive zero or more arguments. They must be the final parameter and cannot have a default value.
+Slice parameters:
+
+- accept zero or more arguments;
+- must be the final parameter;
+- cannot have a default value.
 
 ### Interpolation escapes
 
-Use `\{{` and `\}}` when you need literal `{{` and `}}` in a command.
+Use `\{{` and `\}}` when literal braces are needed:
 
 ```Onlyfile
 show(template="value"):
@@ -153,9 +167,9 @@ only show
 # value and literal {{template}}
 ```
 
-## 4. Chain tasks with dependencies
+## 4. Declare dependencies
 
-Use `&` to run dependencies before the task body.
+Use `&` to declare ordered dependency stages before the task body.
 
 ```Onlyfile
 fmt():
@@ -168,11 +182,27 @@ ci() & fmt & check:
     echo "CI complete"
 ```
 
-`only ci` runs `fmt`, then `check`, then `ci`.
+Running:
 
-## 5. Run dependency groups in parallel
+```bash
+only ci
+```
 
-Use parentheses to run a stage in parallel.
+executes:
+
+```text
+fmt
+ ↓
+check
+ ↓
+ci
+```
+
+Dependencies are tasks, not textually expanded command blocks. Shared dependencies are resolved once within the execution graph.
+
+## 5. Run dependencies in parallel
+
+Use parentheses to declare dependencies that may run in parallel.
 
 ```Onlyfile
 build():
@@ -188,11 +218,60 @@ release() & build & (package, publish):
     echo "Release complete"
 ```
 
-`build` runs first. After it succeeds, `package` and `publish` run together. The `release` body runs after both finish.
+The dependency relationship is:
+
+```text
+build
+  │
+  ├─ package ─┐
+  └─ publish ─┴─ release
+```
+
+`build` runs first. After it succeeds, `package` and `publish` may run together. The `release` body runs after both finish.
+
+Compare:
+
+```Onlyfile
+ci() & check & test:
+```
+
+```text
+check → test → ci
+```
+
+with:
+
+```Onlyfile
+ci() & (check, test):
+```
+
+```text
+check ─┐
+       ├→ ci
+test ──┘
+```
+
+### Inspect the execution plan
+
+Use dry-run to see the resolved task stages without executing them:
+
+```bash
+only --dry-run release
+```
+
+Add `--full` to include rendered commands:
+
+```bash
+only --dry-run --full release
+```
+
+For larger workflows, this shows the actual schedule after dependency and guard resolution.
 
 ## 6. Hide helper tasks
 
-A task whose name starts with `_` is a helper task. It can be used as a dependency, but it is hidden from normal listings and cannot be invoked directly.
+A task whose name starts with `_` is a helper task.
+
+Helpers may be used as dependencies, but they are hidden from normal listings and cannot be invoked directly.
 
 ```Onlyfile
 _prepare():
@@ -202,11 +281,13 @@ ci() & _prepare:
     cargo test
 ```
 
-Use this for internal steps that are useful inside workflows but noisy in `only` output.
+Helpers are useful for setup and internal workflow steps that should not become public commands.
 
-## 7. Pick tasks with guards
+## 7. Select implementations with guards
 
-A guard selects a task variant only when the current machine matches the probe.
+A task may have multiple variants.
+
+Guards select the first variant whose probe matches the current environment.
 
 ```Onlyfile
 test() ? @has("cargo-nextest"):
@@ -216,28 +297,55 @@ test():
     cargo test
 ```
 
-`only test` uses `cargo nextest run` when `cargo-nextest` exists on `PATH`; otherwise it falls back to `cargo test`.
+When `cargo-nextest` exists on `PATH`:
+
+```bash
+only test
+# cargo nextest run
+```
+
+Otherwise the unguarded variant is used:
+
+```bash
+only test
+# cargo test
+```
 
 Supported probes:
 
 | Probe | Matches when |
 | --- | --- |
-| `@os("macos")` / `@os("linux")` / `@os("windows")` | `std::env::consts::OS` equals the argument |
-| `@arch("x86_64")` / `@arch("aarch64")` | `std::env::consts::ARCH` equals the argument |
-| `@env("CI")` | the environment variable is set |
-| `@has("cargo")` | the command exists on `PATH` |
+| `@os("macos")` / `@os("linux")` / `@os("windows")` | current operating system matches |
+| `@arch("x86_64")` / `@arch("aarch64")` | current architecture matches |
+| `@env("CI")` | environment variable exists |
+| `@has("cargo")` | command exists on `PATH` |
 
 Selection rules:
 
-- The first matching guarded variant wins.
-- If no guarded variant matches, the unguarded variant is used as fallback.
-- If there is no fallback, the task is unavailable on this machine.
+1. the first matching guarded variant wins;
+2. if none match, the unguarded variant is used as fallback;
+3. without a matching guard or fallback, the task is unavailable.
 
-## 8. Use a specific shell when needed
+For example:
 
-By default, commands run through the built-in cross-platform `deno` shell. That is what gives `only` consistent behavior across platforms.
+```Onlyfile
+package() ? @os("windows"):
+    echo "Package Windows build"
 
-Use a task-level shell only when a command really needs a host shell:
+package() ? @os("macos"):
+    echo "Package macOS build"
+
+package():
+    echo "Package Unix build"
+```
+
+## 8. Choose a shell when needed
+
+Commands use the built-in cross-platform `deno` shell by default.
+
+This lets common commands behave consistently across macOS, Linux, and Windows without duplicating task definitions.
+
+Use a task-level shell only when a command specifically requires one:
 
 ```Onlyfile
 install() ? @os("windows") shell?=pwsh:
@@ -247,12 +355,26 @@ install():
     cargo install --path crates/cli --force
 ```
 
-`shell=` requires that exact shell. `shell?=` prefers that shell, but allows a known compatible fallback:
+`shell=` requires the exact shell:
 
-- `shell?=pwsh` can fall back to `powershell`
-- `shell?=bash` can fall back to `sh`
+```Onlyfile
+build() shell=bash:
+    ./scripts/build.sh
+```
 
-Accepted shell names:
+`shell?=` prefers the requested shell but allows a compatible fallback:
+
+```Onlyfile
+build() shell?=bash:
+    ./scripts/build.sh
+```
+
+Known fallbacks:
+
+- `pwsh` → `powershell`
+- `bash` → `sh`
+
+Accepted shells:
 
 | Shell | Behavior |
 | --- | --- |
@@ -262,7 +384,9 @@ Accepted shell names:
 | `pwsh` | runs PowerShell 7+ |
 | `powershell` | runs Windows PowerShell |
 
-You can also set a file-level default shell:
+### Set a file-level shell
+
+Use the `!shell` directive to change the default for the whole file:
 
 ```Onlyfile
 !shell bash
@@ -271,164 +395,232 @@ hello():
     echo "hello from bash"
 ```
 
-Resolution order is:
+Shell resolution order:
 
 1. task-level `shell=` or `shell?=`
 2. file-level `!shell`
-3. built-in default `deno`
+3. built-in `deno`
 
-## 9. Configure file-level behavior with directives
-
-Directives start with `!` and apply to the whole file.
-
-```Onlyfile
-!shell deno
-```
+Currently supported file-level directive:
 
 | Directive | Values | Default | Effect |
 | --- | --- | --- | --- |
-| `!shell` | shell name | `deno` | Sets the default shell for tasks without an explicit shell. |
+| `!shell` | shell name | `deno` | default shell for tasks without an explicit shell |
 
-Use `only --dry-run <task>` when you want to see which task variant and dependency stages will run after parameters are bound. Add `--full` when you also need the rendered commands.
+## 9. Organize tasks with namespaces
 
-## 10. Organize tasks with namespaces
-
-Namespaces group related tasks.
+Namespaces group related tasks without encoding the group into every task name.
 
 ```Onlyfile
-# Development workflow.
-[dev]
+# Frontend workflow.
+[front]
 
-# Build in development mode.
-build():
-    cargo build
-
-# Run in development mode.
-run():
-    cargo run
-
-# Release workflow.
-[rel]
-
-build():
-    cargo build --release
-```
-
-Run namespaced tasks by putting the namespace before the task:
-
-```bash
-only dev build
-only dev run
-only rel build
-```
-
-Run `only dev` to see help for just that namespace.
-
-## 11. A complete example
-
-```Onlyfile
-# Serve the dev site.
-serve(port="3000", host="127.0.0.1"):
-    echo "Serving on {{host}}:{{port}}"
-
-# Format and check the workspace.
+# Check the frontend.
 check():
-    cargo fmt --all --check
-    cargo check
+    pnpm lint
 
-# Prefer nextest when available.
-test() ? @has("cargo-nextest"):
-    cargo nextest run
+# Test the frontend.
+test():
+    pnpm test
 
+# Backend workflow.
+[back]
+
+# Check the backend.
+check():
+    cargo clippy
+
+# Test the backend.
 test():
     cargo test
-
-_package():
-    echo "Packaging release"
-
-publish():
-    echo "Publishing release"
-
-# Run the local CI workflow.
-ci() & check & test:
-    echo "CI complete"
-
-# Build first, then package and publish together.
-release() & check & (_package, publish):
-    echo "Release complete"
-
-# Development commands.
-[dev]
-
-build():
-    cargo build
-
-run():
-    cargo run
 ```
 
-Useful calls:
+Run namespaced tasks by placing the namespace before the task:
 
 ```bash
-only
-only serve
-only -s host=0.0.0.0 serve 8080
-only ci
-only release
-only dev build
+only front check
+only front test
+only back check
+only back test
 ```
 
-## Troubleshooting by symptom
+Run:
+
+```bash
+only front
+```
+
+to show help for that namespace.
+
+Namespaces may also be used in dependencies:
+
+```Onlyfile
+ci() & (front.ci, back.ci):
+    echo "CI complete"
+```
+
+## 10. Put it together
+
+The following is a simplified workflow from a Tauri-style frontend + Rust project:
+
+```Onlyfile
+# Run local CI.
+ci() & (front.ci, back.ci):
+    echo "CI complete"
+
+// =============== Frontend ===============
+
+[front]
+
+_prepare() ? @has("pnpm"):
+    pnpm install
+
+_prepare():
+    echo "pnpm is required"
+    exit 1
+
+check() & _prepare:
+    pnpm fmt:check
+    pnpm lint
+    pnpm build:check
+
+test() & _prepare:
+    pnpm test
+
+# Check and test in parallel.
+ci() & (check, test):
+    echo "Frontend CI complete"
+
+// =============== Backend ===============
+
+[back]
+
+_prepare() ? @has("cargo"):
+    echo "Rust toolchain ready"
+
+_prepare():
+    echo "cargo is required"
+    exit 1
+
+check() & _prepare:
+    cargo fmt --all -- --check
+    cargo check --workspace --all-targets
+    cargo clippy --workspace --all-targets -- -D warnings
+
+test() ? @has("cargo-nextest") & _prepare:
+    cargo nextest run --no-fail-fast
+
+test() & _prepare:
+    cargo test --workspace --all-targets
+
+# Check, then test.
+ci() & check & test:
+    echo "Backend CI complete"
+```
+
+Inspect it:
+
+```bash
+only --dry-run --full ci
+```
+
+A matching environment may resolve to:
+
+```text
+Dry run: ci()
+├─ stage 1 (parallel)
+│  ├─ front._prepare
+│  │  └─ pnpm install
+│  └─ back._prepare
+│     └─ echo "Rust toolchain ready"
+├─ stage 2 (parallel)
+│  ├─ front.check
+│  ├─ front.test
+│  └─ back.check
+├─ stage 3 (parallel)
+│  ├─ front.ci
+│  └─ back.test
+├─ stage 4
+│  └─ back.ci
+└─ stage 5
+   └─ ci
+```
+
+`only` resolves guards, deduplicates shared dependencies, builds the task graph, and schedules independent tasks together.
+
+You describe the dependency relationships; `only` derives the execution stages.
+
+## Troubleshooting
 
 ### `only` is using the wrong file
 
-Run:
+Print the discovered path:
 
 ```bash
 only -p
 ```
 
-If the path is not what you expect, pass one explicitly:
+Or pass the file explicitly:
 
 ```bash
 only -f ./Onlyfile ci
 ```
 
-### A task does not show up in `only`
+### A task does not appear in `only`
 
 Common causes:
 
-- the task starts with `_`, so it is a helper
-- the task is inside a namespace, so call it as `only <namespace> <task>`
-- the namespace only contains helper tasks, so the namespace is hidden from the top-level list
-- the file has parse or semantic errors, so the task was never registered
+- the task starts with `_`, so it is a helper;
+- the task belongs to a namespace;
+- the namespace contains only helper tasks and is hidden from the top-level list;
+- the file contains parse or semantic errors.
+
+For a namespaced task:
+
+```bash
+only <namespace> <task>
+```
 
 ### `-s` / `--set` does not work
 
-Check three things:
+Check that:
 
-1. The task signature declares the parameter.
-2. The command body uses `{{name}}`, not `$name`.
-3. `-s` is written before the task path:
+1. the task declares the parameter;
+2. the body uses `{{name}}`;
+3. `-s` appears before the task path.
 
 ```bash
 only -s port=8080 serve
 ```
 
-### A positional argument sets the wrong value
+### A positional argument sets the wrong parameter
 
-Positionals bind in signature order.
+Positionals bind in declaration order.
 
 ```Onlyfile
 serve(port="3000", host="127.0.0.1"):
     echo "{{host}}:{{port}}"
 ```
 
-`only serve 8080` sets `port`, not `host`. Use `-s host=...` when you want to skip earlier parameters.
+Therefore:
+
+```bash
+only serve 8080
+```
+
+sets `port`.
+
+To skip an earlier parameter, use a named override:
+
+```bash
+only -s host=0.0.0.0 serve
+```
 
 ### A guarded task is unavailable
 
-All guarded variants failed to match and there was no unguarded fallback. Add a fallback:
+No guarded variant matched and no unguarded fallback exists.
+
+Add a fallback when appropriate:
 
 ```Onlyfile
 test() ? @has("cargo-nextest"):
@@ -440,72 +632,69 @@ test():
 
 ### A shell is missing
 
-Use the built-in `deno` shell when possible. If you need a host shell, install it or pick one that exists on `PATH`.
-Use `shell?=` when the fallback is acceptable; use `shell=` when the exact shell is required.
+Prefer the built-in `deno` shell when possible.
+
+If a host shell is required:
+
+- install it;
+- choose another supported shell;
+- use `shell?=` when a compatible fallback is acceptable.
 
 ```Onlyfile
 build() shell?=bash:
     ./scripts/build.sh
 ```
 
-Accepted names are `deno`, `bash`, `sh`, `pwsh`, and `powershell`.
+Supported names are:
+
+```text
+deno
+bash
+sh
+pwsh
+powershell
+```
 
 ### Interpolation fails
 
-- `{{name}}` must match a declared parameter.
-- Every unescaped `{{` needs a matching `}}`.
-- Use `\{{` and `\}}` for literal braces.
+Check that:
 
-## Diagnostics reference
+- `{{name}}` matches a declared parameter;
+- every unescaped `{{` has a closing `}}`;
+- literal braces use `\{{` and `\}}`.
 
-`only` validates a file before running commands. Diagnostic codes are stable enough to search for.
+## Diagnostics
 
-### Parse diagnostics
+`only` validates an `Onlyfile` before executing commands.
 
-| Code | Meaning | Fix |
-| --- | --- | --- |
-| `parse.unexpected-token` | grammar did not expect the current token | check punctuation, indentation, and header shape |
-| `parse.malformed-directive` | broken `!` directive line | use `!shell <name>` |
-| `parse.malformed-namespace-header` | broken `[namespace]` line | keep the namespace header on its own line |
-| `parse.malformed-task-header` | broken task signature | use `name():` or `name(param="default"):` |
-
-### Lower diagnostics
+Diagnostics include a stable code where useful, so errors can be searched and referenced without depending on the exact wording.
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
-| `lower.invalid-directive` | unknown directive or invalid directive value | use `!shell <name>` |
-| `lower.invalid-task` | task header could not become a typed task | check parameters, guard, shell, and trailing colon |
-| `lower.invalid-namespace` | namespace header could not become a typed namespace | use plain `[name]` |
-| `lower.invalid-guard` | guard shape is invalid | use `@os(...)`, `@arch(...)`, `@env(...)`, or `@has(...)` |
+| `parse.unexpected-token` | unexpected syntax | check punctuation, indentation, and task header shape |
+| `parse.malformed-task-header` | malformed task declaration | use `name():` or `name(param="value"):` |
+| `semantic.duplicate-task` | duplicate task definition | rename it or make the guarded variant distinct |
+| `semantic.duplicate-parameter` | parameter appears more than once | rename one parameter |
+| `semantic.undefined-dependency` | referenced dependency does not exist | define it or fix the spelling |
+| `semantic.undefined-variable` | interpolation references an undeclared parameter | declare it or fix the name |
+| `semantic.ambiguous-guard` | multiple variants use the same guard | remove one or change the guard |
+| `semantic.slice-parameter-position` | slice parameter is not last | move `name..` to the end |
+| `semantic.slice-parameter-default` | slice parameter has a default | remove the default |
 
-### Semantic diagnostics
+### Runtime errors
 
-| Code | Meaning | Fix |
-| --- | --- | --- |
-| `semantic.duplicate-directive` | same directive appears twice | keep one copy |
-| `semantic.duplicate-task` | duplicate task signature | rename it or make the variant distinct |
-| `semantic.duplicate-parameter` | same parameter appears twice | rename one parameter |
-| `semantic.slice-parameter-position` | slice parameter is not the last parameter | move `name..` to the end |
-| `semantic.slice-parameter-default` | slice parameter has a default value | remove the default value |
-| `semantic.ambiguous-guard` | two variants use the same guard | remove one or change the guard |
-| `semantic.namespace-conflict` | namespace and global task share a name | rename one |
-| `semantic.undefined-dependency` | dependency task is not defined | define it or fix the spelling |
-| `semantic.undefined-variable` | `{{name}}` is not a parameter | declare the parameter or fix the interpolation |
-
-### Runtime messages
+Common runtime messages include:
 
 | Message shape | Meaning |
 | --- | --- |
-| `task '<name>' is not defined` | no such task in the selected file |
+| `task '<name>' is not defined` | no such task exists |
 | `helper task '<name>' cannot be invoked directly` | helpers are dependency-only |
-| `task '<name>' is not available for this environment` | guards did not match and no fallback exists |
+| `task '<name>' is not available for this environment` | no guarded variant matched and no fallback exists |
 | `missing required parameter '{{name}}'` | required parameter was not supplied |
-| `unknown parameter '<name>' for task '<task>'` | `-s` / `--set` targeted a non-existent parameter |
-| `duplicate parameter override '<name>'` | same override name appeared twice |
-| `cyclic dependency detected: ...` | dependencies form a cycle |
-| `unterminated interpolation expression` | `{{` has no closing `}}` |
-| `unsupported shell '<name>'` | shell name is not accepted |
-| `<shell> not found...` | selected shell is not available on `PATH` |
+| `unknown parameter '<name>' for task '<task>'` | `-s` targeted an undeclared parameter |
+| `cyclic dependency detected: ...` | dependency graph contains a cycle |
+| `unsupported shell '<name>'` | shell name is not supported |
+| `<shell> not found...` | selected shell is unavailable on `PATH` |
 
 ## Quick reference
 
@@ -517,30 +706,30 @@ Accepted names are `deno`, `bash`, `sh`, `pwsh`, and `powershell`.
 | `only <task>` | run a global task |
 | `only <namespace> <task>` | run a namespaced task |
 | `only --help` | show help |
-| `only <task> --help` | show task help, including parameters |
-| `only -p` / `only --path` | print discovered `Onlyfile` path |
+| `only <task> --help` | show task help and parameters |
+| `only -p` / `only --path` | print the discovered `Onlyfile` path |
 | `only -f <path>` / `only --file <path>` | use a specific file |
-| `only -s name=value <task>` / `only --set name=value <task>` | override a task parameter |
-| `only --dry-run <task>` | print the selected task plan without executing it; requires an explicit task |
-| `only --dry-run --full <task>` | include rendered commands in dry-run output |
+| `only -s name=value <task>` / `only --set name=value <task>` | override a parameter |
+| `only --dry-run <task>` | show the resolved execution plan |
+| `only --dry-run --full <task>` | include rendered commands |
 | `only -q <task>` / `only --quiet <task>` | hide progress lines while preserving command output |
 
-### Syntax pieces
+### Syntax
 
 | Syntax | Meaning |
 | --- | --- |
-| `// text` | standalone ordinary comment |
+| `// text` | ordinary comment |
 | `# text` | document the next task or namespace |
-| `!shell bash` | set file-level default shell |
+| `!shell bash` | set the file-level default shell |
 | `task():` | define a task |
-| `task(name="value"):` | define a parameter with default |
-| `task(name):` | define a required parameter |
-| `task(args..):` | define a slice parameter for remaining positional arguments |
+| `task(name):` | required parameter |
+| `task(name="value"):` | parameter with default |
+| `task(args..):` | slice parameter |
 | `{{name}}` | interpolate a parameter |
 | `_task():` | helper task |
-| `task() & a & b:` | serial dependencies |
+| `task() & a & b:` | ordered dependency stages |
 | `task() & a & (b, c):` | parallel dependency stage |
 | `task() ? @has("cmd"):` | guarded task variant |
-| `task() shell=bash:` | require an exact task shell |
-| `task() shell?=bash:` | prefer a task shell with fallback |
+| `task() shell=bash:` | require an exact shell |
+| `task() shell?=bash:` | prefer a shell with fallback |
 | `[namespace]` | namespace following tasks |
