@@ -24,7 +24,11 @@ ci() & check & test:
     echo "CI complete!"
 
 # Install the local only binary
-install() ? @os("windows") & _release_build shell~=pwsh:
+install()
+    ? @os("windows")
+    & _release_build
+    shell~=pwsh
+:
     | # Resolve paths and processes.
     | $installDir = Join-Path $env:LOCALAPPDATA "Programs\Only"
     | $installPath = Join-Path $installDir "only.exe"

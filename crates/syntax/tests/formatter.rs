@@ -28,10 +28,8 @@ fn wraps_long_task_headers() {
     assert_eq!(
         format_source(source).expect("valid source should format"),
         concat!(
-            "release(\n",
-            "    channel = \"nightly-build-with-a-long-channel-name\",\n",
-            "    destination = \"production-artifact-storage-with-a-long-name\",\n",
-            ")\n",
+            "release(channel = \"nightly-build-with-a-long-channel-name\", destination = ",
+            "\"production-artifact-storage-with-a-long-name\")\n",
             "    ? @has(\"cargo\")\n",
             "    & (sign, package)\n",
             "    & upload\n",
@@ -39,6 +37,16 @@ fn wraps_long_task_headers() {
             ":\n",
             "    echo unchanged  $HOME\n",
         )
+    );
+}
+
+#[test]
+fn wraps_headers_with_three_clauses() {
+    let source = "install() ? @os(\"windows\") & _release_build shell~=pwsh:\n    echo ok\n";
+
+    assert_eq!(
+        format_source(source).expect("valid source should format"),
+        "install()\n    ? @os(\"windows\")\n    & _release_build\n    shell~=pwsh\n:\n    echo ok\n"
     );
 }
 

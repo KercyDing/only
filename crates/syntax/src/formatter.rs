@@ -6,7 +6,6 @@ use crate::{
     TaskHeaderNode, TaskNode, snapshot,
 };
 
-const MAX_HEADER_WIDTH: usize = 88;
 const INDENT: &str = "    ";
 
 /// Formats an Onlyfile using the built-in deterministic style.
@@ -302,31 +301,11 @@ fn format_header(header: &TaskHeaderNode, source: &str) -> Result<String, String
         inline.push_str(clause);
     }
     inline.push(':');
-    if inline.chars().count() <= MAX_HEADER_WIDTH {
+    if clauses.len() < 3 {
         return Ok(inline);
     }
 
-    let params_need_lines = !parameters.is_empty() && prefix.chars().count() > MAX_HEADER_WIDTH;
-    let mut output = String::new();
-    if params_need_lines {
-        output.push_str(name.as_str());
-        output.push('(');
-        for parameter in &parameters {
-            output.push('\n');
-            output.push_str(INDENT);
-            output.push_str(parameter);
-            output.push(',');
-        }
-        output.push('\n');
-        output.push(')');
-    } else {
-        output.push_str(&prefix);
-    }
-
-    if clauses.is_empty() {
-        output.push(':');
-        return Ok(output);
-    }
+    let mut output = prefix;
     for clause in clauses {
         output.push('\n');
         output.push_str(INDENT);
