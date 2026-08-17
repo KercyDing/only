@@ -284,6 +284,19 @@ fn rejects_duplicate_directives() {
 }
 
 #[test]
+fn rejects_incompatible_version_before_cli_parsing() {
+    let source = "!version 0.1\nbuild():\n    echo build\n";
+    let error = parse_onlyfile(source).expect_err("current pre-0.1 runner should reject 0.1");
+
+    assert!(error.to_string().contains("error[version.incompatible]"));
+    assert!(
+        error
+            .to_string()
+            .contains("required range: >=0.1.0, <1.0.0")
+    );
+}
+
+#[test]
 fn assigns_following_tasks_to_current_namespace() {
     let source = "[frontend]
 build():
@@ -1339,6 +1352,25 @@ fn full_without_dry_run_reports_usage_error() {
     assert_ne!(output.status.code(), Some(0));
     assert!(plain_stdout.is_empty(), "stdout was: {plain_stdout}");
     assert!(plain_stderr.contains("--full requires --dry-run"));
+}
+
+#[test]
+fn path_does_not_parse_onlyfile() {
+    let _cwd_lock = cwd_lock();
+    let temp_dir = TempDir::new("path-with-incompatible-file");
+    let onlyfile_path = temp_dir.path().join("Onlyfile");
+    fs::write(&onlyfile_path, "!version 0.1\nbuild():\n    true\n")
+        .expect("Onlyfile should be written");
+
+    let output = Command::new(cli_binary_path())
+        .arg("--path")
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("CLI process should run");
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be valid utf-8");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert_same_canonical_path(Path::new(stdout.trim()), &onlyfile_path);
 }
 
 #[test]

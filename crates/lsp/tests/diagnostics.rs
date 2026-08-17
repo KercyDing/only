@@ -22,3 +22,17 @@ fn maps_semantic_diagnostics_into_lsp_values() {
             .all(|diagnostic| diagnostic.severity == LspDiagnosticSeverity::Error)
     );
 }
+
+#[test]
+fn reports_version_gate_diagnostic() {
+    let snapshot = DocumentSnapshot::new(
+        "file:///workspace/Onlyfile",
+        1,
+        "!version 0.1\nbuild():\n    true\n",
+    );
+    let diagnostics = diagnostics(&snapshot);
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "version.incompatible");
+    assert!(snapshot.semantic.document.tasks.is_empty());
+}

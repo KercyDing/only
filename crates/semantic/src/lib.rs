@@ -10,7 +10,9 @@ mod semantic_snapshot;
 mod symbols;
 mod validate;
 
-pub use analysis::{compile_document, compile_syntax};
+pub use analysis::{
+    compile_document, compile_document_for_runner, compile_document_with_runner, compile_syntax,
+};
 pub use ast::{
     CommandAst, DependencyAst, DirectiveAst, DocumentAst, GuardAst, InterpolationAst, NamespaceAst,
     ParamAst, TaskAst,

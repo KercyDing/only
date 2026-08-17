@@ -4,7 +4,7 @@ use only_diagnostic::{Diagnostic, DiagnosticSeverity};
 use only_engine::{
     ExecutionPlan, Invocation, build_execution_plan, try_build_execution_plan_in_dir,
 };
-use only_semantic::{SemanticSnapshot, compile_document};
+use only_semantic::{SemanticSnapshot, compile_document_for_runner};
 use std::path::PathBuf;
 
 #[derive(Debug)]
@@ -22,7 +22,7 @@ pub struct CliCompileResult {
 /// Returns:
 /// Semantic snapshot, diagnostics and execution plan for the first task.
 pub fn compile_for_cli(source: &str) -> CliCompileResult {
-    let compiled = compile_document(source);
+    let compiled = compile_document_for_runner(source, env!("CARGO_PKG_VERSION"));
     let task_name = compiled
         .document
         .tasks
@@ -74,7 +74,7 @@ pub fn compile_for_cli_input_in_dir(
     cli: &CliInput,
     working_dir: PathBuf,
 ) -> Result<CliCompileResult> {
-    let compiled = compile_document(source);
+    let compiled = compile_document_for_runner(source, env!("CARGO_PKG_VERSION"));
     ensure_no_error_diagnostics(&compiled.diagnostics)?;
     let (target, args) = resolve_target(&compiled, cli)?;
     let args = args.iter().map(String::as_str).collect();
@@ -147,7 +147,17 @@ pub(crate) fn ensure_no_error_diagnostics(diagnostics: &[Diagnostic]) -> Result<
     let errors = diagnostics
         .iter()
         .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
-        .map(|diagnostic| diagnostic.message.as_str())
+        .map(|diagnostic| {
+            if diagnostic.code.as_str().starts_with("version.") {
+                format!(
+                    "error[{}]: {}",
+                    diagnostic.code.as_str(),
+                    diagnostic.message
+                )
+            } else {
+                diagnostic.message.clone()
+            }
+        })
         .collect::<Vec<_>>();
 
     if errors.is_empty() {

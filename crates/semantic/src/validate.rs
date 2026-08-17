@@ -160,6 +160,7 @@ fn report_duplicate_directives(document: &DocumentAst, diagnostics: &mut Vec<Dia
 
     for directive in &document.directives {
         let (name, range) = match directive {
+            DirectiveAst::Version { .. } => continue,
             DirectiveAst::Shell { range, .. } => ("shell", *range),
         };
 

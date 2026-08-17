@@ -1,5 +1,8 @@
 use only_diagnostic::{Diagnostic, DiagnosticCode, DiagnosticPhase, DiagnosticSeverity};
-use only_syntax::{DirectiveNode, DocCommentNode, NamespaceNode, SyntaxSnapshot, TaskNode};
+use only_syntax::{
+    DirectiveNode, DocCommentNode, NamespaceNode, SyntaxKind, SyntaxSnapshot, TaskNode,
+    parse_version_requirement,
+};
 use smol_str::SmolStr;
 use text_size::TextRange;
 
@@ -17,18 +20,38 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
     let mut diagnostics = snapshot.diagnostics().to_vec();
     let mut current_namespace: Option<SmolStr> = None;
     let mut pending_doc: Option<SmolStr> = None;
+    let mut saw_declaration = false;
+    let mut saw_version = false;
 
     for node in document.syntax().children() {
         if let Some(directive) = DirectiveNode::cast(node.clone()) {
+            if directive.name().as_deref() == Some("version") {
+                if saw_version {
+                    diagnostics.push(semantic_error(
+                        "version.duplicate",
+                        "duplicate `!version` declaration",
+                        directive.range(),
+                    ));
+                } else if saw_declaration {
+                    diagnostics.push(semantic_error(
+                        "version.not-first-declaration",
+                        "`!version` must be the first non-comment declaration",
+                        directive.range(),
+                    ));
+                }
+                saw_version = true;
+            }
             match lower_directive(&directive) {
                 Ok(directive) => directives.push(directive),
                 Err(diagnostic) => diagnostics.push(diagnostic),
             }
+            saw_declaration = true;
             continue;
         }
 
         if let Some(doc_comment) = DocCommentNode::cast(node.clone()) {
             pending_doc = lower_doc_comment(&doc_comment);
+            saw_declaration = true;
             continue;
         }
 
@@ -40,14 +63,21 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
                 }
                 Err(diagnostic) => diagnostics.push(diagnostic),
             }
+            saw_declaration = true;
             continue;
         }
 
-        if let Some(task) = TaskNode::cast(node) {
+        if let Some(task) = TaskNode::cast(node.clone()) {
             match lower_task(&task, current_namespace.clone(), pending_doc.take()) {
                 Ok(task) => tasks.push(task),
                 Err(diagnostic) => diagnostics.push(diagnostic),
             }
+            saw_declaration = true;
+            continue;
+        }
+
+        if node.kind() == SyntaxKind::Error {
+            saw_declaration = true;
         }
     }
 
@@ -66,6 +96,26 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
 fn lower_directive(node: &DirectiveNode) -> Result<DirectiveAst, Diagnostic> {
     let range = node.range();
     match (node.name().as_deref(), node.value().as_deref()) {
+        (Some("version"), Some(_)) => {
+            let value = node.raw_value().ok_or_else(|| {
+                lower_error(
+                    "version.invalid-format",
+                    "version declaration must use `!version MAJOR.MINOR` with no leading zeros",
+                    range,
+                )
+            })?;
+            let requirement = parse_version_requirement(&value, range)?;
+            Ok(DirectiveAst::Version {
+                major: requirement.major,
+                minor: requirement.minor,
+                range,
+            })
+        }
+        (Some("version"), None) => Err(lower_error(
+            "version.invalid-format",
+            "version declaration must use `!version MAJOR.MINOR` with no leading zeros",
+            range,
+        )),
         (Some("shell"), Some(shell)) => Ok(DirectiveAst::Shell {
             shell: SmolStr::new(shell),
             range,
@@ -86,6 +136,16 @@ fn lower_directive(node: &DirectiveNode) -> Result<DirectiveAst, Diagnostic> {
             range,
         )),
     }
+}
+
+fn semantic_error(code: &str, message: &str, range: TextRange) -> Diagnostic {
+    Diagnostic::new(
+        DiagnosticSeverity::Error,
+        DiagnosticCode::new(code),
+        message,
+        DiagnosticPhase::Semantic,
+        range,
+    )
 }
 
 fn lower_doc_comment(node: &DocCommentNode) -> Option<SmolStr> {

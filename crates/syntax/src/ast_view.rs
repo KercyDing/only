@@ -247,6 +247,34 @@ impl DirectiveNode {
             .join(" ");
         (!value.is_empty()).then(|| SmolStr::new(value))
     }
+
+    /// Returns the directive value with its original internal punctuation.
+    pub fn raw_value(&self) -> Option<SmolStr> {
+        let mut non_trivia = 0usize;
+        let mut value = String::new();
+
+        for token in self
+            .syntax
+            .children_with_tokens()
+            .filter_map(|element| element.into_token())
+        {
+            if token.kind() == SyntaxKind::Newline {
+                break;
+            }
+            if !matches!(
+                token.kind(),
+                SyntaxKind::Whitespace | SyntaxKind::Indent | SyntaxKind::Comment
+            ) {
+                non_trivia += 1;
+            }
+            if non_trivia >= 2 && !(non_trivia == 2 && token.kind() == SyntaxKind::Ident) {
+                value.push_str(token.text());
+            }
+        }
+
+        let value = value.trim();
+        (!value.is_empty()).then(|| SmolStr::new(value))
+    }
 }
 
 impl DocCommentNode {

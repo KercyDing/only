@@ -115,7 +115,7 @@ pub fn load_onlyfile(path: Option<&Path>) -> Result<LoadedOnlyfile> {
 /// Returns:
 /// Parsed semantic document.
 pub fn parse_onlyfile(content: &str) -> Result<DocumentAst> {
-    let compiled = only_semantic::compile_document(content);
+    let compiled = only_semantic::compile_document_for_runner(content, env!("CARGO_PKG_VERSION"));
     ensure_no_error_diagnostics(&compiled.diagnostics)?;
     Ok(compiled.document)
 }
@@ -319,12 +319,20 @@ fn run_inner() -> Result<ExitCode> {
         return crate::upgrade::run_upgrade();
     }
 
-    let discovered = load_onlyfile(partial.onlyfile_path.as_deref())?;
+    let discovered = discover_onlyfile(partial.onlyfile_path.as_deref())?;
 
     if partial.print_discovered_path {
         println!("{}", discovered.path.display());
         return Ok(ExitCode::SUCCESS);
     }
+
+    let document = parse_onlyfile(&discovered.contents)?;
+    let discovered = LoadedOnlyfile {
+        path: discovered.path,
+        base_dir: discovered.base_dir,
+        contents: discovered.contents,
+        document,
+    };
 
     let cli = parse_with_onlyfile(&discovered.document)?;
 

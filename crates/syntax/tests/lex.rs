@@ -34,3 +34,16 @@ fn lexes_crlf_as_newlines_without_unknown_tokens() {
     );
     assert!(!kinds.contains(&SyntaxKind::Unknown));
 }
+
+#[test]
+fn accepts_bom_only_at_file_start() {
+    let leading = lex("\u{feff}!shell deno\n");
+    let interior = lex("!shell deno\n\u{feff}build():\n    true\n");
+
+    assert_eq!(leading[0].kind, SyntaxKind::Bom);
+    assert!(
+        interior
+            .iter()
+            .any(|token| token.kind == SyntaxKind::Unknown)
+    );
+}

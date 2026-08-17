@@ -107,9 +107,10 @@ pub(crate) fn select_task_variant<'a>(variants: &[&'a TaskAst]) -> Option<&'a Ta
 pub(crate) fn document_shell(document: &DocumentAst) -> Option<String> {
     document
         .directives
-        .first()
-        .map(|directive| match directive {
-            DirectiveAst::Shell { shell, .. } => shell.to_string(),
+        .iter()
+        .find_map(|directive| match directive {
+            DirectiveAst::Version { .. } => None,
+            DirectiveAst::Shell { shell, .. } => Some(shell.to_string()),
         })
 }
 

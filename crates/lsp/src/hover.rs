@@ -67,6 +67,8 @@ fn directive_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspH
         let name = directive.name()?.to_string();
         let value = directive.value().map(|value| value.to_string());
         let docs = match name.as_str() {
+            "version" => "Declares the minimum Onlyfile language capability required by this file."
+                .to_string(),
             "shell" => "Sets the default shell host used for task commands.".to_string(),
             _ => return None,
         };

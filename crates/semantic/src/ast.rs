@@ -10,7 +10,15 @@ pub struct DocumentAst {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DirectiveAst {
-    Shell { shell: SmolStr, range: TextRange },
+    Version {
+        major: u64,
+        minor: u64,
+        range: TextRange,
+    },
+    Shell {
+        shell: SmolStr,
+        range: TextRange,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

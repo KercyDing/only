@@ -6,6 +6,8 @@ use crate::{LexToken, SyntaxKind};
 
 #[derive(Logos, Debug, Clone, Copy, PartialEq, Eq)]
 enum RawTokenKind {
+    #[token("\u{feff}")]
+    Bom,
     #[token("shell?=")]
     ShellFallbackKw,
     #[token("shell")]
@@ -62,6 +64,8 @@ pub fn lex(source: &str) -> Vec<LexToken> {
         let start = TextSize::from(span.start as u32);
         let end = TextSize::from(span.end as u32);
         let kind = match result {
+            Ok(RawTokenKind::Bom) if span.start == 0 => SyntaxKind::Bom,
+            Ok(RawTokenKind::Bom) => SyntaxKind::Unknown,
             Ok(RawTokenKind::ShellFallbackKw) => SyntaxKind::ShellFallbackKw,
             Ok(RawTokenKind::ShellKw) => SyntaxKind::ShellKw,
             Ok(RawTokenKind::Bang) => SyntaxKind::Bang,

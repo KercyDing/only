@@ -3,7 +3,11 @@ use crate::SyntaxKind;
 pub(crate) fn is_trivia(kind: SyntaxKind) -> bool {
     matches!(
         kind,
-        SyntaxKind::Newline | SyntaxKind::Whitespace | SyntaxKind::Indent | SyntaxKind::Comment
+        SyntaxKind::Bom
+            | SyntaxKind::Newline
+            | SyntaxKind::Whitespace
+            | SyntaxKind::Indent
+            | SyntaxKind::Comment
     )
 }
 
