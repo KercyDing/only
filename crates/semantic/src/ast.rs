@@ -38,7 +38,7 @@ pub struct TaskAst {
     pub dependencies: Vec<DependencyAst>,
     pub shell: Option<SmolStr>,
     pub shell_fallback: bool,
-    pub commands: Vec<CommandAst>,
+    pub steps: Vec<TaskStepAst>,
     pub range: TextRange,
 }
 
@@ -108,6 +108,37 @@ pub struct DependencyAst {
 pub struct CommandAst {
     pub text: SmolStr,
     pub interpolations: Vec<InterpolationAst>,
+    pub range: TextRange,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskStepAst {
+    Command(CommandAst),
+    CommandBlock(CommandBlockAst),
+}
+
+impl TaskStepAst {
+    pub fn source(&self) -> &str {
+        match self {
+            Self::Command(command) => command.text.as_str(),
+            Self::CommandBlock(block) => block.source.as_str(),
+        }
+    }
+
+    pub fn interpolations(&self) -> &[InterpolationAst] {
+        match self {
+            Self::Command(command) => &command.interpolations,
+            Self::CommandBlock(block) => &block.interpolations,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommandBlockAst {
+    pub source: SmolStr,
+    pub interpolations: Vec<InterpolationAst>,
+    pub range: TextRange,
+    pub line_ranges: Vec<TextRange>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

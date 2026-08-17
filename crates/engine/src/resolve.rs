@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
 
-use only_semantic::{DirectiveAst, DocumentAst, TaskAst};
+use only_semantic::{DirectiveAst, DocumentAst, TaskAst, TaskStepAst};
 
 use crate::planner::PlanError;
 use crate::probe::probe_matches;
-use crate::{ExecutionNode, PlanParam};
+use crate::{ExecutionNode, ExecutionStep, PlanParam};
 
 pub(crate) type TaskIndex<'a> = HashMap<String, Vec<&'a TaskAst>>;
 
@@ -67,10 +67,18 @@ pub(crate) fn build_execution_nodes(
         .map(|(stage, task, bindings)| ExecutionNode {
             stage,
             name: task.qualified_name().to_string(),
-            commands: task
-                .commands
+            steps: task
+                .steps
                 .iter()
-                .map(|command| command.text.to_string())
+                .map(|step| match step {
+                    TaskStepAst::Command(command) => {
+                        ExecutionStep::Command(command.text.to_string())
+                    }
+                    TaskStepAst::CommandBlock(block) => ExecutionStep::CommandBlock {
+                        source: block.source.to_string(),
+                        line_count: block.line_ranges.len(),
+                    },
+                })
                 .collect(),
             params: task
                 .params

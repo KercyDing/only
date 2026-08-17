@@ -13,7 +13,7 @@ fn renders_interpolated_command_from_bound_parameters() {
         },
     );
 
-    let rendered = render_command(&plan.nodes[0].commands[0], &plan.nodes[0].params)
+    let rendered = render_command(plan.nodes[0].steps[0].source(), &plan.nodes[0].params)
         .expect("interpolation should succeed");
 
     assert_eq!(rendered, "echo world");
@@ -35,7 +35,7 @@ fn preserves_escaped_interpolation_braces() {
         },
     );
 
-    let rendered = render_command(&plan.nodes[0].commands[0], &plan.nodes[0].params)
+    let rendered = render_command(plan.nodes[0].steps[0].source(), &plan.nodes[0].params)
         .expect("escaped braces should render");
 
     assert_eq!(rendered, "echo {{name}} world");
@@ -57,7 +57,7 @@ fn keeps_even_backslashes_before_real_interpolation() {
         },
     );
 
-    let rendered = render_command(&plan.nodes[0].commands[0], &plan.nodes[0].params)
+    let rendered = render_command(plan.nodes[0].steps[0].source(), &plan.nodes[0].params)
         .expect("double backslashes should keep interpolation active");
 
     assert_eq!(rendered, r#"echo \\world"#);
@@ -75,7 +75,7 @@ fn reports_unterminated_interpolation() {
         },
     );
 
-    let error = render_command(&plan.nodes[0].commands[0], &plan.nodes[0].params)
+    let error = render_command(plan.nodes[0].steps[0].source(), &plan.nodes[0].params)
         .expect_err("invalid interpolation should fail");
 
     assert_eq!(error.to_string(), "missing `}}` in command");

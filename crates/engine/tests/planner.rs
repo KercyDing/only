@@ -109,6 +109,31 @@ fn carries_exact_task_shell_assignment_into_plan() {
 }
 
 #[test]
+fn keeps_command_blocks_as_single_plan_steps() {
+    let compiled = compile_document(
+        "!version 0.2\ntask():\n    | value={{value}}\n    | echo \"$value\"\n    echo done\n",
+    );
+    let plan = build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "task",
+            args: vec![],
+            overrides: vec![],
+        },
+    );
+
+    assert_eq!(plan.nodes[0].steps.len(), 2);
+    assert!(matches!(
+        &plan.nodes[0].steps[0],
+        only_engine::ExecutionStep::CommandBlock { line_count: 2, .. }
+    ));
+    assert_eq!(
+        plan.nodes[0].steps[0].source(),
+        "value={{value}}\necho \"$value\"\n"
+    );
+}
+
+#[test]
 fn binds_positional_and_named_parameter_inputs() {
     let compiled = compile_document("run(task, profile=\"dev\"):\n    echo {{task}} {{profile}}\n");
     let plan = try_build_execution_plan(
@@ -298,7 +323,7 @@ fn selects_guarded_root_task_variant_for_current_environment() {
 
     assert_eq!(plan.nodes.len(), 1);
     assert_eq!(plan.nodes[0].name, "probe");
-    assert_eq!(plan.nodes[0].commands, vec!["echo guarded"]);
+    assert_eq!(plan.nodes[0].steps[0].source(), "echo guarded");
 }
 
 #[test]
@@ -325,7 +350,7 @@ fn selects_guarded_dependency_variant_for_current_environment() {
 
     assert_eq!(plan.nodes.len(), 2);
     assert_eq!(plan.nodes[0].name, "build");
-    assert_eq!(plan.nodes[0].commands, vec!["echo guarded-build"]);
+    assert_eq!(plan.nodes[0].steps[0].source(), "echo guarded-build");
     assert_eq!(plan.nodes[1].name, "ci");
 }
 

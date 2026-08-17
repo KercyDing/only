@@ -9,7 +9,8 @@ use text_size::TextRange;
 use crate::interpolation::scan_interpolations;
 use crate::names::resolve_dependency_names;
 use crate::{
-    CommandAst, DependencyAst, DirectiveAst, DocumentAst, GuardAst, NamespaceAst, ParamAst, TaskAst,
+    CommandAst, CommandBlockAst, DependencyAst, DirectiveAst, DocumentAst, GuardAst, NamespaceAst,
+    ParamAst, TaskAst, TaskStepAst,
 };
 
 pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagnostic>) {
@@ -193,11 +194,22 @@ fn lower_task(
         })
         .collect();
 
-    let commands = node
-        .commands()
-        .map(|line| CommandAst {
-            interpolations: scan_interpolations(line.as_str()),
-            text: line,
+    let steps = node
+        .steps()
+        .map(|step| match step {
+            only_syntax::TaskStepNode::Command(command) => TaskStepAst::Command(CommandAst {
+                interpolations: scan_interpolations(command.text.as_str()),
+                text: command.text,
+                range: command.range,
+            }),
+            only_syntax::TaskStepNode::CommandBlock(block) => {
+                TaskStepAst::CommandBlock(CommandBlockAst {
+                    interpolations: scan_interpolations(block.source.as_str()),
+                    source: block.source,
+                    range: block.range,
+                    line_ranges: block.line_ranges,
+                })
+            }
         })
         .collect();
 
@@ -210,7 +222,7 @@ fn lower_task(
         dependencies,
         shell: header.shell,
         shell_fallback: header.shell_fallback,
-        commands,
+        steps,
         range,
     })
 }

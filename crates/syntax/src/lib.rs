@@ -12,8 +12,8 @@ mod trivia;
 mod version;
 
 pub use ast_view::{
-    DirectiveNode, DocCommentNode, DocumentNode, NamespaceNode, TaskDependencyRef, TaskHeaderInfo,
-    TaskNode,
+    DirectiveNode, DocCommentNode, DocumentNode, NamespaceNode, TaskCommandBlockNode,
+    TaskCommandNode, TaskDependencyRef, TaskHeaderInfo, TaskNode, TaskStepNode,
 };
 pub use cst::{SyntaxNode, SyntaxToken};
 pub use kind::SyntaxKind;

@@ -113,6 +113,18 @@ fn returns_interpolation_hover() {
 }
 
 #[test]
+fn returns_command_block_hover_with_shell() {
+    let source = "!version 0.2\n!shell bash\nbuild():\n    | echo ok\n    | echo done\n";
+    let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
+    let offset = TextSize::from(source.find("| echo ok").expect("block should exist") as u32);
+
+    let info = hover(&snapshot, offset).expect("block hover should exist");
+
+    assert_eq!(info.kind, LspHoverKind::CommandBlock);
+    assert_eq!(info.signature, "block (bash)");
+}
+
+#[test]
 fn returns_dependency_hover_for_serial_chain_entries() {
     let source = concat!(
         "# Formatting task.\n",

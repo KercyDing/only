@@ -41,6 +41,19 @@ fn builds_folding_ranges_for_namespace_and_task_blocks() {
 }
 
 #[test]
+fn builds_folding_range_for_command_block() {
+    let compiled = compile_document(
+        "!version 0.2\ntask():\n    | if true; then\n    |     echo ok\n    | fi\n",
+    );
+
+    assert!(
+        folding_ranges(&compiled)
+            .iter()
+            .any(|range| { range.kind == FoldingRangeKind::CommandBlock })
+    );
+}
+
+#[test]
 fn returns_hover_for_task_at_offset() {
     let source = "# Start the app.\nserve(port=\"3000\"):\n    echo {{port}}\n";
     let compiled = compile_document(source);

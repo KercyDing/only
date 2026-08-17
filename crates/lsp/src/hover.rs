@@ -19,6 +19,7 @@ pub enum LspHoverKind {
     Namespace,
     ShellOperator,
     Task,
+    CommandBlock,
 }
 
 /// Host-facing hover payload for editor protocol conversion.
@@ -52,9 +53,45 @@ pub fn hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> 
         .or_else(|| probe_hover(snapshot, offset))
         .or_else(|| shell_operator_hover(snapshot, offset))
         .or_else(|| interpolation_hover(snapshot, offset))
+        .or_else(|| command_block_hover(snapshot, offset))
         .or_else(|| dependency_hover(snapshot, offset))
         .or_else(|| task_hover(snapshot, offset))
         .or_else(|| namespace_hover(snapshot, offset))
+}
+
+fn command_block_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {
+    let default_shell = snapshot
+        .semantic
+        .document
+        .directives
+        .iter()
+        .find_map(|directive| match directive {
+            only_semantic::DirectiveAst::Shell { shell, .. } => Some(shell.as_str()),
+            only_semantic::DirectiveAst::Version { .. } => None,
+        })
+        .unwrap_or("deno");
+
+    for task in &snapshot.semantic.document.tasks {
+        let shell = task.shell.as_deref().unwrap_or(default_shell);
+        for step in &task.steps {
+            let only_semantic::TaskStepAst::CommandBlock(block) = step else {
+                continue;
+            };
+            if !block.range.contains(offset) {
+                continue;
+            }
+            return Some(LspHover {
+                kind: LspHoverKind::CommandBlock,
+                name: "command block".to_string(),
+                signature: format!("block ({shell})"),
+                docs: Some(format!("Runs this block once with `{shell}`.")),
+                range: block.range,
+                container_name: Some(task.qualified_name().to_string()),
+            });
+        }
+    }
+
+    None
 }
 
 fn directive_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {

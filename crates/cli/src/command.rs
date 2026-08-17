@@ -204,13 +204,14 @@ fn render_dry_run(plan: &ExecutionPlan, variant: &TaskAst, full: bool) -> Result
 
         for (node_index, node) in stage_nodes.iter().enumerate() {
             let node_last = node_index + 1 == stage_nodes.len();
-            let node_label = if full {
+            let has_block = node.steps.iter().any(only_engine::ExecutionStep::is_block);
+            let node_label = if full || has_block {
                 node.name.to_string()
             } else {
-                render_node_summary(&node.name, node.commands.len())
+                render_node_summary(&node.name, node.steps.len())
             };
             push_tree_line(&mut output, stage_prefix, node_last, &node_label);
-            if !full {
+            if !full && !has_block {
                 continue;
             }
 
@@ -220,15 +221,50 @@ fn render_dry_run(plan: &ExecutionPlan, variant: &TaskAst, full: bool) -> Result
                 format!("{stage_prefix}│  ")
             };
 
-            for (command_index, command) in node.commands.iter().enumerate() {
-                let rendered = render_command(command, &node.params)
+            let shell = node
+                .shell
+                .as_deref()
+                .or(plan.shell.as_deref())
+                .unwrap_or("deno");
+            for (step_index, step) in node.steps.iter().enumerate() {
+                let rendered = render_command(step.source(), &node.params)
                     .map_err(|error| OnlyError::runtime(error.to_string()))?;
-                push_tree_line(
-                    &mut output,
-                    &command_prefix,
-                    command_index + 1 == node.commands.len(),
-                    &rendered,
-                );
+                let step_last = step_index + 1 == node.steps.len();
+                match step {
+                    only_engine::ExecutionStep::Command(_) => {
+                        push_tree_line(&mut output, &command_prefix, step_last, &rendered);
+                    }
+                    only_engine::ExecutionStep::CommandBlock { line_count, .. } if !full => {
+                        push_tree_line(
+                            &mut output,
+                            &command_prefix,
+                            step_last,
+                            &format!("block ({shell}, {line_count} lines)"),
+                        );
+                    }
+                    only_engine::ExecutionStep::CommandBlock { .. } => {
+                        push_tree_line(
+                            &mut output,
+                            &command_prefix,
+                            step_last,
+                            &format!("block ({shell})"),
+                        );
+                        let line_prefix = if step_last {
+                            format!("{command_prefix}   ")
+                        } else {
+                            format!("{command_prefix}│  ")
+                        };
+                        let lines = rendered.lines().collect::<Vec<_>>();
+                        for (line_index, line) in lines.iter().enumerate() {
+                            push_tree_line(
+                                &mut output,
+                                &line_prefix,
+                                line_index + 1 == lines.len(),
+                                line,
+                            );
+                        }
+                    }
+                }
             }
         }
 

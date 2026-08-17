@@ -13,7 +13,7 @@ pub use error::EngineError;
 pub use interpolate::interpolate as render_command;
 pub use planner::try_build_execution_plan;
 pub use planner::{
-    ExecutionNode, ExecutionPlan, Invocation, PlanError, PlanParam, build_execution_plan,
-    select_root_task_variant, try_build_execution_plan_in_dir,
+    ExecutionNode, ExecutionPlan, ExecutionStep, Invocation, PlanError, PlanParam,
+    build_execution_plan, select_root_task_variant, try_build_execution_plan_in_dir,
 };
 pub use runtime::{RuntimeOptions, run_plan, run_plan_with_options};

@@ -1,3 +1,4 @@
+use only_syntax::TaskStepNode;
 use only_syntax::snapshot;
 
 #[test]
@@ -134,4 +135,72 @@ fn preserves_multiple_install_task_variants_in_repo_onlyfile() {
         .count();
 
     assert_eq!(install_count, 2);
+}
+
+#[test]
+fn groups_consecutive_block_lines() {
+    let source = "task():\n    | if true; then\n    |     echo ok\n    | fi\n    echo after\n";
+    let syntax = snapshot(source);
+    let task = syntax.document().tasks().next().expect("task should exist");
+    let steps = task.steps().collect::<Vec<_>>();
+
+    assert_eq!(steps.len(), 2);
+    let TaskStepNode::CommandBlock(block) = &steps[0] else {
+        panic!("first step should be a block");
+    };
+    assert_eq!(block.source, "if true; then\n    echo ok\nfi\n");
+    assert_eq!(block.line_ranges.len(), 3);
+    assert_eq!(block.marker_ranges.len(), 3);
+    assert_eq!(
+        &source[usize::from(block.range.start())..usize::from(block.range.end())],
+        "    | if true; then\n    |     echo ok\n    | fi\n"
+    );
+    let TaskStepNode::Command(command) = &steps[1] else {
+        panic!("second step should be a command");
+    };
+    assert_eq!(command.text, "echo after");
+}
+
+#[test]
+fn recognizes_only_delimited_block_markers() {
+    let syntax = snapshot(
+        "task():\n    | first\n    |\tsecond\n    |\n    |  indented\n    |tee output\n    || fallback\n",
+    );
+    let task = syntax.document().tasks().next().expect("task should exist");
+    let steps = task.steps().collect::<Vec<_>>();
+
+    assert_eq!(steps.len(), 3);
+    let TaskStepNode::CommandBlock(block) = &steps[0] else {
+        panic!("first step should be a block");
+    };
+    assert_eq!(block.source, "first\nsecond\n\n indented\n");
+    assert!(matches!(&steps[1], TaskStepNode::Command(command) if command.text == "|tee output"));
+    assert!(matches!(&steps[2], TaskStepNode::Command(command) if command.text == "|| fallback"));
+}
+
+#[test]
+fn blank_lines_and_comments_split_blocks() {
+    let syntax = snapshot("task():\n    | first\n\n    | second\n    // separator\n    | third\n");
+    let task = syntax.document().tasks().next().expect("task should exist");
+    let steps = task.steps().collect::<Vec<_>>();
+
+    assert_eq!(steps.len(), 3);
+    assert!(
+        steps
+            .iter()
+            .all(|step| matches!(step, TaskStepNode::CommandBlock(_)))
+    );
+}
+
+#[test]
+fn normalizes_crlf_block_newlines() {
+    let syntax = snapshot("task():\r\n    | echo one\r\n    | echo two\r\n");
+    let task = syntax.document().tasks().next().expect("task should exist");
+    let steps = task.steps().collect::<Vec<_>>();
+    let TaskStepNode::CommandBlock(block) = &steps[0] else {
+        panic!("step should be a block");
+    };
+
+    assert_eq!(block.source, "echo one\necho two\n");
+    assert_eq!(block.line_ranges.len(), 2);
 }

@@ -28,7 +28,7 @@ fn reports_version_gate_diagnostic() {
     let snapshot = DocumentSnapshot::new(
         "file:///workspace/Onlyfile",
         1,
-        "!version 0.2\nbuild():\n    true\n",
+        "!version 0.3\nbuild():\n    true\n",
     );
     let diagnostics = diagnostics(&snapshot);
 

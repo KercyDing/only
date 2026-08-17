@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 - 2026-08-17
+
+- Added `|` command blocks that run consecutive marked lines in one shell process.
+- Added block-aware dry-run output, runtime errors, folding, hover, and VS Code syntax support.
 
 ## 0.1.0 - 2026-08-17
 

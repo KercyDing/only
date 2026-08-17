@@ -1,3 +1,5 @@
+!version 0.2
+
 // This file demonstrates the full task shape.
 # Say hello with an optional name.
 hello(name="world"):
@@ -26,6 +28,11 @@ test():
 # Build the release binary.
 build():
     cargo build --release
+
+# Run a multi-line script in one shell process.
+block-demo() shell?=bash:
+    | value="shared"
+    | echo "block value: $value"
 
 # Hidden helper used by release packaging tasks.
 _prepare_dist():

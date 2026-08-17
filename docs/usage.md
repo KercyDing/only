@@ -390,6 +390,22 @@ Known fallbacks:
 - `pwsh` → `powershell`
 - `bash` → `sh`
 
+### Run several lines in one shell
+
+Prefix consecutive lines with `|` to run them as one command block:
+
+```Onlyfile
+!version 0.2
+
+check() shell=bash:
+    | if test -f Cargo.lock; then
+    |     cargo check --locked
+    | fi
+    echo "done"
+```
+
+The block shares shell state. The following ordinary command starts a new shell. Use a bare `|` for a blank line inside a block.
+
 Accepted shells:
 
 | Shell | Behavior |
@@ -744,7 +760,7 @@ Common runtime messages include:
 | --- | --- |
 | `// text` | ordinary comment |
 | `# text` | document the next task or namespace |
-| `!version 0.1` | require language capability 0.1 or newer within 0.x |
+| `!version 0.2` | require language capability 0.2 or newer within 0.x |
 | `!shell bash` | set the file-level default shell |
 | `task():` | define a task |
 | `task(name):` | required parameter |
@@ -757,4 +773,5 @@ Common runtime messages include:
 | `task() ? @has("cmd"):` | guarded task variant |
 | `task() shell=bash:` | require an exact shell |
 | `task() shell?=bash:` | prefer a shell with fallback |
+| `| command` | continue a command block in one shell process |
 | `[namespace]` | namespace following tasks |

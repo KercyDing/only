@@ -13,6 +13,7 @@ use crate::DocumentSnapshot;
 pub enum LspFoldingRangeKind {
     Namespace,
     Task,
+    CommandBlock,
 }
 
 /// Host-facing folding range entry for one source item.
@@ -43,6 +44,7 @@ pub fn folding_ranges(snapshot: &DocumentSnapshot) -> Vec<LspFoldingRange> {
             kind: match range.kind {
                 only_semantic::FoldingRangeKind::Namespace => LspFoldingRangeKind::Namespace,
                 only_semantic::FoldingRangeKind::Task => LspFoldingRangeKind::Task,
+                only_semantic::FoldingRangeKind::CommandBlock => LspFoldingRangeKind::CommandBlock,
             },
         })
         .collect()

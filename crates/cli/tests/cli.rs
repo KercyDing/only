@@ -244,7 +244,7 @@ fn parses_minimal_document_shape() {
         DirectiveAst::Shell { ref shell, .. } if shell == "sh"
     ));
     assert_eq!(
-        task(&document, None, "hello").commands[0].text,
+        task(&document, None, "hello").steps[0].source(),
         "echo hello"
     );
     assert_eq!(document.namespaces[0].name, "tools");
@@ -287,13 +287,13 @@ fn rejects_duplicate_directives() {
 
 #[test]
 fn rejects_incompatible_version_before_cli_parsing() {
-    let source = "!version 0.2\nbuild():\n    echo build\n";
-    let error = parse_onlyfile(source).expect_err("0.1 runner should reject 0.2");
+    let source = "!version 0.3\nbuild():\n    echo build\n";
+    let error = parse_onlyfile(source).expect_err("0.2 runner should reject 0.3");
 
     let message = error.to_string();
     assert!(!message.contains("version.incompatible"));
-    assert!(message.starts_with("this Onlyfile needs `only` 0.2 or newer (not 1.x)"));
-    assert!(message.contains("needed: >=0.2.0, <1.0.0"));
+    assert!(message.starts_with("this Onlyfile needs `only` 0.3 or newer (not 1.x)"));
+    assert!(message.contains("needed: >=0.3.0, <1.0.0"));
 }
 
 #[test]
@@ -1177,7 +1177,7 @@ fn version_gate_prevents_execution() {
     let onlyfile_path = root.join("Onlyfile");
     fs::write(
         &onlyfile_path,
-        "!version 0.2\ncheck():\n    echo executed > marker.txt\n",
+        "!version 0.3\ncheck():\n    echo executed > marker.txt\n",
     )
     .expect("Onlyfile should be written");
     let input = CliInput {
@@ -1195,7 +1195,7 @@ fn version_gate_prevents_execution() {
 
     let error = run_with(input).expect_err("incompatible version should stop execution");
 
-    assert!(error.to_string().contains("needs `only` 0.2"));
+    assert!(error.to_string().contains("needs `only` 0.3"));
     assert!(!root.join("marker.txt").exists());
     fs::remove_dir_all(root).expect("temp tree should be removed");
 }
@@ -1337,6 +1337,45 @@ fn dry_run_full_expands_rendered_commands_without_execution() {
 }
 
 #[test]
+fn dry_run_renders_command_blocks() {
+    let _cwd_lock = cwd_lock();
+    let temp_dir = TempDir::new("dry-run-block-cli");
+    let onlyfile_path = temp_dir.path().join("Onlyfile");
+    fs::write(
+        &onlyfile_path,
+        "!version 0.2\nprobe(name=\"world\") shell=bash:\n    | echo \"hello {{name}}\"\n    | echo done\n    echo after\n",
+    )
+    .expect("Onlyfile should be written");
+
+    let compact = Command::new(cli_binary_path())
+        .args(["--dry-run", "probe"])
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("compact dry-run should run");
+    let compact_stdout =
+        strip_ansi(&String::from_utf8(compact.stdout).expect("stdout should be valid utf-8"));
+
+    assert_eq!(compact.status.code(), Some(0));
+    assert!(compact_stdout.contains("block (bash, 2 lines)"));
+    assert!(compact_stdout.contains("echo after"));
+    assert!(!compact_stdout.contains("| echo"));
+
+    let full = Command::new(cli_binary_path())
+        .args(["--dry-run", "--full", "probe"])
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("full dry-run should run");
+    let full_stdout =
+        strip_ansi(&String::from_utf8(full.stdout).expect("stdout should be valid utf-8"));
+
+    assert_eq!(full.status.code(), Some(0));
+    assert!(full_stdout.contains("block (bash)"));
+    assert!(full_stdout.contains("echo \"hello world\""));
+    assert!(full_stdout.contains("echo done"));
+    assert!(!full_stdout.contains("| echo"));
+}
+
+#[test]
 fn dry_run_without_task_reports_target_error() {
     let _cwd_lock = cwd_lock();
     let temp_dir = TempDir::new("dry-run-missing-target");
@@ -1389,7 +1428,7 @@ fn path_does_not_parse_onlyfile() {
     let _cwd_lock = cwd_lock();
     let temp_dir = TempDir::new("path-with-incompatible-file");
     let onlyfile_path = temp_dir.path().join("Onlyfile");
-    fs::write(&onlyfile_path, "!version 0.2\nbuild():\n    true\n")
+    fs::write(&onlyfile_path, "!version 0.3\nbuild():\n    true\n")
         .expect("Onlyfile should be written");
 
     let output = Command::new(cli_binary_path())

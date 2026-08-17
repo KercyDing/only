@@ -1,6 +1,6 @@
 use text_size::TextRange;
 
-use crate::SemanticSnapshot;
+use crate::{SemanticSnapshot, TaskStepAst};
 
 /// Kind of folding range produced for editor consumers.
 ///
@@ -13,6 +13,7 @@ use crate::SemanticSnapshot;
 pub enum FoldingRangeKind {
     Namespace,
     Task,
+    CommandBlock,
 }
 
 /// Foldable source span for editor consumers.
@@ -45,6 +46,23 @@ pub fn folding_ranges(snapshot: &SemanticSnapshot) -> Vec<FoldingRange> {
             kind: FoldingRangeKind::Task,
         })
         .collect::<Vec<_>>();
+
+    ranges.extend(snapshot.document.tasks.iter().flat_map(|task| {
+        task.steps.iter().filter_map(|step| match step {
+            TaskStepAst::CommandBlock(block) if block.line_ranges.len() > 1 => Some(FoldingRange {
+                range: TextRange::new(
+                    block.line_ranges[0].start(),
+                    block
+                        .line_ranges
+                        .last()
+                        .expect("multi-line block must have a final line")
+                        .end(),
+                ),
+                kind: FoldingRangeKind::CommandBlock,
+            }),
+            _ => None,
+        })
+    }));
 
     for namespace in &snapshot.document.namespaces {
         let namespace_range = snapshot

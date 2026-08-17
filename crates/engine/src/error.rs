@@ -17,6 +17,16 @@ pub enum EngineError {
         command: String,
         code: ExitCode,
     },
+    CommandBlockFailed {
+        task: String,
+        step: usize,
+        total: usize,
+        code: ExitCode,
+    },
+    CommandBlockStartFailed {
+        shell: String,
+        source: Box<EngineError>,
+    },
     Interpolation(String),
     ShellNotFound(String),
     UnsupportedShell(String),
@@ -41,6 +51,21 @@ impl fmt::Display for EngineError {
                 f,
                 "task '{task}' failed at step [{step}/{total}]\ncommand: `{command}`\nexit code: {code:?}"
             ),
+            Self::CommandBlockFailed {
+                task,
+                step,
+                total,
+                code,
+            } => write!(
+                f,
+                "task '{task}' failed at step [{step}/{total}]\ncommand block failed\nexit code: {code:?}"
+            ),
+            Self::CommandBlockStartFailed { shell, source } => {
+                write!(
+                    f,
+                    "could not start command block with shell '{shell}'\n{source}"
+                )
+            }
             Self::Interpolation(message) => f.write_str(message),
             Self::ShellNotFound(message) => f.write_str(message),
             Self::UnsupportedShell(shell) => write!(f, "shell '{shell}' is not supported"),
@@ -54,12 +79,39 @@ impl fmt::Display for EngineError {
     }
 }
 
+pub(crate) fn command_block_failed(
+    task: &str,
+    step_index: usize,
+    step_total: usize,
+    code: ExitCode,
+) -> EngineError {
+    EngineError::CommandBlockFailed {
+        task: task.to_string(),
+        step: step_index,
+        total: step_total,
+        code,
+    }
+}
+
 impl std::error::Error for EngineError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io { source, .. } => Some(source),
+            Self::CommandBlockStartFailed { source, .. } => Some(source.as_ref()),
             _ => None,
         }
+    }
+}
+
+pub(crate) fn command_block_start_failed(shell: &str, source: EngineError) -> EngineError {
+    match source {
+        EngineError::ShellNotFound(_)
+        | EngineError::UnsupportedShell(_)
+        | EngineError::Io { .. } => EngineError::CommandBlockStartFailed {
+            shell: shell.to_string(),
+            source: Box::new(source),
+        },
+        other => other,
     }
 }
 

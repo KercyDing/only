@@ -63,6 +63,29 @@ pub struct TaskNode {
     syntax: SyntaxNode,
 }
 
+/// One executable step read from a task body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskStepNode {
+    Command(TaskCommandNode),
+    CommandBlock(TaskCommandBlockNode),
+}
+
+/// One ordinary command line and its source range.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskCommandNode {
+    pub text: SmolStr,
+    pub range: TextRange,
+}
+
+/// Consecutive block lines assembled into one shell input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskCommandBlockNode {
+    pub source: SmolStr,
+    pub range: TextRange,
+    pub line_ranges: Vec<TextRange>,
+    pub marker_ranges: Vec<TextRange>,
+}
+
 /// One dependency reference parsed from a task header.
 ///
 /// Args:
@@ -462,18 +485,142 @@ impl TaskNode {
     /// Returns:
     /// Command lines in source order, without leading indentation.
     pub fn commands(&self) -> std::vec::IntoIter<SmolStr> {
-        self.syntax
-            .text()
-            .to_string()
-            .lines()
-            .skip(1)
-            .map(str::trim_start)
-            .filter(|line| !line.is_empty())
-            .filter(|line| !line.starts_with("//"))
-            .map(SmolStr::new)
+        self.steps()
+            .map(|step| match step {
+                TaskStepNode::Command(command) => command.text,
+                TaskStepNode::CommandBlock(block) => block.source,
+            })
             .collect::<Vec<_>>()
             .into_iter()
     }
+
+    /// Iterates executable task steps with source ranges.
+    pub fn steps(&self) -> std::vec::IntoIter<TaskStepNode> {
+        task_body_steps(&self.syntax)
+            .collect::<Vec<_>>()
+            .into_iter()
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BodyLine<'a> {
+    text: &'a str,
+    start: usize,
+    end_with_newline: usize,
+}
+
+fn task_body_steps(node: &SyntaxNode) -> impl Iterator<Item = TaskStepNode> + '_ {
+    let source = node.text().to_string();
+    let body_start = first_line_end(&source).unwrap_or(source.len());
+    let base = usize::from(node.text_range().start());
+    let lines = body_lines(&source, body_start).collect::<Vec<_>>();
+    let mut steps = Vec::new();
+    let mut index = 0usize;
+
+    while index < lines.len() {
+        let line = lines[index];
+        let trimmed = line.text.trim_start_matches([' ', '\t']);
+        if block_line_content(trimmed).is_none() {
+            if !trimmed.is_empty() && !trimmed.starts_with("//") {
+                let indent = line.text.len() - trimmed.len();
+                steps.push(TaskStepNode::Command(TaskCommandNode {
+                    text: SmolStr::new(trimmed),
+                    range: text_range(
+                        base + line.start + indent,
+                        base + line.start + line.text.len(),
+                    ),
+                }));
+            }
+            index += 1;
+            continue;
+        }
+
+        let block_start = line.start;
+        let mut block_end = line.end_with_newline;
+        let mut block_source = String::new();
+        let mut line_ranges = Vec::new();
+        let mut marker_ranges = Vec::new();
+
+        while index < lines.len() {
+            let block_line = lines[index];
+            let trimmed = block_line.text.trim_start_matches([' ', '\t']);
+            let Some(content) = block_line_content(trimmed) else {
+                break;
+            };
+            let indent = block_line.text.len() - trimmed.len();
+            let marker_start = base + block_line.start + indent;
+            block_source.push_str(content);
+            block_source.push('\n');
+            line_ranges.push(text_range(
+                base + block_line.start,
+                base + block_line.start + block_line.text.len(),
+            ));
+            marker_ranges.push(text_range(marker_start, marker_start + 1));
+            block_end = block_line.end_with_newline;
+            index += 1;
+        }
+
+        steps.push(TaskStepNode::CommandBlock(TaskCommandBlockNode {
+            source: SmolStr::new(block_source),
+            range: text_range(base + block_start, base + block_end),
+            line_ranges,
+            marker_ranges,
+        }));
+    }
+
+    steps.into_iter()
+}
+
+fn first_line_end(source: &str) -> Option<usize> {
+    let (index, newline) = source
+        .char_indices()
+        .find(|(_, character)| matches!(character, '\n' | '\r'))?;
+    let newline_len = if newline == '\r' && source.as_bytes().get(index + 1) == Some(&b'\n') {
+        2
+    } else {
+        1
+    };
+    Some(index + newline_len)
+}
+
+fn body_lines(source: &str, start: usize) -> impl Iterator<Item = BodyLine<'_>> {
+    let mut cursor = start;
+    std::iter::from_fn(move || {
+        if cursor >= source.len() {
+            return None;
+        }
+        let line_start = cursor;
+        let rest = &source[cursor..];
+        let newline = rest
+            .char_indices()
+            .find(|(_, character)| matches!(character, '\n' | '\r'));
+        let (line_end, newline_len) = match newline {
+            Some((offset, '\r')) if rest.as_bytes().get(offset + 1) == Some(&b'\n') => {
+                (cursor + offset, 2)
+            }
+            Some((offset, _)) => (cursor + offset, 1),
+            None => (source.len(), 0),
+        };
+        cursor = line_end + newline_len;
+        Some(BodyLine {
+            text: &source[line_start..line_end],
+            start: line_start,
+            end_with_newline: cursor,
+        })
+    })
+}
+
+fn block_line_content(line: &str) -> Option<&str> {
+    let rest = line.strip_prefix('|')?;
+    match rest.as_bytes().first() {
+        None => Some(rest),
+        Some(b' ' | b'\t') => Some(&rest[1..]),
+        Some(_) => None,
+    }
+}
+
+fn text_range(start: usize, end: usize) -> TextRange {
+    TextRange::new(TextSize::from(start as u32), TextSize::from(end as u32))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

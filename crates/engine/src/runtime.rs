@@ -4,7 +4,7 @@ use std::process::ExitCode;
 use std::sync::mpsc;
 use std::thread;
 
-use crate::error::command_failed;
+use crate::error::{command_block_failed, command_block_start_failed, command_failed};
 use crate::interpolate::interpolate;
 use crate::process::{OutputChunk, OutputStream};
 use crate::shell::{run_command, run_command_inherit};
@@ -195,11 +195,11 @@ fn run_node(
         }
     });
 
-    let total_commands = node.commands.len();
+    let total_steps = node.steps.len();
     let mut task_error = None;
 
-    for (index, command) in node.commands.iter().enumerate() {
-        let rendered = match interpolate(command, &node.params) {
+    for (index, step) in node.steps.iter().enumerate() {
+        let rendered = match interpolate(step.source(), &node.params) {
             Ok(rendered) => rendered,
             Err(error) => {
                 task_error = Some(error);
@@ -217,19 +217,21 @@ fn run_node(
         ) {
             Ok(code) => code,
             Err(error) => {
-                task_error = Some(error);
+                task_error = Some(if step.is_block() {
+                    command_block_start_failed(shell, error)
+                } else {
+                    error
+                });
                 break;
             }
         };
 
         if code != ExitCode::SUCCESS {
-            task_error = Some(command_failed(
-                &node.name,
-                index + 1,
-                total_commands,
-                &rendered,
-                code,
-            ));
+            task_error = Some(if step.is_block() {
+                command_block_failed(&node.name, index + 1, total_steps, code)
+            } else {
+                command_failed(&node.name, index + 1, total_steps, &rendered, code)
+            });
             break;
         }
     }
@@ -265,21 +267,26 @@ fn run_node_inherit(
     working_dir: &std::path::Path,
     default_shell: Option<&str>,
 ) -> Result<(), EngineError> {
-    let total_commands = node.commands.len();
+    let total_steps = node.steps.len();
 
-    for (index, command) in node.commands.iter().enumerate() {
-        let rendered = interpolate(command, &node.params)?;
+    for (index, step) in node.steps.iter().enumerate() {
+        let rendered = interpolate(step.source(), &node.params)?;
         let shell = node.shell.as_deref().or(default_shell).unwrap_or("deno");
-        let code = run_command_inherit(&rendered, working_dir, shell, node.shell_fallback)?;
+        let code = run_command_inherit(&rendered, working_dir, shell, node.shell_fallback)
+            .map_err(|error| {
+                if step.is_block() {
+                    command_block_start_failed(shell, error)
+                } else {
+                    error
+                }
+            })?;
 
         if code != ExitCode::SUCCESS {
-            return Err(command_failed(
-                &node.name,
-                index + 1,
-                total_commands,
-                &rendered,
-                code,
-            ));
+            return Err(if step.is_block() {
+                command_block_failed(&node.name, index + 1, total_steps, code)
+            } else {
+                command_failed(&node.name, index + 1, total_steps, &rendered, code)
+            });
         }
     }
 

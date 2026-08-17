@@ -22,10 +22,29 @@ pub enum Invocation<'a> {
 pub struct ExecutionNode {
     pub stage: usize,
     pub name: String,
-    pub commands: Vec<String>,
+    pub steps: Vec<ExecutionStep>,
     pub params: Vec<PlanParam>,
     pub shell: Option<String>,
     pub shell_fallback: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExecutionStep {
+    Command(String),
+    CommandBlock { source: String, line_count: usize },
+}
+
+impl ExecutionStep {
+    pub fn source(&self) -> &str {
+        match self {
+            Self::Command(command) => command,
+            Self::CommandBlock { source, .. } => source,
+        }
+    }
+
+    pub fn is_block(&self) -> bool {
+        matches!(self, Self::CommandBlock { .. })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

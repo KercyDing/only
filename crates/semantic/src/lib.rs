@@ -14,8 +14,8 @@ pub use analysis::{
     compile_document, compile_document_for_runner, compile_document_with_runner, compile_syntax,
 };
 pub use ast::{
-    CommandAst, DependencyAst, DirectiveAst, DocumentAst, GuardAst, InterpolationAst, NamespaceAst,
-    ParamAst, TaskAst,
+    CommandAst, CommandBlockAst, DependencyAst, DirectiveAst, DocumentAst, GuardAst,
+    InterpolationAst, NamespaceAst, ParamAst, TaskAst, TaskStepAst,
 };
 pub use document_symbols::{DocumentSymbol, DocumentSymbolKind, document_symbols};
 pub use folding::{FoldingRange, FoldingRangeKind, folding_ranges};
