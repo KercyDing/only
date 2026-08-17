@@ -40,6 +40,22 @@ Or use a specific file:
 only -f ./examples/Onlyfile hello
 ```
 
+### Declare the language version
+
+An Onlyfile can declare the minimum language capability it requires:
+
+```Onlyfile
+!version 0.1
+
+# Minimal task.
+hello():
+    echo "hello from only"
+```
+
+The declaration is optional. Existing files without it remain valid and do not produce a warning.
+
+`!version` accepts exactly `MAJOR.MINOR`, must be the first declaration, and may only be preceded by a UTF-8 BOM, blank lines, or `//` comments. For example, `!version 0.1` accepts stable runners from `0.1.0` through later `0.x` releases and rejects `1.x`. `!version 0.0` is invalid because the compatibility protocol begins at `0.1`.
+
 ## 2. Add task descriptions
 
 Use `//` for ordinary comments.
@@ -401,10 +417,11 @@ Shell resolution order:
 2. file-level `!shell`
 3. built-in `deno`
 
-Currently supported file-level directive:
+Supported file-level directives:
 
 | Directive | Values | Default | Effect |
 | --- | --- | --- | --- |
+| `!version` | `MAJOR.MINOR` | none | require a compatible Onlyfile language version |
 | `!shell` | shell name | `deno` | default shell for tasks without an explicit shell |
 
 ## 9. Organize tasks with namespaces
@@ -667,7 +684,7 @@ Check that:
 
 `only` validates an `Onlyfile` before executing commands.
 
-Diagnostics include a stable code where useful, so errors can be searched and referenced without depending on the exact wording.
+LSP diagnostics include stable codes so editor integrations do not depend on exact wording. The CLI keeps errors concise and does not print these internal codes.
 
 | Code | Meaning | Fix |
 | --- | --- | --- |
@@ -680,6 +697,13 @@ Diagnostics include a stable code where useful, so errors can be searched and re
 | `semantic.ambiguous-guard` | multiple variants use the same guard | remove one or change the guard |
 | `semantic.slice-parameter-position` | slice parameter is not last | move `name..` to the end |
 | `semantic.slice-parameter-default` | slice parameter has a default | remove the default |
+| `version.invalid-format` | version is not exactly `MAJOR.MINOR` | use two numeric components without leading zeros |
+| `version.pre-0.1-unsupported` | declaration uses `0.0` | omit the declaration or require `0.1` |
+| `version.range-overflow` | a version component or upper bound overflows | use a representable version |
+| `version.duplicate` | multiple version declarations exist | keep only the first declaration |
+| `version.not-first-declaration` | version follows another declaration | move it to the file header |
+| `version.incompatible` | runner is outside the required range | install a compatible runner |
+| `version.invalid-runner-version` | runner version is not valid SemVer | reinstall a stable runner build |
 
 ### Runtime errors
 
@@ -720,6 +744,7 @@ Common runtime messages include:
 | --- | --- |
 | `// text` | ordinary comment |
 | `# text` | document the next task or namespace |
+| `!version 0.1` | require language capability 0.1 or newer within 0.x |
 | `!shell bash` | set the file-level default shell |
 | `task():` | define a task |
 | `task(name):` | required parameter |

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.1.0 - 2026-08-17
+
+- Added the `!version MAJOR.MINOR` bootstrap scanner and same-major language capability checks.
+- Added dedicated format, placement, duplicate, runner, overflow, and incompatibility diagnostics across the CLI and LSP.
+- Preserved unversioned Onlyfiles, added parse-failure guidance, and kept `only --path` independent from Onlyfile parsing.
+
 ## 0.0.7 - 2026-07-13
 
 - Added slice parameters with `name..` syntax to capture all remaining positional arguments.

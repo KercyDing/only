@@ -147,17 +147,7 @@ pub(crate) fn ensure_no_error_diagnostics(diagnostics: &[Diagnostic]) -> Result<
     let errors = diagnostics
         .iter()
         .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
-        .map(|diagnostic| {
-            if diagnostic.code.as_str().starts_with("version.") {
-                format!(
-                    "error[{}]: {}",
-                    diagnostic.code.as_str(),
-                    diagnostic.message
-                )
-            } else {
-                diagnostic.message.clone()
-            }
-        })
+        .map(|diagnostic| diagnostic.message.as_str())
         .collect::<Vec<_>>();
 
     if errors.is_empty() {

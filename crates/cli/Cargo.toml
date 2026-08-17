@@ -23,8 +23,8 @@ anstyle.workspace = true
 clap.workspace = true
 deno_task_shell.workspace = true
 miette.workspace = true
-only-diagnostic = { version = "0.0.7", path = "../diagnostic" }
-only-engine = { version = "0.0.7", path = "../engine" }
-only-semantic = { version = "0.0.7", path = "../semantic" }
+only-diagnostic = { version = "0.1.0", path = "../diagnostic" }
+only-engine = { version = "0.1.0", path = "../engine" }
+only-semantic = { version = "0.1.0", path = "../semantic" }
 self-replace.workspace = true
 tokio.workspace = true

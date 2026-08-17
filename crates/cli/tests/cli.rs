@@ -285,15 +285,13 @@ fn rejects_duplicate_directives() {
 
 #[test]
 fn rejects_incompatible_version_before_cli_parsing() {
-    let source = "!version 0.1\nbuild():\n    echo build\n";
-    let error = parse_onlyfile(source).expect_err("current pre-0.1 runner should reject 0.1");
+    let source = "!version 0.2\nbuild():\n    echo build\n";
+    let error = parse_onlyfile(source).expect_err("0.1 runner should reject 0.2");
 
-    assert!(error.to_string().contains("error[version.incompatible]"));
-    assert!(
-        error
-            .to_string()
-            .contains("required range: >=0.1.0, <1.0.0")
-    );
+    let message = error.to_string();
+    assert!(!message.contains("version.incompatible"));
+    assert!(message.starts_with("Onlyfile requires only 0.2 or newer within 0.x"));
+    assert!(message.contains("required range: >=0.2.0, <1.0.0"));
 }
 
 #[test]
@@ -1171,6 +1169,36 @@ fn run_with_rejects_error_diagnostics_before_execution() {
 }
 
 #[test]
+fn version_gate_prevents_execution() {
+    let _cwd_lock = cwd_lock();
+    let root = temp_case_dir("only-version-gate-side-effect");
+    let onlyfile_path = root.join("Onlyfile");
+    fs::write(
+        &onlyfile_path,
+        "!version 0.2\ncheck():\n    echo executed > marker.txt\n",
+    )
+    .expect("Onlyfile should be written");
+    let input = CliInput {
+        onlyfile_path: Some(onlyfile_path),
+        print_discovered_path: false,
+        dry_run: false,
+        dry_run_full: false,
+        quiet: false,
+        top_level_help_requested: false,
+        top_level_version_requested: false,
+        top_level_upgrade_requested: false,
+        task_path: vec!["check".into()],
+        parameter_overrides: vec![],
+    };
+
+    let error = run_with(input).expect_err("incompatible version should stop execution");
+
+    assert!(error.to_string().contains("requires only 0.2"));
+    assert!(!root.join("marker.txt").exists());
+    fs::remove_dir_all(root).expect("temp tree should be removed");
+}
+
+#[test]
 fn rejects_direct_helper_task_execution_via_run_with() {
     let _cwd_lock = cwd_lock();
     let root = temp_case_dir("only-runtime-helper-task");
@@ -1359,7 +1387,7 @@ fn path_does_not_parse_onlyfile() {
     let _cwd_lock = cwd_lock();
     let temp_dir = TempDir::new("path-with-incompatible-file");
     let onlyfile_path = temp_dir.path().join("Onlyfile");
-    fs::write(&onlyfile_path, "!version 0.1\nbuild():\n    true\n")
+    fs::write(&onlyfile_path, "!version 0.2\nbuild():\n    true\n")
         .expect("Onlyfile should be written");
 
     let output = Command::new(cli_binary_path())
