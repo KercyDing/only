@@ -22,17 +22,32 @@ fn builds_document_symbols_for_namespaces_and_tasks() {
 
 #[test]
 fn builds_folding_ranges_for_namespace_and_task_blocks() {
-    let compiled = compile_document(
-        "[dev]\nserve():\n    echo one\n    echo two\nbuild():\n    cargo build\n",
+    let source = concat!(
+        "!version 0.3\n",
+        "[dev] {\n",
+        "    serve():\n",
+        "        echo one\n",
+        "        echo two\n",
+        "    build():\n",
+        "        cargo build\n",
+        "}\n",
+        "root():\n",
+        "    true\n",
     );
+    let compiled = compile_document(source);
 
     let ranges = folding_ranges(&compiled);
+    let namespace = ranges
+        .iter()
+        .find(|range| range.kind == FoldingRangeKind::Namespace)
+        .expect("namespace range should exist");
+    let close_end = source.find("}\n").expect("close brace should exist") + 2;
 
-    assert!(
-        ranges
-            .iter()
-            .any(|range| range.kind == FoldingRangeKind::Namespace)
+    assert_eq!(
+        usize::from(namespace.range.start()),
+        source.find("[dev]").expect("namespace should exist")
     );
+    assert_eq!(usize::from(namespace.range.end()), close_end);
     assert!(
         ranges
             .iter()

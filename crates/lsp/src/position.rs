@@ -26,6 +26,18 @@ pub fn range_to_lsp_range(source: &str, range: TextRange) -> Range {
     )
 }
 
+pub fn folding_range_to_lsp_range(source: &str, range: TextRange) -> Range {
+    let inclusive_end = if range.is_empty() {
+        range.end()
+    } else {
+        range.end() - TextSize::from(1)
+    };
+    Range::new(
+        offset_to_position(source, range.start()),
+        offset_to_position(source, inclusive_end),
+    )
+}
+
 pub fn position_to_offset(source: &str, position: Position) -> TextSize {
     let mut current_line = 0u32;
     let mut current_col = 0u32;
@@ -63,7 +75,9 @@ pub fn position_to_offset(source: &str, position: Position) -> TextSize {
 
 #[cfg(test)]
 mod tests {
-    use super::{offset_to_position, position_to_offset, range_to_lsp_range};
+    use super::{
+        folding_range_to_lsp_range, offset_to_position, position_to_offset, range_to_lsp_range,
+    };
     use text_size::{TextRange, TextSize};
     use tower_lsp::lsp_types::Position;
 
@@ -86,5 +100,16 @@ mod tests {
 
         assert_eq!(lsp.start, Position::new(0, 0));
         assert_eq!(lsp.end, Position::new(0, 5));
+    }
+
+    #[test]
+    fn keeps_next_declaration_out_of_fold() {
+        let source = "test():\n    cargo nextest\n\ntest():\n    cargo test\n";
+        let next_task = source.rfind("test():").expect("second task should exist");
+        let range = TextRange::new(TextSize::from(0), TextSize::from(next_task as u32));
+        let lsp = folding_range_to_lsp_range(source, range);
+
+        assert_eq!(lsp.start, Position::new(0, 0));
+        assert_eq!(lsp.end.line, 2);
     }
 }

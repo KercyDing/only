@@ -14,7 +14,7 @@ use tower_lsp::lsp_types::{
 };
 use tower_lsp::{Client, LanguageServer as LanguageServerProtocol, LspService, Server};
 
-use crate::position::{position_to_offset, range_to_lsp_range};
+use crate::position::{folding_range_to_lsp_range, position_to_offset, range_to_lsp_range};
 use crate::{
     DocumentSnapshot, LspDiagnostic as HostDiagnostic, LspDiagnosticSeverity,
     LspDocumentSymbolKind, LspHover, LspSemanticTokenKind, semantic_tokens,
@@ -135,7 +135,7 @@ impl Backend {
         crate::folding_ranges(&snapshot)
             .into_iter()
             .map(|range| {
-                let protocol_range = range_to_lsp_range(&snapshot.source, range.range);
+                let protocol_range = folding_range_to_lsp_range(&snapshot.source, range.range);
                 FoldingRange {
                     start_line: protocol_range.start.line,
                     start_character: Some(protocol_range.start.character),
