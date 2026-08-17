@@ -1,7 +1,8 @@
 use text_size::TextSize;
 
 use crate::{
-    DocumentSnapshot, LspDiagnostic, LspDocumentSymbol, LspFoldingRange, LspHover, WorkspaceState,
+    DocumentSnapshot, LspCompletion, LspDiagnostic, LspDocumentSymbol, LspFoldingRange, LspHover,
+    WorkspaceState,
 };
 
 /// Thin LSP host facade around the in-memory workspace state.
@@ -97,6 +98,11 @@ impl LanguageServer {
     /// Host-facing hover payload when one item matches the offset.
     pub fn hover(&self, uri: &str, offset: TextSize) -> Option<LspHover> {
         self.workspace.hover(uri, offset)
+    }
+
+    /// Returns completion items for one document and source offset.
+    pub fn completions(&self, uri: &str, offset: TextSize) -> Option<Vec<LspCompletion>> {
+        self.workspace.completions(uri, offset)
     }
 
     /// Returns mapped document symbols for one document.

@@ -3,21 +3,22 @@ use std::sync::RwLock;
 
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
+    CompletionItem, CompletionItemKind, CompletionOptions, CompletionResponse, CompletionTextEdit,
     Diagnostic, DiagnosticSeverity, DidChangeTextDocumentParams, DidCloseTextDocumentParams,
     DidOpenTextDocumentParams, DocumentFormattingParams, DocumentRangeFormattingParams,
     DocumentSymbolResponse, FoldingRange, FoldingRangeProviderCapability, Hover, HoverContents,
-    HoverParams, InitializeParams, InitializeResult, InitializedParams, MarkupContent, MarkupKind,
-    MessageType, OneOf, Position, SemanticToken, SemanticTokenType, SemanticTokens,
-    SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensParams, SemanticTokensResult,
-    SemanticTokensServerCapabilities, ServerCapabilities, SymbolInformation, SymbolKind,
-    TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
+    HoverParams, InitializeParams, InitializeResult, InitializedParams, InsertTextFormat,
+    MarkupContent, MarkupKind, MessageType, OneOf, Position, SemanticToken, SemanticTokenType,
+    SemanticTokens, SemanticTokensFullOptions, SemanticTokensLegend, SemanticTokensParams,
+    SemanticTokensResult, SemanticTokensServerCapabilities, ServerCapabilities, SymbolInformation,
+    SymbolKind, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
 };
 use tower_lsp::{Client, LanguageServer as LanguageServerProtocol, LspService, Server};
 
 use crate::position::{folding_range_to_lsp_range, position_to_offset, range_to_lsp_range};
 use crate::{
-    DocumentSnapshot, LspDiagnostic as HostDiagnostic, LspDiagnosticSeverity,
-    LspDocumentSymbolKind, LspHover, LspSemanticTokenKind, semantic_tokens,
+    DocumentSnapshot, LspCompletionKind, LspDiagnostic as HostDiagnostic, LspDiagnosticSeverity,
+    LspDocumentSymbolKind, LspHover, LspSemanticTokenKind, completions, semantic_tokens,
 };
 
 pub async fn run_stdio() {
@@ -116,6 +117,30 @@ impl Backend {
         })
     }
 
+    fn completion_for_uri(&self, uri: &Url, position: Position) -> Option<CompletionResponse> {
+        let snapshot = self.snapshot_for_uri(uri)?;
+        let offset = position_to_offset(&snapshot.source, position);
+        let items = completions(&snapshot.source, offset)
+            .into_iter()
+            .map(|item| CompletionItem {
+                label: item.label,
+                kind: Some(match item.kind {
+                    LspCompletionKind::Directive => CompletionItemKind::KEYWORD,
+                    LspCompletionKind::Guard => CompletionItemKind::FUNCTION,
+                }),
+                detail: Some(item.detail),
+                insert_text: Some(item.insert_text.clone()),
+                insert_text_format: Some(InsertTextFormat::SNIPPET),
+                text_edit: Some(CompletionTextEdit::Edit(TextEdit {
+                    range: range_to_lsp_range(&snapshot.source, item.replace_range),
+                    new_text: item.insert_text,
+                })),
+                ..CompletionItem::default()
+            })
+            .collect();
+        Some(CompletionResponse::Array(items))
+    }
+
     fn symbols_for_uri(&self, uri: &Url) -> Vec<SymbolInformation> {
         let Some(snapshot) = self.snapshot_for_uri(uri) else {
             return Vec::new();
@@ -178,6 +203,10 @@ impl LanguageServerProtocol for Backend {
                 text_document_sync: Some(TextDocumentSyncCapability::Kind(
                     TextDocumentSyncKind::FULL,
                 )),
+                completion_provider: Some(CompletionOptions {
+                    trigger_characters: Some(vec!["!".to_string(), "@".to_string()]),
+                    ..CompletionOptions::default()
+                }),
                 hover_provider: Some(tower_lsp::lsp_types::HoverProviderCapability::Simple(true)),
                 document_symbol_provider: Some(OneOf::Left(true)),
                 folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
@@ -244,6 +273,16 @@ impl LanguageServerProtocol for Backend {
         Ok(self.hover_for_uri(
             &params.text_document_position_params.text_document.uri,
             params.text_document_position_params.position,
+        ))
+    }
+
+    async fn completion(
+        &self,
+        params: tower_lsp::lsp_types::CompletionParams,
+    ) -> Result<Option<CompletionResponse>> {
+        Ok(self.completion_for_uri(
+            &params.text_document_position.text_document.uri,
+            params.text_document_position.position,
         ))
     }
 

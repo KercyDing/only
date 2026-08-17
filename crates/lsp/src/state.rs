@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use text_size::TextSize;
 
 use crate::{
-    DocumentSnapshot, LspDiagnostic, LspDocumentSymbol, LspFoldingRange, LspHover, diagnostics,
-    folding, hover, symbols,
+    DocumentSnapshot, LspCompletion, LspDiagnostic, LspDocumentSymbol, LspFoldingRange, LspHover,
+    completion, diagnostics, folding, hover, symbols,
 };
 
 /// In-memory document state for one LSP session.
@@ -89,6 +89,12 @@ impl WorkspaceState {
     pub fn hover(&self, uri: &str, offset: TextSize) -> Option<LspHover> {
         self.snapshot(uri)
             .and_then(|snapshot| hover::hover(snapshot, offset))
+    }
+
+    /// Returns completion items for the current source at an offset.
+    pub fn completions(&self, uri: &str, offset: TextSize) -> Option<Vec<LspCompletion>> {
+        self.snapshot(uri)
+            .map(|snapshot| completion::completions(&snapshot.source, offset))
     }
 
     /// Returns document symbols from the current snapshot.

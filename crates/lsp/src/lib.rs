@@ -1,3 +1,4 @@
+mod completion;
 mod diagnostics;
 mod document_snapshot;
 mod folding;
@@ -9,6 +10,7 @@ mod server;
 mod state;
 mod symbols;
 
+pub use completion::{LspCompletion, LspCompletionKind, completions};
 pub use diagnostics::{LspDiagnostic, LspDiagnosticSeverity, diagnostics};
 pub use document_snapshot::DocumentSnapshot;
 pub use folding::{LspFoldingRange, LspFoldingRangeKind, folding_ranges};
