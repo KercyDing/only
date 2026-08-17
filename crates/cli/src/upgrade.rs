@@ -303,7 +303,7 @@ fn parse_version_parts(version: &str) -> Result<(u64, u64, u64)> {
 
     if parts.next().is_some() {
         return Err(OnlyError::runtime(format!(
-            "unsupported release version '{version}'; expected MAJOR.MINOR.PATCH"
+            "invalid release version '{version}'\nexpected: A.B.C"
         )));
     }
 
@@ -313,38 +313,34 @@ fn parse_version_parts(version: &str) -> Result<(u64, u64, u64)> {
 fn parse_version_component(component: Option<&str>, version: &str, label: &str) -> Result<u64> {
     let Some(component) = component else {
         return Err(OnlyError::runtime(format!(
-            "unsupported release version '{version}'; missing {label} component"
+            "release version '{version}' has no {label} number"
         )));
     };
 
     component.parse::<u64>().map_err(|_| {
         OnlyError::runtime(format!(
-            "unsupported release version '{version}'; invalid {label} component"
+            "release version '{version}' has an invalid {label} number"
         ))
     })
 }
 
 fn parse_latest_release_tag(body: &str) -> Result<String> {
     let Some(key_start) = body.find("\"tag_name\"") else {
-        return Err(OnlyError::runtime(
-            "GitHub latest release response did not include tag_name",
-        ));
+        return Err(OnlyError::runtime("GitHub returned no release version"));
     };
     let after_key = &body[key_start + "\"tag_name\"".len()..];
     let Some(colon_start) = after_key.find(':') else {
-        return Err(OnlyError::runtime(
-            "GitHub latest release tag_name was malformed",
-        ));
+        return Err(OnlyError::runtime("GitHub returned invalid release data"));
     };
     let after_colon = after_key[colon_start + 1..].trim_start();
     let Some(stripped) = after_colon.strip_prefix('"') else {
         return Err(OnlyError::runtime(
-            "GitHub latest release tag_name was not a string",
+            "GitHub returned an invalid release version",
         ));
     };
     let Some(end) = stripped.find('"') else {
         return Err(OnlyError::runtime(
-            "GitHub latest release tag_name string was unterminated",
+            "GitHub returned an invalid release version",
         ));
     };
 
@@ -396,7 +392,7 @@ fn run_text_command(command: &str, args: &[&str]) -> Result<String> {
 
     if !output.status.success() {
         return Err(OnlyError::runtime(format!(
-            "failed to fetch latest release metadata with {command}"
+            "failed to get release information with {command}"
         )));
     }
 
@@ -502,7 +498,7 @@ fn ensure_directory_writable(path: &Path, install_path: &Path) -> Result<()> {
 
 fn install_not_writable_message(path: &Path, install_path: &Path) -> &'static str {
     if path == Path::new("/usr/local/bin") && install_path == Path::new("/usr/local/bin/only") {
-        "current install path is not writable; reinstall with sudo"
+        "the install directory is not writable\nhelp: run the upgrade with sudo"
     } else {
         "install directory is not writable"
     }
@@ -538,13 +534,17 @@ fn make_executable(path: &Path) -> Result<()> {
 
     let mut permissions = fs::metadata(path)
         .map_err(|error| {
-            OnlyError::io_with_path("failed to read staged binary", path.to_path_buf(), error)
+            OnlyError::io_with_path(
+                "failed to read the downloaded file",
+                path.to_path_buf(),
+                error,
+            )
         })?
         .permissions();
     permissions.set_mode(0o755);
     fs::set_permissions(path, permissions).map_err(|error| {
         OnlyError::io_with_path(
-            "failed to mark staged binary executable",
+            "failed to make the downloaded file executable",
             path.to_path_buf(),
             error,
         )

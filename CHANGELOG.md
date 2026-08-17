@@ -7,6 +7,7 @@
 - Added the `!version MAJOR.MINOR` bootstrap scanner and same-major language capability checks.
 - Added dedicated format, placement, duplicate, runner, overflow, and incompatibility diagnostics across the CLI and LSP.
 - Preserved unversioned Onlyfiles, added parse-failure guidance, and kept `only --path` independent from Onlyfile parsing.
+- Simplified errors and stopped the CLI from repeating an error or showing later errors caused by it.
 
 ## 0.0.7 - 2026-07-13
 

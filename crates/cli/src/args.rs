@@ -153,9 +153,9 @@ where
 
         match text {
             "-f" | "--file" => {
-                let value = iter.next().ok_or_else(|| {
-                    OnlyError::parse(format!("missing value for global option '{text}'"))
-                })?;
+                let value = iter
+                    .next()
+                    .ok_or_else(|| OnlyError::parse(format!("option '{text}' needs a value")))?;
                 onlyfile_path = Some(PathBuf::from(value));
             }
             "-p" | "--path" => {
@@ -171,9 +171,9 @@ where
                 quiet = true;
             }
             "-s" | "--set" => {
-                let value = iter.next().ok_or_else(|| {
-                    OnlyError::parse(format!("missing value for global option '{text}'"))
-                })?;
+                let value = iter
+                    .next()
+                    .ok_or_else(|| OnlyError::parse(format!("option '{text}' needs a value")))?;
                 parameter_overrides.push(parse_override(&os_string_to_string(value, text)?)?);
             }
             "-h" | "--help" => {
@@ -228,14 +228,14 @@ where
 fn parse_override(item: &str) -> Result<(String, String)> {
     let Some((name, value)) = item.split_once('=') else {
         return Err(OnlyError::parse(format!(
-            "invalid parameter override '{item}'; expected NAME=VALUE"
+            "invalid value '{item}' for --set\nhelp: use NAME=VALUE"
         )));
     };
 
     let name = name.trim();
     if name.is_empty() {
         return Err(OnlyError::parse(format!(
-            "invalid parameter override '{item}'; parameter name cannot be empty"
+            "parameter name is empty in '{item}'"
         )));
     }
 
@@ -245,7 +245,7 @@ fn parse_override(item: &str) -> Result<(String, String)> {
 fn os_string_to_string(value: OsString, option: &str) -> Result<String> {
     value
         .into_string()
-        .map_err(|_| OnlyError::parse(format!("non-UTF-8 values are not supported for '{option}'")))
+        .map_err(|_| OnlyError::parse(format!("option '{option}' needs UTF-8 text")))
 }
 
 fn task_for_path<'a>(document: &'a DocumentAst, path: &[String]) -> Option<&'a TaskAst> {

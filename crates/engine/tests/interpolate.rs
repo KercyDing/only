@@ -78,5 +78,5 @@ fn reports_unterminated_interpolation() {
     let error = render_command(&plan.nodes[0].commands[0], &plan.nodes[0].params)
         .expect_err("invalid interpolation should fail");
 
-    assert!(error.to_string().contains("unterminated interpolation"));
+    assert_eq!(error.to_string(), "missing `}}` in command");
 }

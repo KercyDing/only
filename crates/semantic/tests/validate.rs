@@ -12,12 +12,12 @@ fn reports_validation_errors_for_dependencies_and_variables() {
     assert!(
         messages
             .iter()
-            .any(|message| message.contains("undefined dependency 'build'"))
+            .any(|message| message.contains("depends on missing task 'build'"))
     );
     assert!(
         messages
             .iter()
-            .any(|message| message.contains("undefined variable 'target'"))
+            .any(|message| message.contains("variable 'target' is not defined"))
     );
 }
 
@@ -30,7 +30,7 @@ fn reports_duplicate_directives() {
         .map(|diagnostic| diagnostic.message.as_str())
         .collect();
 
-    assert!(messages.contains(&"duplicate directive '!shell'"));
+    assert!(messages.contains(&"`!shell` is used more than once"));
 }
 
 #[test]
@@ -42,9 +42,7 @@ fn reports_slice_parameter_before_final_position() {
         .map(|diagnostic| diagnostic.message.as_str())
         .collect();
 
-    assert!(
-        messages.contains(&"slice parameter 'args..' must be the final parameter in task 'run'")
-    );
+    assert!(messages.contains(&"slice parameter 'args..' must be last in task 'run'"));
 }
 
 #[test]
@@ -56,5 +54,5 @@ fn reports_slice_parameter_default_value() {
         .map(|diagnostic| diagnostic.message.as_str())
         .collect();
 
-    assert!(messages.contains(&"slice parameter 'args..' cannot have a default value"));
+    assert!(messages.contains(&"slice parameter 'args..' cannot have a default"));
 }

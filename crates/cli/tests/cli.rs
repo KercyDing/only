@@ -188,7 +188,7 @@ fn returns_not_found_when_onlyfile_does_not_exist() {
         OnlyError::NotFound(message) => {
             assert_eq!(
                 message,
-                "No Onlyfile found in current directory or any parent."
+                "No Onlyfile was found here or in a parent directory."
             );
         }
         other => panic!("expected not found error, got {other:?}"),
@@ -259,7 +259,7 @@ build() ? @os(\"linux\"):
 ";
     let error = parse_onlyfile(source).expect_err("ambiguous guards should fail");
     let rendered = error.to_string();
-    assert!(rendered.contains("ambiguous guard: 'build' conflicts with 'build'"));
+    assert!(rendered.contains("task 'build' has the same guard more than once"));
 }
 
 #[test]
@@ -270,7 +270,7 @@ fn rejects_duplicate_parameter_names() {
     let error = parse_onlyfile(source).expect_err("duplicate parameters should fail");
     assert_eq!(
         error.to_string(),
-        "duplicate parameter 'tag' in task 'build'"
+        "parameter 'tag' is used more than once in task 'build'"
     );
 }
 
@@ -280,7 +280,7 @@ fn rejects_duplicate_directives() {
     let error = parse_onlyfile(source).expect_err("duplicate directives should fail");
     let rendered = error.to_string();
 
-    assert!(rendered.contains("duplicate directive '!shell'"));
+    assert!(rendered.contains("`!shell` is used more than once"));
 }
 
 #[test]
@@ -290,8 +290,8 @@ fn rejects_incompatible_version_before_cli_parsing() {
 
     let message = error.to_string();
     assert!(!message.contains("version.incompatible"));
-    assert!(message.starts_with("Onlyfile requires only 0.2 or newer within 0.x"));
-    assert!(message.contains("required range: >=0.2.0, <1.0.0"));
+    assert!(message.starts_with("this Onlyfile needs `only` 0.2 or newer (not 1.x)"));
+    assert!(message.contains("needed: >=0.2.0, <1.0.0"));
 }
 
 #[test]
@@ -345,7 +345,7 @@ fn rejects_undefined_dependency_during_parse_validation() {
     let error = parse_onlyfile(source).expect_err("undefined dependency should fail validation");
     assert_eq!(
         error.to_string(),
-        "undefined dependency 'build' referenced from 'deploy'"
+        "task 'deploy' depends on missing task 'build'"
     );
 }
 
@@ -387,10 +387,7 @@ install():
     )
     .expect_err("namespace should require explicit task");
 
-    assert_eq!(
-        error.to_string(),
-        "namespace 'frontend' requires a task target"
-    );
+    assert_eq!(error.to_string(), "choose a task in namespace 'frontend'");
 }
 
 #[test]
@@ -406,7 +403,7 @@ b() & a:
     )
     .expect_err("cycle should fail");
 
-    assert_eq!(error.to_string(), "cyclic dependency detected: a -> b -> a");
+    assert_eq!(error.to_string(), "dependency loop: a -> b -> a");
 }
 
 #[test]
@@ -436,8 +433,8 @@ fn propagates_command_failure() {
     let error = run_plan(&plan).expect_err("runtime should return contextual error");
     let rendered = error.to_string();
     assert!(rendered.contains("task 'fail' failed at step [1/1]"));
-    assert!(rendered.contains("while running `false`"));
-    assert!(rendered.contains("with exit code"));
+    assert!(rendered.contains("command: `false`"));
+    assert!(rendered.contains("exit code:"));
 }
 
 #[test]
@@ -491,7 +488,7 @@ fn rejects_missing_required_parameter() {
     )
     .expect_err("missing parameter should fail planning");
 
-    assert_eq!(error.to_string(), "missing required parameter '{{name}}'");
+    assert_eq!(error.to_string(), "parameter '{{name}}' is required");
 }
 
 #[test]
@@ -519,7 +516,7 @@ fn rejects_unknown_parameter_override() {
 
     assert_eq!(
         error.to_string(),
-        "unknown parameter 'other' for task 'hello'"
+        "task 'hello' has no parameter named 'other'"
     );
 }
 
@@ -549,7 +546,10 @@ fn rejects_duplicate_parameter_overrides() {
     )
     .expect_err("duplicate override should fail planning");
 
-    assert_eq!(error.to_string(), "duplicate parameter override 'name'");
+    assert_eq!(
+        error.to_string(),
+        "parameter 'name' was given more than once"
+    );
 }
 
 #[cfg(unix)]
@@ -1128,7 +1128,7 @@ fn run_with_reports_unavailable_guarded_task() {
     let error = run_with(input).expect_err("unavailable guarded task should fail");
     assert_eq!(
         error.to_string(),
-        "task 'probe' is not available for this environment"
+        "task 'probe' is not available on this system"
     );
 
     fs::remove_dir_all(root).expect("temp tree should be removed");
@@ -1161,7 +1161,7 @@ fn run_with_rejects_error_diagnostics_before_execution() {
     let error = run_with(input).expect_err("semantic errors should stop execution");
     assert_eq!(
         error.to_string(),
-        "undefined dependency 'build' referenced from 'deploy'"
+        "task 'deploy' depends on missing task 'build'"
     );
     assert!(!root.join("ran.txt").exists());
 
@@ -1193,7 +1193,7 @@ fn version_gate_prevents_execution() {
 
     let error = run_with(input).expect_err("incompatible version should stop execution");
 
-    assert!(error.to_string().contains("requires only 0.2"));
+    assert!(error.to_string().contains("needs `only` 0.2"));
     assert!(!root.join("marker.txt").exists());
     fs::remove_dir_all(root).expect("temp tree should be removed");
 }
@@ -1222,7 +1222,7 @@ fn rejects_direct_helper_task_execution_via_run_with() {
     let error = run_with(input).expect_err("helper task should not execute directly");
     assert_eq!(
         error.to_string(),
-        "helper task '_prepare' cannot be invoked directly"
+        "helper task '_prepare' cannot be run directly"
     );
 
     fs::remove_dir_all(root).expect("temp tree should be removed");
@@ -1354,7 +1354,7 @@ fn dry_run_without_task_reports_target_error() {
 
     assert_ne!(output.status.code(), Some(0));
     assert!(plain_stdout.is_empty(), "stdout was: {plain_stdout}");
-    assert!(plain_stderr.contains("--dry-run requires a task target"));
+    assert!(plain_stderr.contains("--dry-run needs a task"));
     assert!(!plain_stderr.contains("Available tasks:"));
 }
 
@@ -1379,7 +1379,7 @@ fn full_without_dry_run_reports_usage_error() {
 
     assert_ne!(output.status.code(), Some(0));
     assert!(plain_stdout.is_empty(), "stdout was: {plain_stdout}");
-    assert!(plain_stderr.contains("--full requires --dry-run"));
+    assert!(plain_stderr.contains("--full only works with --dry-run"));
 }
 
 #[test]

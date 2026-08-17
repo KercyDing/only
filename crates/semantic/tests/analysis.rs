@@ -23,12 +23,12 @@ fn reports_undefined_dependency_and_variable() {
     assert!(
         messages
             .iter()
-            .any(|msg| msg.contains("undefined dependency 'build'"))
+            .any(|msg| msg.contains("depends on missing task 'build'"))
     );
     assert!(
         messages
             .iter()
-            .any(|msg| msg.contains("undefined variable 'target'"))
+            .any(|msg| msg.contains("variable 'target' is not defined"))
     );
 }
 
@@ -122,8 +122,9 @@ fn reports_namespace_conflict_with_global_task() {
         .collect();
 
     assert!(
-        messages.iter().any(|msg| msg
-            == &"conflict: global task 'build' and namespace 'build' cannot coexist")
+        messages
+            .iter()
+            .any(|msg| msg == &"task and namespace cannot both be named 'build'")
     );
 }
 
@@ -139,7 +140,7 @@ fn reports_duplicate_parameter_names() {
     assert!(
         messages
             .iter()
-            .any(|msg| msg == &"duplicate parameter 'tag' in task 'build'")
+            .any(|msg| msg == &"parameter 'tag' is used more than once in task 'build'")
     );
 }
 
@@ -191,7 +192,7 @@ fn reports_duplicate_task_definition() {
     assert!(
         messages
             .iter()
-            .any(|msg| msg == &"duplicate task definition: 'build' conflicts with 'build'")
+            .any(|msg| msg == &"task 'build' is defined more than once")
     );
 }
 
@@ -212,7 +213,7 @@ fn reports_ambiguous_guard_overlap() {
     assert!(
         messages
             .iter()
-            .any(|msg| msg == &"ambiguous guard: 'build' conflicts with 'build'")
+            .any(|msg| msg == &"task 'build' has the same guard more than once")
     );
 }
 

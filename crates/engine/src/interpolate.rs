@@ -39,14 +39,14 @@ pub fn interpolate(command: &str, params: &[PlanParam]) -> Result<String, Engine
         let placeholder = &rest[start + 2..];
         let Some(end) = placeholder.find("}}") else {
             return Err(EngineError::Interpolation(
-                "unterminated interpolation expression".to_string(),
+                "missing `}}` in command".to_string(),
             ));
         };
 
         let name = placeholder[..end].trim();
         let Some(value) = parameter_map.get(name) else {
             return Err(EngineError::Interpolation(format!(
-                "undefined variable '{{{{{name}}}}}' in command"
+                "variable '{{{{{name}}}}}' is not defined"
             )));
         };
 

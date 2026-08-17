@@ -59,7 +59,7 @@ pub fn discover_onlyfile(explicit_path: Option<&Path>) -> Result<DiscoveredOnlyf
 fn discover_from_current_dir_or_parents() -> Result<PathBuf> {
     let cwd = std::env::current_dir().map_err(OnlyError::cwd)?;
     discover_from_dir(&cwd).ok_or_else(|| {
-        OnlyError::not_found("No Onlyfile found in current directory or any parent.".to_string())
+        OnlyError::not_found("No Onlyfile was found here or in a parent directory.".to_string())
     })
 }
 

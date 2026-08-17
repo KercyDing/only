@@ -163,13 +163,13 @@ pub fn run_plan(plan: &ExecutionPlan) -> Result<ExitCode> {
 fn ensure_dry_run_has_target(cli: &CliInput) -> Result<()> {
     if cli.dry_run_full && !cli.dry_run {
         return Err(OnlyError::parse(
-            "--full requires --dry-run; use 'only --dry-run --full <task>'",
+            "--full only works with --dry-run\nhelp: use `only --dry-run --full <task>`",
         ));
     }
 
     if cli.dry_run && cli.task_path.is_empty() {
         return Err(OnlyError::parse(
-            "--dry-run requires a task target; use 'only --dry-run <task>'",
+            "--dry-run needs a task\nhelp: use `only --dry-run <task>`",
         ));
     }
 

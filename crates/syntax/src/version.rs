@@ -85,7 +85,7 @@ pub fn check_version_compatibility(
     let runner = parse_runner_version(runner_version).ok_or_else(|| {
         version_error(
             "version.invalid-runner-version",
-            format!("runner version '{runner_version}' is not valid SemVer"),
+            format!("only has an invalid version: '{runner_version}'"),
             DiagnosticPhase::Host,
             requirement.span,
         )
@@ -102,17 +102,20 @@ pub fn check_version_compatibility(
         || runner.major < requirement.major
         || (runner.major == requirement.major && runner.minor < requirement.minor)
     {
-        "run `only --upgrade`"
+        "run `only --upgrade`".to_string()
     } else {
-        "use a compatible runner or update the Onlyfile version declaration"
+        format!(
+            "install `only` {}.x or change `!version`",
+            requirement.major
+        )
     };
     Err(version_error(
         "version.incompatible",
         format!(
-            "Onlyfile requires only {}.{} or newer within {}.x\ncurrent runner: {runner_version}\nrequired range: {}\nhelp: {help}",
+            "this Onlyfile needs `only` {}.{} or newer (not {}.x)\ninstalled: {runner_version}\nneeded: {}\nhelp: {help}",
             requirement.major,
             requirement.minor,
-            requirement.major,
+            requirement.major + 1,
             requirement.required_range(),
         ),
         DiagnosticPhase::Host,
@@ -147,7 +150,7 @@ pub fn parse_version_requirement(
     if major == 0 && minor == 0 {
         return Err(version_error(
             "version.pre-0.1-unsupported",
-            "compatibility is not defined for only 0.0.x\nhelp: omit `!version` and use unversioned mode",
+            "`!version 0.0` is not allowed\nhelp: use `!version 0.1` or remove this line",
             DiagnosticPhase::Parse,
             span,
         ));
@@ -251,7 +254,7 @@ fn text_range(start: usize, end: usize) -> TextRange {
 fn invalid_format(span: TextRange) -> Diagnostic {
     version_error(
         "version.invalid-format",
-        "version declaration must use `!version MAJOR.MINOR` with no leading zeros",
+        "use `!version A.B`, for example `!version 0.1`",
         DiagnosticPhase::Parse,
         span,
     )
@@ -260,7 +263,7 @@ fn invalid_format(span: TextRange) -> Diagnostic {
 fn range_overflow(span: TextRange) -> Diagnostic {
     version_error(
         "version.range-overflow",
-        "version declaration is outside the supported numeric range",
+        "the version number is too large",
         DiagnosticPhase::Parse,
         span,
     )

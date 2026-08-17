@@ -33,7 +33,8 @@ fn reports_command_failure_with_context() {
     let error = run_plan(&plan).expect_err("runtime should fail");
     let rendered = error.to_string();
     assert!(rendered.contains("task 'fail' failed at step [1/1]"));
-    assert!(rendered.contains("while running `false`"));
+    assert!(rendered.contains("command: `false`"));
+    assert!(rendered.contains("exit code:"));
 }
 
 #[cfg(unix)]

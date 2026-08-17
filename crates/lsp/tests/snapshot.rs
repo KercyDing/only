@@ -23,13 +23,11 @@ fn keeps_uri_when_reparsing_new_version() {
 
     assert_eq!(reparsed.uri, "file:///workspace/Onlyfile");
     assert_eq!(reparsed.version, 8);
-    assert!(
-        reparsed
-            .semantic
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.message.contains("undefined dependency 'build'"))
-    );
+    assert!(reparsed.semantic.diagnostics.iter().any(|diagnostic| {
+        diagnostic
+            .message
+            .contains("depends on missing task 'build'")
+    }));
 }
 
 #[test]

@@ -39,11 +39,11 @@ impl fmt::Display for EngineError {
                 code,
             } => write!(
                 f,
-                "task '{task}' failed at step [{step}/{total}] while running `{command}` with exit code {code:?}"
+                "task '{task}' failed at step [{step}/{total}]\ncommand: `{command}`\nexit code: {code:?}"
             ),
             Self::Interpolation(message) => f.write_str(message),
             Self::ShellNotFound(message) => f.write_str(message),
-            Self::UnsupportedShell(shell) => write!(f, "unsupported shell '{shell}'"),
+            Self::UnsupportedShell(shell) => write!(f, "shell '{shell}' is not supported"),
             Self::Runtime(message) => f.write_str(message),
             Self::Io {
                 message,

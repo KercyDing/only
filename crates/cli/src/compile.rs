@@ -1,6 +1,6 @@
 use crate::args::CliInput;
 use crate::error::{OnlyError, Result};
-use only_diagnostic::{Diagnostic, DiagnosticSeverity};
+use only_diagnostic::{Diagnostic, DiagnosticPhase, DiagnosticSeverity};
 use only_engine::{
     ExecutionPlan, Invocation, build_execution_plan, try_build_execution_plan_in_dir,
 };
@@ -114,13 +114,11 @@ pub(crate) fn resolve_target(
         .collect::<std::collections::HashSet<_>>();
 
     match cli.task_path.as_slice() {
-        [] => Err(OnlyError::parse(
-            "no task selected; provide a global task or namespace task target",
-        )),
+        [] => Err(OnlyError::parse("no task was selected")),
         [name] => {
             if namespaces.contains(name.as_str()) {
                 return Err(OnlyError::parse(format!(
-                    "namespace '{name}' requires a task target"
+                    "choose a task in namespace '{name}'"
                 )));
             }
 
@@ -144,15 +142,35 @@ fn map_plan_error(error: only_engine::PlanError) -> OnlyError {
 }
 
 pub(crate) fn ensure_no_error_diagnostics(diagnostics: &[Diagnostic]) -> Result<()> {
-    let errors = diagnostics
+    let primary_phase = diagnostics
         .iter()
         .filter(|diagnostic| diagnostic.severity == DiagnosticSeverity::Error)
+        .map(|diagnostic| diagnostic.phase)
+        .min_by_key(|phase| phase_rank(*phase));
+    let Some(primary_phase) = primary_phase else {
+        return Ok(());
+    };
+
+    let mut seen = std::collections::HashSet::new();
+    let errors = diagnostics
+        .iter()
+        .filter(|diagnostic| {
+            diagnostic.severity == DiagnosticSeverity::Error
+                && diagnostic.phase == primary_phase
+                && seen.insert(diagnostic.message.lines().next().unwrap_or_default())
+        })
         .map(|diagnostic| diagnostic.message.as_str())
         .collect::<Vec<_>>();
-
-    if errors.is_empty() {
-        return Ok(());
-    }
-
     Err(OnlyError::parse(errors.join("\n")))
+}
+
+fn phase_rank(phase: DiagnosticPhase) -> usize {
+    match phase {
+        DiagnosticPhase::Lex => 0,
+        DiagnosticPhase::Parse => 1,
+        DiagnosticPhase::Lower => 2,
+        DiagnosticPhase::Semantic => 3,
+        DiagnosticPhase::Engine => 4,
+        DiagnosticPhase::Host => 5,
+    }
 }

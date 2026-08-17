@@ -84,7 +84,7 @@ fn annotates_unversioned_parse_failure() {
         .find(|diagnostic| diagnostic.code.as_str() == "parse.unexpected-token")
         .expect("parse diagnostic should remain");
 
-    assert!(diagnostic.message.starts_with("unexpected top-level token"));
-    assert!(diagnostic.message.contains("has no `!version` declaration"));
+    assert!(diagnostic.message.starts_with("unexpected text"));
+    assert!(diagnostic.message.contains("has no `!version` line"));
     assert!(diagnostic.message.contains("help:"));
 }

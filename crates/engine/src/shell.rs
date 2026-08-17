@@ -65,8 +65,7 @@ fn resolve_shell(shell: &str, shell_fallback: bool) -> Result<String, EngineErro
                 return Ok("powershell".to_string());
             }
             Err(EngineError::ShellNotFound(
-                "pwsh not found. Install PowerShell 7+ or use shell?=pwsh for auto fallback."
-                    .to_string(),
+                "pwsh was not found\nhelp: install PowerShell 7+, or use `shell?=pwsh`".to_string(),
             ))
         }
         "bash" => {
@@ -77,7 +76,7 @@ fn resolve_shell(shell: &str, shell_fallback: bool) -> Result<String, EngineErro
                 return Ok("sh".to_string());
             }
             Err(EngineError::ShellNotFound(
-                "bash not found. Install bash or use shell?=bash for auto fallback.".to_string(),
+                "bash was not found\nhelp: install bash, or use `shell?=bash`".to_string(),
             ))
         }
         "powershell" => {
@@ -85,7 +84,7 @@ fn resolve_shell(shell: &str, shell_fallback: bool) -> Result<String, EngineErro
                 return Ok("powershell".to_string());
             }
             Err(EngineError::ShellNotFound(
-                "powershell not found. Ensure Windows PowerShell is installed.".to_string(),
+                "powershell was not found\nhelp: install Windows PowerShell".to_string(),
             ))
         }
         "sh" => {
@@ -93,7 +92,7 @@ fn resolve_shell(shell: &str, shell_fallback: bool) -> Result<String, EngineErro
                 return Ok("sh".to_string());
             }
             Err(EngineError::ShellNotFound(
-                "sh not found. Ensure a POSIX shell is available.".to_string(),
+                "sh was not found\nhelp: install a POSIX shell".to_string(),
             ))
         }
         "deno" => Ok("deno".to_string()),

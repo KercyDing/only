@@ -64,29 +64,35 @@ pub enum PlanError {
 impl fmt::Display for PlanError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::UnknownTask(task) => write!(f, "task '{task}' is not defined"),
+            Self::UnknownTask(task) => write!(f, "task '{task}' does not exist"),
             Self::HelperTask(task) => {
-                write!(f, "helper task '{task}' cannot be invoked directly")
+                write!(f, "helper task '{task}' cannot be run directly")
             }
             Self::TaskUnavailable(task) => {
-                write!(f, "task '{task}' is not available for this environment")
+                write!(f, "task '{task}' is not available on this system")
             }
             Self::MissingRequiredParameter(name) => {
-                write!(f, "missing required parameter '{{{{{name}}}}}'")
+                write!(f, "parameter '{{{{{name}}}}}' is required")
             }
             Self::UnknownParameter { task, name } => {
-                write!(f, "unknown parameter '{name}' for task '{task}'")
+                write!(f, "task '{task}' has no parameter named '{name}'")
             }
-            Self::DuplicateOverride(name) => write!(f, "duplicate parameter override '{name}'"),
-            Self::CyclicDependency(path) => write!(f, "cyclic dependency detected: {path}"),
+            Self::DuplicateOverride(name) => {
+                write!(f, "parameter '{name}' was given more than once")
+            }
+            Self::CyclicDependency(path) => write!(f, "dependency loop: {path}"),
             Self::TooManyArguments {
                 task,
                 expected,
                 got,
-            } => write!(
-                f,
-                "too many arguments for task '{task}'; expected at most {expected}, got {got}"
-            ),
+            } => match expected {
+                0 => write!(f, "task '{task}' accepts no arguments, but got {got}"),
+                1 => write!(f, "task '{task}' accepts 1 argument, but got {got}"),
+                _ => write!(
+                    f,
+                    "task '{task}' accepts {expected} arguments, but got {got}"
+                ),
+            },
         }
     }
 }

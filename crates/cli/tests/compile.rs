@@ -1,4 +1,4 @@
-use only::{CliInput, compile_for_cli, compile_for_cli_input};
+use only::{CliInput, compile_for_cli, compile_for_cli_input, parse_onlyfile};
 
 #[test]
 fn compiles_in_memory_source_without_fs() {
@@ -90,7 +90,7 @@ fn rejects_direct_invocation_of_helper_task_for_semantic_cli_compile() {
 
     assert_eq!(
         error.to_string(),
-        "helper task '_prepare' cannot be invoked directly"
+        "helper task '_prepare' cannot be run directly"
     );
 }
 
@@ -111,7 +111,7 @@ fn rejects_namespace_without_task_target_for_semantic_cli_compile() {
     let error = compile_for_cli_input("[dev]\nserve():\n    echo ok\n", &cli)
         .expect_err("namespace target should fail");
 
-    assert_eq!(error.to_string(), "namespace 'dev' requires a task target");
+    assert_eq!(error.to_string(), "choose a task in namespace 'dev'");
 }
 
 #[test]
@@ -133,6 +133,17 @@ fn rejects_error_diagnostics_before_planning() {
 
     assert_eq!(
         error.to_string(),
-        "undefined dependency 'build' referenced from 'deploy'"
+        "task 'deploy' depends on missing task 'build'"
+    );
+}
+
+#[test]
+fn shows_only_the_first_error_stage() {
+    let error = parse_onlyfile("@\n@\ndeploy() & build:\n    echo deploy\n")
+        .expect_err("parse errors should hide later semantic errors");
+
+    assert_eq!(
+        error.to_string(),
+        "unexpected text\nnote: this file has no `!version` line\nhelp: check the syntax; it may need a newer version of only"
     );
 }

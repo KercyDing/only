@@ -93,7 +93,7 @@ pub(crate) fn parse_tokens(tokens: &[LexToken]) -> ParseResult {
                 if malformed {
                     diagnostics.push(parse_error(
                         "parse.malformed-directive",
-                        "malformed directive",
+                        "invalid directive",
                         token.range,
                     ));
                     builder.push_node(SyntaxKind::Error, token_slice);
@@ -108,7 +108,7 @@ pub(crate) fn parse_tokens(tokens: &[LexToken]) -> ParseResult {
                 if malformed {
                     diagnostics.push(parse_error(
                         "parse.malformed-namespace-header",
-                        "malformed namespace header",
+                        "invalid namespace",
                         token.range,
                     ));
                     builder.push_node(SyntaxKind::Error, token_slice);
@@ -123,7 +123,7 @@ pub(crate) fn parse_tokens(tokens: &[LexToken]) -> ParseResult {
                 if !saw_colon || malformed {
                     diagnostics.push(parse_error(
                         "parse.malformed-task-header",
-                        "malformed task header",
+                        "invalid task header",
                         token.range,
                     ));
                     builder.push_node(SyntaxKind::Error, token_slice);
@@ -134,7 +134,7 @@ pub(crate) fn parse_tokens(tokens: &[LexToken]) -> ParseResult {
             ParsedTopLevelItem::Unexpected => {
                 diagnostics.push(parse_error(
                     "parse.unexpected-token",
-                    "unexpected top-level token",
+                    "unexpected text",
                     token.range,
                 ));
                 builder.push_node(SyntaxKind::Error, token_slice);

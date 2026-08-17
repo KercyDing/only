@@ -264,7 +264,7 @@ pub fn render_help_hint() -> String {
         .bold();
 
     format!(
-        "Run '{}only --help{}' to view usage.",
+        "Run '{}only --help{}' for help.",
         style.render(),
         style.render_reset()
     )

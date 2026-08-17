@@ -198,7 +198,7 @@ fn rejects_missing_required_parameter_for_new_engine_planner() {
     )
     .expect_err("missing parameter should fail");
 
-    assert_eq!(error.to_string(), "missing required parameter '{{task}}'");
+    assert_eq!(error.to_string(), "parameter '{{task}}' is required");
 }
 
 #[test]
@@ -216,7 +216,7 @@ fn rejects_unknown_override_for_new_engine_planner() {
 
     assert_eq!(
         error.to_string(),
-        "unknown parameter 'other' for task 'run'"
+        "task 'run' has no parameter named 'other'"
     );
 }
 
@@ -233,7 +233,10 @@ fn rejects_duplicate_parameter_overrides_for_new_engine_planner() {
     )
     .expect_err("duplicate override should fail");
 
-    assert_eq!(error.to_string(), "duplicate parameter override 'task'");
+    assert_eq!(
+        error.to_string(),
+        "parameter 'task' was given more than once"
+    );
 }
 
 #[test]
@@ -251,7 +254,7 @@ fn rejects_too_many_arguments_for_new_engine_planner() {
 
     assert_eq!(
         error.to_string(),
-        "too many arguments for task 'run'; expected at most 1, got 2"
+        "task 'run' accepts 1 argument, but got 2"
     );
 }
 
@@ -268,7 +271,7 @@ fn detects_cyclic_dependencies_for_new_engine_planner() {
     )
     .expect_err("cycle should fail");
 
-    assert_eq!(error.to_string(), "cyclic dependency detected: a -> b -> a");
+    assert_eq!(error.to_string(), "dependency loop: a -> b -> a");
 }
 
 #[test]
@@ -341,7 +344,7 @@ fn rejects_direct_invocation_of_helper_task() {
 
     assert_eq!(
         error.to_string(),
-        "helper task '_prepare' cannot be invoked directly"
+        "helper task '_prepare' cannot be run directly"
     );
 }
 
@@ -387,6 +390,6 @@ fn reports_unavailable_root_task_for_current_environment() {
 
     assert_eq!(
         error.to_string(),
-        "task 'probe' is not available for this environment"
+        "task 'probe' is not available on this system"
     );
 }

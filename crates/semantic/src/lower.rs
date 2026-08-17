@@ -29,13 +29,13 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
                 if saw_version {
                     diagnostics.push(semantic_error(
                         "version.duplicate",
-                        "duplicate `!version` declaration",
+                        "`!version` is used more than once",
                         directive.range(),
                     ));
                 } else if saw_declaration {
                     diagnostics.push(semantic_error(
                         "version.not-first-declaration",
-                        "`!version` must be the first non-comment declaration",
+                        "`!version` must come before all other declarations",
                         directive.range(),
                     ));
                 }
@@ -100,7 +100,7 @@ fn lower_directive(node: &DirectiveNode) -> Result<DirectiveAst, Diagnostic> {
             let value = node.raw_value().ok_or_else(|| {
                 lower_error(
                     "version.invalid-format",
-                    "version declaration must use `!version MAJOR.MINOR` with no leading zeros",
+                    "use `!version A.B`, for example `!version 0.1`",
                     range,
                 )
             })?;
@@ -113,7 +113,7 @@ fn lower_directive(node: &DirectiveNode) -> Result<DirectiveAst, Diagnostic> {
         }
         (Some("version"), None) => Err(lower_error(
             "version.invalid-format",
-            "version declaration must use `!version MAJOR.MINOR` with no leading zeros",
+            "use `!version A.B`, for example `!version 0.1`",
             range,
         )),
         (Some("shell"), Some(shell)) => Ok(DirectiveAst::Shell {
@@ -122,17 +122,17 @@ fn lower_directive(node: &DirectiveNode) -> Result<DirectiveAst, Diagnostic> {
         }),
         (Some("shell"), None) => Err(lower_error(
             "lower.invalid-directive",
-            "directive '!shell' requires a value",
+            "`!shell` needs a value",
             range,
         )),
         (Some(name), _) => Err(lower_error(
             "lower.invalid-directive",
-            &format!("unknown directive '!{name}'"),
+            &format!("`!{name}` is not supported"),
             range,
         )),
         (None, _) => Err(lower_error(
             "lower.invalid-directive",
-            "failed to lower directive",
+            "invalid directive",
             range,
         )),
     }
@@ -154,13 +154,9 @@ fn lower_doc_comment(node: &DocCommentNode) -> Option<SmolStr> {
 
 fn lower_namespace(node: &NamespaceNode, doc: Option<SmolStr>) -> Result<NamespaceAst, Diagnostic> {
     let range = node.range();
-    let name = node.name().ok_or_else(|| {
-        lower_error(
-            "lower.invalid-namespace",
-            "failed to lower namespace",
-            range,
-        )
-    })?;
+    let name = node
+        .name()
+        .ok_or_else(|| lower_error("lower.invalid-namespace", "invalid namespace", range))?;
 
     Ok(NamespaceAst { name, doc, range })
 }
@@ -173,7 +169,7 @@ fn lower_task(
     let range = node.range();
     let name = node
         .name()
-        .ok_or_else(|| lower_error("lower.invalid-task", "failed to lower task", range))?;
+        .ok_or_else(|| lower_error("lower.invalid-task", "invalid task", range))?;
     let header = node.header_info();
 
     let params = header
@@ -248,30 +244,18 @@ fn parse_params(section: &str) -> Vec<ParamAst> {
 fn parse_guard(input: &str, range: TextRange) -> Result<GuardAst, Diagnostic> {
     let trimmed = input.trim_start();
     let Some(after_at) = trimmed.strip_prefix('@') else {
-        return Err(lower_error(
-            "lower.invalid-guard",
-            "failed to lower guard",
-            range,
-        ));
+        return Err(lower_error("lower.invalid-guard", "invalid guard", range));
     };
     let Some(open) = after_at.find('(') else {
-        return Err(lower_error(
-            "lower.invalid-guard",
-            "failed to lower guard",
-            range,
-        ));
+        return Err(lower_error("lower.invalid-guard", "invalid guard", range));
     };
     let Some(close) = after_at[open + 1..].find(')') else {
-        return Err(lower_error(
-            "lower.invalid-guard",
-            "failed to lower guard",
-            range,
-        ));
+        return Err(lower_error("lower.invalid-guard", "invalid guard", range));
     };
 
     let kind = after_at[..open].trim();
     let argument = parse_string_literal(after_at[open + 1..open + 1 + close].trim())
-        .ok_or_else(|| lower_error("lower.invalid-guard", "failed to lower guard", range))?;
+        .ok_or_else(|| lower_error("lower.invalid-guard", "invalid guard", range))?;
 
     Ok(GuardAst {
         kind: SmolStr::new(kind),

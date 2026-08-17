@@ -76,7 +76,7 @@ fn append_unversioned_parse_help(compiled: &mut SemanticSnapshot, header: Bootst
         .find(|diagnostic| diagnostic.phase == DiagnosticPhase::Parse)
     {
         diagnostic.message.push_str(
-            "\nnote: this Onlyfile has no `!version` declaration\nhelp: the syntax may require an Onlyfile language version not recognized by this runner",
+            "\nnote: this file has no `!version` line\nhelp: check the syntax; it may need a newer version of only",
         );
     }
 }

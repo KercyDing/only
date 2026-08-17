@@ -20,8 +20,8 @@ pub(crate) fn validate_document(document: &DocumentAst, symbols: &SymbolIndex) -
             diagnostics.push(error(
                 "semantic.namespace-conflict",
                 format!(
-                    "conflict: global task '{}' and namespace '{}' cannot coexist",
-                    namespace.name, namespace.name
+                    "task and namespace cannot both be named '{}'",
+                    namespace.name
                 ),
                 namespace.range,
             ));
@@ -48,7 +48,7 @@ fn validate_task(
             diagnostics.push(error(
                 "semantic.duplicate-parameter",
                 format!(
-                    "duplicate parameter '{}' in task '{}'",
+                    "parameter '{}' is used more than once in task '{}'",
                     param.name,
                     task.qualified_name()
                 ),
@@ -60,7 +60,7 @@ fn validate_task(
             diagnostics.push(error(
                 "semantic.slice-parameter-position",
                 format!(
-                    "slice parameter '{}..' must be the final parameter in task '{}'",
+                    "slice parameter '{}..' must be last in task '{}'",
                     param.name,
                     task.qualified_name()
                 ),
@@ -71,10 +71,7 @@ fn validate_task(
         if param.is_slice && param.default_value.is_some() {
             diagnostics.push(error(
                 "semantic.slice-parameter-default",
-                format!(
-                    "slice parameter '{}..' cannot have a default value",
-                    param.name
-                ),
+                format!("slice parameter '{}..' cannot have a default", param.name),
                 task.range,
             ));
         }
@@ -85,9 +82,9 @@ fn validate_task(
             diagnostics.push(error(
                 "semantic.undefined-dependency",
                 format!(
-                    "undefined dependency '{}' referenced from '{}'",
-                    dependency.name,
-                    task.qualified_name()
+                    "task '{}' depends on missing task '{}'",
+                    task.qualified_name(),
+                    dependency.name
                 ),
                 dependency.range,
             ));
@@ -99,7 +96,7 @@ fn validate_task(
             if !params.contains(&interpolation.name) {
                 diagnostics.push(error(
                     "semantic.undefined-variable",
-                    format!("undefined variable '{}'", interpolation.name),
+                    format!("variable '{}' is not defined", interpolation.name),
                     interpolation.range,
                 ));
             }
@@ -127,13 +124,12 @@ fn report_duplicate_tasks(document: &DocumentAst, diagnostics: &mut Vec<Diagnost
                 task.qualified_name().to_string(),
                 format!("{}:{}", guard.kind, guard.argument),
             );
-            if let Some(previous) = seen_guards.insert(guard_key, task) {
+            if seen_guards.insert(guard_key, task).is_some() {
                 diagnostics.push(error(
                     "semantic.ambiguous-guard",
                     format!(
-                        "ambiguous guard: '{}' conflicts with '{}'",
-                        task.qualified_name(),
-                        previous.qualified_name()
+                        "task '{}' has the same guard more than once",
+                        task.qualified_name()
                     ),
                     task.range,
                 ));
@@ -141,14 +137,10 @@ fn report_duplicate_tasks(document: &DocumentAst, diagnostics: &mut Vec<Diagnost
         }
 
         let key = task_signature_key(task);
-        if let Some(previous) = seen.insert(key, task) {
+        if seen.insert(key, task).is_some() {
             diagnostics.push(error(
                 "semantic.duplicate-task",
-                format!(
-                    "duplicate task definition: '{}' conflicts with '{}'",
-                    task.qualified_name(),
-                    previous.qualified_name()
-                ),
+                format!("task '{}' is defined more than once", task.qualified_name()),
                 task.range,
             ));
         }
@@ -167,7 +159,7 @@ fn report_duplicate_directives(document: &DocumentAst, diagnostics: &mut Vec<Dia
         if let Some(previous_range) = seen.insert(name, range) {
             diagnostics.push(error(
                 "semantic.duplicate-directive",
-                format!("duplicate directive '!{name}'"),
+                format!("`!{name}` is used more than once"),
                 previous_range.cover(range),
             ));
         }
