@@ -6,7 +6,9 @@ use std::thread;
 
 use only_semantic::{ShellKind, ShellSelection};
 
-use crate::error::{command_block_failed, command_block_start_failed, command_failed};
+use crate::error::{
+    command_block_failed, command_block_start_failed, command_failed, task_failure,
+};
 use crate::interpolate::interpolate;
 use crate::process::{OutputChunk, OutputStream};
 use crate::shell::{run_command, run_command_inherit};
@@ -68,9 +70,19 @@ pub fn run_plan_with_options(
         }
 
         if stage_nodes.len() == 1 {
-            run_node_inherit(&stage_nodes[0], &plan.working_dir, plan.shell.as_ref())?;
+            run_node_inherit(
+                &stage_nodes[0],
+                &plan.working_dir,
+                plan.shell.as_ref(),
+                options.quiet,
+            )?;
         } else {
-            execute_stage(stage_nodes, &plan.working_dir, plan.shell.as_ref())?;
+            execute_stage(
+                stage_nodes,
+                &plan.working_dir,
+                plan.shell.as_ref(),
+                options.quiet,
+            )?;
         }
     }
 
@@ -81,6 +93,7 @@ fn execute_stage(
     stage_nodes: &[ExecutionNode],
     working_dir: &std::path::Path,
     default_shell: Option<&ShellKind>,
+    quiet: bool,
 ) -> Result<(), EngineError> {
     let stage_len = stage_nodes.len();
     let (event_tx, event_rx) = mpsc::channel::<StageEvent>();
@@ -98,7 +111,7 @@ fn execute_stage(
         }
         drop(event_tx);
 
-        run_ordered_output_event_loop(&event_rx, stage_len)?;
+        run_ordered_output_event_loop(&event_rx, stage_len, quiet)?;
 
         collect_thread_results(handles)
     })
@@ -107,9 +120,13 @@ fn execute_stage(
 fn run_ordered_output_event_loop(
     event_rx: &mpsc::Receiver<StageEvent>,
     stage_len: usize,
+    quiet: bool,
 ) -> Result<(), EngineError> {
     let mut buffers = vec![Vec::<OutputChunk>::new(); stage_len];
     let mut finished = vec![false; stage_len];
+    let mut results = (0..stage_len)
+        .map(|_| None)
+        .collect::<Vec<Option<TaskResult>>>();
     let mut task_errors = (0..stage_len)
         .map(|_| None)
         .collect::<Vec<Option<EngineError>>>();
@@ -126,9 +143,14 @@ fn run_ordered_output_event_loop(
                     buffers[task_index].push(chunk);
                 }
             }
-            Ok(StageEvent::Finished { task_index, error }) => {
+            Ok(StageEvent::Finished {
+                task_index,
+                error,
+                result,
+            }) => {
                 finished[task_index] = true;
                 task_errors[task_index] = error;
+                results[task_index] = result;
                 finished_count += 1;
 
                 while current_index < stage_len {
@@ -136,8 +158,18 @@ fn run_ordered_output_event_loop(
                     if !finished[current_index] {
                         break;
                     }
+                    let mut task_error = task_errors[current_index].take();
+                    match results[current_index].take() {
+                        Some(TaskResult::Pass(message)) if !quiet => print_task_message(&message)?,
+                        Some(TaskResult::Fail(message)) => {
+                            if let Some(error) = task_error.take() {
+                                task_error = Some(task_failure(error, message));
+                            }
+                        }
+                        Some(TaskResult::Pass(_)) | None => {}
+                    }
                     if first_error.is_none() {
-                        first_error = task_errors[current_index].take();
+                        first_error = task_error;
                     }
                     current_index += 1;
                 }
@@ -247,10 +279,27 @@ fn run_node(
         }
     }
 
+    let result = match task_result_message(node, task_error.is_none()) {
+        Ok(message) => message.map(|message| {
+            if task_error.is_none() {
+                TaskResult::Pass(message)
+            } else {
+                TaskResult::Fail(message)
+            }
+        }),
+        Err(error) => {
+            if task_error.is_none() {
+                task_error = Some(error);
+            }
+            None
+        }
+    };
+
     event_tx
         .send(StageEvent::Finished {
             task_index,
             error: task_error,
+            result,
         })
         .map_err(|_| EngineError::Runtime("failed to finalize task output".to_string()))?;
     Ok(())
@@ -260,30 +309,47 @@ fn run_node_inherit(
     node: &ExecutionNode,
     working_dir: &std::path::Path,
     default_shell: Option<&ShellKind>,
+    quiet: bool,
 ) -> Result<(), EngineError> {
     let total_steps = node.steps.len();
+    let execution = (|| {
+        for (index, step) in node.steps.iter().enumerate() {
+            let rendered = interpolate(step.source(), &node.params)?;
+            let shell = select_shell(node, default_shell);
+            let code = run_command_inherit(&rendered, working_dir, &shell).map_err(|error| {
+                if step.is_block() {
+                    command_block_start_failed(shell.kind.as_str(), error)
+                } else {
+                    error
+                }
+            })?;
 
-    for (index, step) in node.steps.iter().enumerate() {
-        let rendered = interpolate(step.source(), &node.params)?;
-        let shell = select_shell(node, default_shell);
-        let code = run_command_inherit(&rendered, working_dir, &shell).map_err(|error| {
-            if step.is_block() {
-                command_block_start_failed(shell.kind.as_str(), error)
-            } else {
-                error
+            if code != ExitCode::SUCCESS {
+                return Err(if step.is_block() {
+                    command_block_failed(&node.name, index + 1, total_steps, code)
+                } else {
+                    command_failed(&node.name, index + 1, total_steps, &rendered, code)
+                });
             }
-        })?;
+        }
+        Ok::<(), EngineError>(())
+    })();
 
-        if code != ExitCode::SUCCESS {
-            return Err(if step.is_block() {
-                command_block_failed(&node.name, index + 1, total_steps, code)
+    match execution {
+        Ok(()) => {
+            if !quiet && let Some(message) = task_result_message(node, true)? {
+                print_task_message(&message)?;
+            }
+            Ok(())
+        }
+        Err(error) => {
+            if let Some(message) = task_result_message(node, false)? {
+                Err(task_failure(error, message))
             } else {
-                command_failed(&node.name, index + 1, total_steps, &rendered, code)
-            });
+                Err(error)
+            }
         }
     }
-
-    Ok(())
 }
 
 fn select_shell(node: &ExecutionNode, default_shell: Option<&ShellKind>) -> ShellSelection {
@@ -301,7 +367,33 @@ enum StageEvent {
     Finished {
         task_index: usize,
         error: Option<EngineError>,
+        result: Option<TaskResult>,
     },
+}
+
+#[derive(Debug)]
+enum TaskResult {
+    Pass(String),
+    Fail(String),
+}
+
+fn task_result_message(node: &ExecutionNode, success: bool) -> Result<Option<String>, EngineError> {
+    let source = if success {
+        node.pass.as_deref()
+    } else {
+        node.fail.as_deref()
+    };
+    source
+        .map(|text| interpolate(text, &node.result_params))
+        .transpose()
+}
+
+fn print_task_message(message: &str) -> Result<(), EngineError> {
+    let style = TermStyle::new()
+        .fg_color(Some(TermAnsiColor::BrightGreen.into()))
+        .bold();
+    let rendered = format!("{}{}{}\n", style.render(), message, style.render_reset());
+    write_output(&rendered, io::stderr())
 }
 
 fn flush_task_buffer(buffer: &mut Vec<OutputChunk>) -> Result<(), EngineError> {

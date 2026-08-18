@@ -24,6 +24,9 @@ pub struct ExecutionNode {
     pub name: String,
     pub steps: Vec<ExecutionStep>,
     pub params: Vec<PlanParam>,
+    pub result_params: Vec<PlanParam>,
+    pub pass: Option<String>,
+    pub fail: Option<String>,
     pub shell: Option<ShellSelection>,
 }
 

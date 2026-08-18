@@ -81,6 +81,9 @@ pub(crate) fn build_execution_nodes(
                 })
                 .collect(),
             params: build_plan_params(task, &bindings),
+            result_params: build_global_params(task, &bindings),
+            pass: task.metadata.pass.as_ref().map(ToString::to_string),
+            fail: task.metadata.fail.as_ref().map(ToString::to_string),
             shell: task.shell.as_ref().map(|shell| shell.selection.clone()),
         })
         .collect()
@@ -96,6 +99,12 @@ fn build_plan_params(task: &TaskAst, bindings: &HashMap<String, String>) -> Vec<
             value: bindings.get(param.name.as_str()).cloned(),
         })
         .collect::<Vec<_>>();
+    let globals = build_global_params(task, bindings);
+    params.extend(globals);
+    params
+}
+
+fn build_global_params(task: &TaskAst, bindings: &HashMap<String, String>) -> Vec<PlanParam> {
     let mut globals = bindings
         .iter()
         .filter(|(name, _)| {
@@ -111,8 +120,7 @@ fn build_plan_params(task: &TaskAst, bindings: &HashMap<String, String>) -> Vec<
         })
         .collect::<Vec<_>>();
     globals.sort_by(|left, right| left.name.cmp(&right.name));
-    params.extend(globals);
-    params
+    globals
 }
 
 pub(crate) fn select_task_variant<'a>(variants: &[&'a TaskAst]) -> Option<&'a TaskAst> {

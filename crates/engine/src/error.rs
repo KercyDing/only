@@ -27,6 +27,10 @@ pub enum EngineError {
         shell: String,
         source: Box<EngineError>,
     },
+    TaskFailure {
+        source: Box<EngineError>,
+        message: String,
+    },
     Interpolation(String),
     ShellNotFound(String),
     UnsupportedShell(String),
@@ -45,11 +49,12 @@ impl fmt::Display for EngineError {
                 task,
                 step,
                 total,
-                command,
+                command: _,
                 code,
             } => write!(
                 f,
-                "task '{task}' failed at step [{step}/{total}]\ncommand: `{command}`\nexit code: {code:?}"
+                "task '{task}' failed at step [{step}/{total}] due to {}",
+                exit_code_reason(*code)
             ),
             Self::CommandBlockFailed {
                 task,
@@ -58,7 +63,8 @@ impl fmt::Display for EngineError {
                 code,
             } => write!(
                 f,
-                "task '{task}' failed at step [{step}/{total}]\ncommand block failed\nexit code: {code:?}"
+                "task '{task}' failed at step [{step}/{total}] due to {}",
+                exit_code_reason(*code)
             ),
             Self::CommandBlockStartFailed { shell, source } => {
                 write!(
@@ -66,6 +72,7 @@ impl fmt::Display for EngineError {
                     "could not start command block with shell '{shell}'\n{source}"
                 )
             }
+            Self::TaskFailure { source, message } => write!(f, "{source}\n{message}"),
             Self::Interpolation(message) => f.write_str(message),
             Self::ShellNotFound(message) => f.write_str(message),
             Self::UnsupportedShell(shell) => write!(f, "shell '{shell}' is not supported"),
@@ -77,6 +84,15 @@ impl fmt::Display for EngineError {
             } => write!(f, "{message}: {path}: {source}"),
         }
     }
+}
+
+fn exit_code_reason(code: ExitCode) -> String {
+    let rendered = format!("{code:?}");
+    rendered
+        .strip_prefix("ExitCode(")
+        .and_then(|value| value.strip_suffix(')'))
+        .unwrap_or(&rendered)
+        .to_string()
 }
 
 pub(crate) fn command_block_failed(
@@ -97,7 +113,9 @@ impl std::error::Error for EngineError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io { source, .. } => Some(source),
-            Self::CommandBlockStartFailed { source, .. } => Some(source.as_ref()),
+            Self::CommandBlockStartFailed { source, .. } | Self::TaskFailure { source, .. } => {
+                Some(source.as_ref())
+            }
             _ => None,
         }
     }
@@ -112,6 +130,13 @@ pub(crate) fn command_block_start_failed(shell: &str, source: EngineError) -> En
             source: Box::new(source),
         },
         other => other,
+    }
+}
+
+pub(crate) fn task_failure(source: EngineError, message: String) -> EngineError {
+    EngineError::TaskFailure {
+        source: Box::new(source),
+        message,
     }
 }
 

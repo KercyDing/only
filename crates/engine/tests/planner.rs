@@ -66,6 +66,31 @@ fn applies_global_values_across_dag() {
 }
 
 #[test]
+fn carries_result_messages_with_global_interpolation() {
+    let compiled = compile_document(
+        "!version 0.4\n!var output = \"dist\"\n[pass] wrote {{output}}\n[fail] could not write {{output}}\nbuild():\n    true\n",
+    );
+    let plan = build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "build",
+            args: vec![],
+            overrides: vec![],
+        },
+    );
+
+    assert_eq!(plan.nodes[0].pass.as_deref(), Some("wrote {{output}}"));
+    assert_eq!(
+        plan.nodes[0].fail.as_deref(),
+        Some("could not write {{output}}")
+    );
+    assert_eq!(
+        plan.nodes[0].result_params[0].value.as_deref(),
+        Some("dist")
+    );
+}
+
+#[test]
 fn overrides_global_value_for_whole_dag() {
     let compiled = compile_document(concat!(
         "!version 0.3\n",
