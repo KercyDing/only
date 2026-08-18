@@ -2,6 +2,7 @@ use anstyle::{AnsiColor as TermAnsiColor, Style as TermStyle};
 use clap::builder::StyledStr;
 use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Arg, ArgAction, Command};
+use only_engine::{PlanParam, render_command, select_root_task_variant};
 use only_semantic::{DocumentAst, NamespaceAst, TaskAst};
 use std::collections::HashSet;
 
@@ -10,6 +11,13 @@ const NAMESPACE_HELP_TEMPLATE: &str = "\
 {usage-heading} {usage}{after-help}
 Options:
 {options}";
+
+const TASK_HELP_TEMPLATE: &str = "\
+{about-with-newline}
+{usage-heading}
+  {usage}
+
+{all-args}";
 
 /// Builds the global CLI skeleton shared by bootstrap and dynamic help.
 ///
@@ -24,6 +32,7 @@ pub fn build_global_cli() -> Command {
         .about("A minimalist, deterministic task runner\nRepo: https://github.com/KercyDing/only")
         .version(env!("CARGO_PKG_VERSION"))
         .styles(cli_styles())
+        .next_help_heading("Global options")
         .disable_help_subcommand(true)
         .override_usage("only [OPTIONS] [TASK] [ARGS]...")
         .arg(
@@ -110,9 +119,10 @@ pub fn build_global_cli() -> Command {
 /// Clap command with global tasks and namespaces wired as subcommands.
 pub fn build_cli(document: &DocumentAst) -> Command {
     let mut cmd = build_global_cli();
+    let globals = global_plan_params(document);
 
-    for task in unique_tasks(global_tasks(document)) {
-        cmd = cmd.subcommand(build_task_command(task));
+    for task in selected_tasks(document, global_tasks(document)) {
+        cmd = cmd.subcommand(build_task_command(task, &globals));
     }
 
     for namespace in document
@@ -120,7 +130,7 @@ pub fn build_cli(document: &DocumentAst) -> Command {
         .iter()
         .filter(|namespace| namespace_has_visible_tasks(document, namespace.name.as_str()))
     {
-        cmd = cmd.subcommand(build_namespace_command(document, namespace));
+        cmd = cmd.subcommand(build_namespace_command(document, namespace, &globals));
     }
 
     cmd
@@ -146,12 +156,18 @@ pub fn render_help(document: &DocumentAst) -> StyledStr {
 /// Returns:
 /// User-facing task list with global tasks and namespaces.
 pub fn render_available_tasks(document: &DocumentAst) -> String {
-    let tasks = task_listing_entries(global_tasks(document));
+    let globals = global_plan_params(document);
+    let tasks = task_listing_entries(document, global_tasks(document), &globals);
     let namespaces = document
         .namespaces
         .iter()
         .filter(|namespace| namespace_has_visible_tasks(document, namespace.name.as_str()))
-        .map(|namespace| (namespace.name.to_string(), namespace_summary(namespace)))
+        .map(|namespace| {
+            (
+                namespace.name.to_string(),
+                namespace_summary(namespace, &globals),
+            )
+        })
         .collect::<Vec<_>>();
 
     let name_width = tasks
@@ -172,7 +188,7 @@ pub fn render_available_tasks(document: &DocumentAst) -> String {
     }
     if !namespaces.is_empty() {
         sections.push(render_listing_section(
-            "Namespaces",
+            "Groups",
             &namespaces,
             name_width,
             TermAnsiColor::BrightYellow,
@@ -195,7 +211,7 @@ fn render_listing_section(
     let header_style = TermStyle::new()
         .fg_color(Some(TermAnsiColor::BrightGreen.into()))
         .bold();
-    let name_style = TermStyle::new().fg_color(Some(name_color.into())).bold();
+    let name_style = TermStyle::new().fg_color(Some(name_color.into()));
     let mut output = format!(
         "{}{title}:{}\n",
         header_style.render(),
@@ -228,7 +244,8 @@ fn render_listing_section(
 /// Returns:
 /// Help text for the namespace subcommand.
 pub fn render_namespace_help(document: &DocumentAst, namespace: &NamespaceAst) -> StyledStr {
-    let mut command = build_namespace_command(document, namespace);
+    let globals = global_plan_params(document);
+    let mut command = build_namespace_command(document, namespace, &globals);
     command.render_help()
 }
 
@@ -286,8 +303,16 @@ pub fn render_help_hint() -> String {
     )
 }
 
-fn build_namespace_command(document: &DocumentAst, namespace: &NamespaceAst) -> Command {
-    let entries = task_listing_entries(namespace_tasks(document, namespace.name.as_str()));
+fn build_namespace_command(
+    document: &DocumentAst,
+    namespace: &NamespaceAst,
+    globals: &[PlanParam],
+) -> Command {
+    let entries = task_listing_entries(
+        document,
+        namespace_tasks(document, namespace.name.as_str()),
+        globals,
+    );
     let name_width = entries
         .iter()
         .map(|(name, _)| name.len())
@@ -305,34 +330,41 @@ fn build_namespace_command(document: &DocumentAst, namespace: &NamespaceAst) -> 
         .help_template(NAMESPACE_HELP_TEMPLATE)
         .after_help(StyledStr::from(listing));
 
-    if let Some(doc) = &namespace.doc {
-        cmd = cmd.about(doc.to_string());
+    let about = metadata_about(
+        namespace.metadata.help.as_deref(),
+        namespace.metadata.desc.as_deref(),
+        globals,
+    );
+    if !about.is_empty() {
+        cmd = cmd.about(about);
     }
 
-    for task in unique_tasks(namespace_tasks(document, namespace.name.as_str())) {
-        cmd = cmd.subcommand(build_task_command(task));
+    for task in selected_tasks(document, namespace_tasks(document, namespace.name.as_str())) {
+        cmd = cmd.subcommand(build_task_command(task, globals));
     }
 
     cmd
 }
 
-fn namespace_summary(namespace: &NamespaceAst) -> String {
+fn namespace_summary(namespace: &NamespaceAst, globals: &[PlanParam]) -> String {
     namespace
-        .doc
+        .metadata
+        .help
         .as_ref()
-        .map(ToString::to_string)
+        .map(|help| render_metadata(help, globals))
         .unwrap_or_default()
 }
 
-fn build_task_command(task: &TaskAst) -> Command {
-    let about = task
-        .doc
-        .as_ref()
-        .map(ToString::to_string)
-        .unwrap_or_default();
+fn build_task_command(task: &TaskAst, globals: &[PlanParam]) -> Command {
+    let about = metadata_about(
+        task.metadata.help.as_deref(),
+        task.metadata.desc.as_deref(),
+        globals,
+    );
     let mut cmd = Command::new(task.name.to_string())
         .styles(cli_styles())
         .about(about)
+        .help_template(TASK_HELP_TEMPLATE)
         .hide(task.is_helper());
 
     for (index, param) in task.params.iter().enumerate() {
@@ -362,21 +394,29 @@ fn build_task_command(task: &TaskAst) -> Command {
     cmd
 }
 
-fn unique_tasks<'a>(tasks: impl IntoIterator<Item = &'a TaskAst>) -> Vec<&'a TaskAst> {
+fn selected_tasks<'a>(
+    document: &'a DocumentAst,
+    tasks: impl IntoIterator<Item = &'a TaskAst>,
+) -> Vec<&'a TaskAst> {
     let mut seen = HashSet::new();
     let mut unique = Vec::new();
 
     for task in tasks {
-        if seen.insert(task.name.as_str()) {
-            unique.push(task);
+        let target = task.qualified_name();
+        if seen.insert(target.clone()) {
+            unique.push(select_root_task_variant(document, target.as_str()).unwrap_or(task));
         }
     }
 
     unique
 }
 
-fn task_listing_entries<'a>(tasks: impl IntoIterator<Item = &'a TaskAst>) -> Vec<(String, String)> {
-    unique_tasks(tasks)
+fn task_listing_entries<'a>(
+    document: &'a DocumentAst,
+    tasks: impl IntoIterator<Item = &'a TaskAst>,
+    globals: &[PlanParam],
+) -> Vec<(String, String)> {
+    selected_tasks(document, tasks)
         .into_iter()
         .filter(|task| !task.is_helper())
         .map(|task| {
@@ -384,11 +424,56 @@ fn task_listing_entries<'a>(tasks: impl IntoIterator<Item = &'a TaskAst>) -> Vec
                 task.name.to_string(),
                 task.doc
                     .as_ref()
-                    .map(ToString::to_string)
+                    .map(|text| render_metadata(text, globals))
                     .unwrap_or_default(),
             )
         })
         .collect()
+}
+
+fn global_plan_params(document: &DocumentAst) -> Vec<PlanParam> {
+    let mut globals = document
+        .directives
+        .iter()
+        .filter_map(|directive| match directive {
+            only_semantic::DirectiveAst::Variable { name, value, .. } => Some(PlanParam {
+                name: name.to_string(),
+                default_value: Some(value.to_string()),
+                value: Some(value.to_string()),
+            }),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    globals.sort_by(|left, right| left.name.cmp(&right.name));
+    globals
+}
+
+fn render_metadata(text: &str, globals: &[PlanParam]) -> String {
+    render_command(text, globals).unwrap_or_else(|_| text.to_string())
+}
+
+fn metadata_about(help: Option<&str>, desc: Option<&str>, globals: &[PlanParam]) -> String {
+    let help = help.map(|text| render_metadata(text, globals));
+    let desc = desc.map(|text| render_metadata(text, globals));
+    let title_style = TermStyle::new().bold();
+
+    match (help, desc) {
+        (Some(help), Some(desc)) => format!(
+            "{}{}{}\n\n{}",
+            title_style.render(),
+            help,
+            title_style.render_reset(),
+            desc
+        ),
+        (Some(help), None) => format!(
+            "{}{}{}",
+            title_style.render(),
+            help,
+            title_style.render_reset()
+        ),
+        (None, Some(desc)) => desc,
+        (None, None) => String::new(),
+    }
 }
 
 fn global_tasks(document: &DocumentAst) -> impl Iterator<Item = &TaskAst> {
@@ -431,6 +516,7 @@ mod tests {
     };
     use crate::parse_onlyfile;
     use clap::error::ErrorKind;
+    use only_semantic::compile_document;
     use std::panic;
 
     #[test]
@@ -449,10 +535,12 @@ mod tests {
     #[test]
     fn renders_namespace_entries_with_trailing_slash() {
         let document = parse_onlyfile(
-            "[dev]
-# Default developer workflow.
+            "!version 0.4
+group dev {
+[help] Default developer workflow.
 workflow():
     echo ok
+}
 ",
         )
         .expect("document should parse");
@@ -467,10 +555,12 @@ workflow():
     #[test]
     fn accepts_namespace_help_via_alias_without_trailing_slash() {
         let document = parse_onlyfile(
-            "[dev]
-# Default developer workflow.
+            "!version 0.4
+group dev {
+[help] Default developer workflow.
 workflow():
     echo ok
+}
 ",
         )
         .expect("document should parse");
@@ -482,8 +572,29 @@ workflow():
         assert_eq!(matches.kind(), ErrorKind::DisplayHelp);
         let help = matches.to_string();
         assert!(help.contains("Tasks:"));
-        assert!(help.contains("# Default developer workflow."));
+        assert!(help.contains("Default developer workflow."));
         assert!(!help.contains("Commands:"));
+    }
+
+    #[test]
+    fn shows_desc_in_task_help() {
+        let document = compile_document(
+            "[help] Deploy app\n[desc] Supports staging and production\ndeploy():\n    true\n",
+        )
+        .document;
+        let listing = render_available_tasks(&document);
+        assert!(listing.contains("# Deploy app"));
+        assert!(!listing.contains("Supports staging"));
+
+        for flag in ["-h", "--help"] {
+            let error = build_cli(&document)
+                .try_get_matches_from(["only", "deploy", flag])
+                .expect_err("task help should short-circuit parsing");
+            assert_eq!(error.kind(), ErrorKind::DisplayHelp);
+            let help = error.to_string();
+            assert!(help.contains("Deploy app"));
+            assert!(help.contains("Supports staging and production"));
+        }
     }
 
     #[test]
@@ -523,14 +634,16 @@ workflow():
     #[test]
     fn renders_dynamic_root_help_with_tasks_and_namespaces() {
         let document = parse_onlyfile(
-            "# Run tests.
+            "!version 0.4
+[help] Run tests.
 test():
     cargo test
 
-[dev]
-# Default developer workflow.
+group dev {
+[help] Default developer workflow.
 workflow():
     echo ok
+}
 ",
         )
         .expect("document should parse");
@@ -545,14 +658,16 @@ workflow():
     #[test]
     fn renders_namespace_help_without_default_task() {
         let document = parse_onlyfile(
-            "[dev]
-# Default developer workflow.
+            "!version 0.4
+group dev {
+[help] Default developer workflow.
 workflow():
     echo ok
 
-# Run a namespaced smoke command.
+[help] Run a namespaced smoke command.
 smoke():
     echo smoke
+}
 ",
         )
         .expect("document should parse");
@@ -561,16 +676,33 @@ smoke():
         assert!(help.contains("Usage: only dev [COMMAND]"));
         assert!(help.contains("Tasks:"));
         assert!(help.contains("workflow"));
-        assert!(help.contains("# Default developer workflow."));
+        assert!(help.contains("Default developer workflow."));
         assert!(help.contains("smoke"));
-        assert!(help.contains("# Run a namespaced smoke command."));
+        assert!(help.contains("Run a namespaced smoke command."));
         assert!(!help.contains("Commands:"));
+    }
+
+    #[test]
+    fn shows_group_desc_in_help() {
+        let document = compile_document(
+            "!version 0.4\n!var mode = \"development\"\n[help] Dev builds\n[desc] Build in {{mode}} mode.\ngroup dev {\n    [help] Build project\n    build():\n        cargo build\n}\n",
+        )
+        .document;
+
+        let listing = render_available_tasks(&document);
+        assert!(listing.contains("# Dev builds"));
+        assert!(!listing.contains("Build in development mode."));
+
+        let help = render_namespace_help(&document, &document.namespaces[0]).to_string();
+        assert!(help.contains("Dev builds"));
+        assert!(help.contains("Build in development mode."));
     }
 
     #[test]
     fn hides_help_subcommand_from_dynamic_help() {
         let document = parse_onlyfile(
-            "# Run tests.
+            "!version 0.4
+[help] Run tests.
 test():
     cargo test
 ",
@@ -584,32 +716,76 @@ test():
     #[test]
     fn renders_available_tasks_listing() {
         let document = parse_onlyfile(
-            "# Run tests.
+            "!version 0.4
+[help] Run tests.
 test():
     cargo test
 
-[dev]
-# Default developer workflow.
+group dev {
+[help] Default developer workflow.
 workflow():
     echo ok
+}
 ",
         )
         .expect("document should parse");
 
         let listing = render_available_tasks(&document);
         assert!(listing.contains("Tasks:"));
-        assert!(listing.contains("Namespaces:"));
+        assert!(listing.contains("Groups:"));
         assert!(listing.contains("test"));
         assert!(listing.contains("# Run tests."));
         assert!(listing.contains("dev"));
         assert!(!listing.contains("[group]"));
         assert!(!listing.contains("Default developer workflow."));
+        assert!(listing.contains("\u{1b}[1m\u{1b}[92mTasks:"));
+        assert!(listing.contains("\u{1b}[1m\u{1b}[92mGroups:"));
+        assert!(!listing.contains("\u{1b}[1m\u{1b}[96mtest"));
+        assert!(!listing.contains("\u{1b}[1m\u{1b}[93mdev"));
+    }
+
+    #[test]
+    fn selects_variant_help() {
+        let document = parse_onlyfile(
+            "!version 0.4\n[help] Guarded tests\n[desc] Uses another runner.\ntest() ? @os(\"not-a-real-os\"):\n    true\n\n[help] Cargo tests\n[desc] Uses Cargo.\ntest():\n    true\n",
+        )
+        .expect("document should parse");
+
+        let listing = render_available_tasks(&document);
+        assert!(listing.contains("# Cargo tests"));
+        assert!(!listing.contains("# Guarded tests"));
+
+        let error = build_cli(&document)
+            .try_get_matches_from(["only", "test", "--help"])
+            .expect_err("task help should short-circuit parsing");
+        let help = error.to_string();
+        assert!(help.contains("Cargo tests"));
+        assert!(help.contains("Uses Cargo."));
+        assert!(!help.contains("Uses another runner."));
+    }
+
+    #[test]
+    fn inherits_variant_help() {
+        let document = parse_onlyfile(
+            "!version 0.4\n[help] Run tests\n[desc] Run the project tests.\ntest() ? @os(\"not-a-real-os\"):\n    true\n\ntest():\n    true\n",
+        )
+        .expect("document should parse");
+
+        let listing = render_available_tasks(&document);
+        assert!(listing.contains("# Run tests"));
+
+        let error = build_cli(&document)
+            .try_get_matches_from(["only", "test", "--help"])
+            .expect_err("task help should short-circuit parsing");
+        let help = error.to_string();
+        assert!(help.contains("Run tests"));
+        assert!(help.contains("Run the project tests."));
     }
 
     #[test]
     fn renders_namespace_summary_from_namespace_doc() {
         let document = parse_onlyfile(
-            "# Developer workflow.\n[dev]\n# Run smoke.\nsmoke():\n    echo smoke\n",
+            "!version 0.4\n[help] Developer workflow.\ngroup dev {\n    [help] Run smoke.\n    smoke():\n        echo smoke\n}\n",
         )
         .expect("document should parse");
 
@@ -621,10 +797,12 @@ workflow():
     #[test]
     fn omits_namespace_fallback_summary_when_doc_is_missing() {
         let document = parse_onlyfile(
-            "[dev]
-# Run smoke.
-smoke():
-    echo smoke
+            "!version 0.4
+group dev {
+    [help] Run smoke.
+    smoke():
+        echo smoke
+}
 ",
         )
         .expect("document should parse");
@@ -636,23 +814,25 @@ smoke():
     #[test]
     fn renders_namespace_help_about_from_namespace_doc() {
         let document = parse_onlyfile(
-            "# Developer workflow.
-[dev]
-# Run smoke.
-smoke():
-    echo smoke
+            "!version 0.4
+[help] Developer workflow.
+group dev {
+    [help] Run smoke.
+    smoke():
+        echo smoke
+}
 ",
         )
         .expect("document should parse");
 
         let help = render_namespace_help(&document, &document.namespaces[0]).to_string();
-        assert!(help.starts_with("Developer workflow."));
+        assert!(help.contains("Developer workflow."));
     }
 
     #[test]
     fn hides_helper_tasks_from_rendered_outputs() {
         let document = parse_onlyfile(
-            "# Run tests.\n_test_helper():\n    cargo test\ntest():\n    cargo test\n\n[dev]\n_workflow():\n    echo hidden\nworkflow():\n    echo ok\n",
+            "!version 0.4\n# Internal test helper.\n_test_helper():\n    cargo test\ntest():\n    cargo test\n\ngroup dev {\n    _workflow():\n        echo hidden\n    workflow():\n        echo ok\n}\n",
         )
         .expect("document should parse");
 
@@ -673,17 +853,17 @@ smoke():
     #[test]
     fn omits_namespaces_that_only_contain_helper_tasks() {
         let document = parse_onlyfile(
-            "# Visible workflow.\ncheck():\n    cargo check\n\n# Hidden namespace.\n[dev]\n_hidden():\n    echo hidden\n",
+            "!version 0.4\ncheck():\n    cargo check\n\n[help] Hidden group.\ngroup dev {\n    _hidden():\n        echo hidden\n}\n",
         )
         .expect("document should parse");
 
         let listing = render_available_tasks(&document);
         assert!(listing.contains("check"));
         assert!(!listing.contains("dev"));
-        assert!(!listing.contains("Hidden namespace."));
+        assert!(!listing.contains("Hidden group."));
 
         let namespace_help = render_namespace_help(&document, &document.namespaces[0]).to_string();
-        assert!(namespace_help.contains("Hidden namespace."));
+        assert!(namespace_help.contains("Hidden group."));
         assert!(namespace_help.contains("Usage: only dev"));
         assert!(namespace_help.contains("Tasks:"));
         assert!(namespace_help.contains("Options:"));

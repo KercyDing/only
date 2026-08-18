@@ -328,13 +328,13 @@ fn rejects_duplicate_directives() {
 
 #[test]
 fn rejects_incompatible_version_before_cli_parsing() {
-    let source = "!version 0.4\nbuild():\n    echo build\n";
-    let error = parse_onlyfile(source).expect_err("0.3 runner should reject 0.4");
+    let source = "!version 1.0\nbuild():\n    echo build\n";
+    let error = parse_onlyfile(source).expect_err("0.4 runner should reject 1.0");
 
     let message = error.to_string();
     assert!(!message.contains("version.incompatible"));
-    assert!(message.starts_with("this Onlyfile needs `only` 0.4 or newer (not 1.x)"));
-    assert!(message.contains("needed: >=0.4.0, <1.0.0"));
+    assert!(message.starts_with("this Onlyfile needs `only` 1.0 or newer (not 2.x)"));
+    assert!(message.contains("needed: >=1.0.0, <2.0.0"));
 }
 
 #[test]
@@ -371,13 +371,11 @@ serve():
 
 #[test]
 fn does_not_assign_namespace_doc_to_first_task() {
-    let source = "# Developer workflow.\n[dev]\nsmoke():\n    echo smoke\n";
+    let source =
+        "!version 0.4\n# Developer workflow.\ngroup dev {\n    smoke():\n        echo smoke\n}\n";
     let document = parse_onlyfile(source).expect("namespaced tasks should parse");
 
-    assert_eq!(
-        document.namespaces[0].doc.as_deref(),
-        Some("Developer workflow.")
-    );
+    assert!(document.namespaces[0].doc.is_none());
     assert_eq!(task(&document, Some("dev"), "smoke").name, "smoke");
     assert!(task(&document, Some("dev"), "smoke").doc.is_none());
 }
@@ -476,8 +474,9 @@ fn propagates_command_failure() {
     let error = run_plan(&plan).expect_err("runtime should return contextual error");
     let rendered = error.to_string();
     assert!(rendered.contains("task 'fail' failed at step [1/1]"));
-    assert!(rendered.contains("command: `false`"));
-    assert!(rendered.contains("exit code:"));
+    assert!(rendered.contains("due to "));
+    assert!(!rendered.contains("ExitCode("));
+    assert!(!rendered.contains("command:"));
 }
 
 #[test]
@@ -853,6 +852,64 @@ fail():
     assert!(plain_stderr.contains("fail err"));
     assert!(plain_stderr.contains("Error:"));
     assert!(!plain_stderr.contains("[1/1] fail"));
+}
+
+#[cfg(unix)]
+#[test]
+fn prints_task_messages() {
+    let _cwd_lock = cwd_lock();
+    let temp_dir = TempDir::new("task-result-messages");
+    fs::write(
+        temp_dir.path().join("Onlyfile"),
+        r#"!version 0.4
+!shell sh
+
+[help] Pass demo
+[pass] done
+pass():
+    true
+
+[help] Fail demo
+[fail] 123
+demo():
+    exit 1
+"#,
+    )
+    .expect("Onlyfile should be written");
+
+    let success = Command::new(cli_binary_path())
+        .arg("pass")
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("success task should run");
+    let success_stderr = strip_ansi(
+        &String::from_utf8(success.stderr).expect("success stderr should be valid utf-8"),
+    );
+    assert_eq!(success.status.code(), Some(0));
+    assert!(success_stderr.lines().any(|line| line == "done"));
+    assert!(!success_stderr.contains("Pass:"));
+
+    let failure = Command::new(cli_binary_path())
+        .arg("demo")
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("failure task should run");
+    let failure_stderr = strip_ansi(
+        &String::from_utf8(failure.stderr).expect("failure stderr should be valid utf-8"),
+    );
+    let error = "Error: task 'demo' failed at step [1/1] due to unix_exit_status(1)";
+    let error_index = failure_stderr
+        .find(error)
+        .expect("runtime error should be printed");
+    let message_index = failure_stderr
+        .rfind("\n123")
+        .expect("failure message should be printed");
+
+    assert_ne!(failure.status.code(), Some(0));
+    assert!(error_index < message_index);
+    assert!(!failure_stderr.contains("ExitCode("));
+    assert!(!failure_stderr.contains("Fail:"));
+    assert!(!failure_stderr.contains("command:"));
 }
 
 #[test]
@@ -1232,7 +1289,7 @@ fn version_gate_prevents_execution() {
     let onlyfile_path = root.join("Onlyfile");
     fs::write(
         &onlyfile_path,
-        "!version 0.4\ncheck():\n    echo executed > marker.txt\n",
+        "!version 1.0\ncheck():\n    echo executed > marker.txt\n",
     )
     .expect("Onlyfile should be written");
     let input = CliInput {
@@ -1252,7 +1309,7 @@ fn version_gate_prevents_execution() {
 
     let error = run_with(input).expect_err("incompatible version should stop execution");
 
-    assert!(error.to_string().contains("needs `only` 0.4"));
+    assert!(error.to_string().contains("needs `only` 1.0"));
     assert!(!root.join("marker.txt").exists());
     fs::remove_dir_all(root).expect("temp tree should be removed");
 }
@@ -1314,7 +1371,7 @@ fn helper_task_help_is_available_via_cli_binary() {
     let plain_stderr = strip_ansi(&stderr);
 
     assert_eq!(output.status.code(), Some(0), "stderr was: {stderr}");
-    assert!(plain_stdout.contains("Usage: only _prepare [OPTIONS] [target]"));
+    assert!(plain_stdout.contains("Usage:\n  only _prepare [OPTIONS] [target]"));
     assert!(plain_stdout.contains("[target]  Required parameter"));
     assert!(plain_stderr.is_empty(), "stderr was: {plain_stderr}");
 }
