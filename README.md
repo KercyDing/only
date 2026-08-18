@@ -2,104 +2,125 @@
 
 # Only
 
-**⚡️A small cross-platform task runner.⚡️**
-
-Keep project workflows in one readable `Onlyfile`.
+**A task language for explicit, cross-platform workflows.**
 
 [![Crates.io](https://img.shields.io/crates/v/only.svg)](https://crates.io/crates/only)
 [![CI](https://github.com/KercyDing/only/actions/workflows/check.yml/badge.svg)](https://github.com/KercyDing/only/actions/workflows/check.yml)
 [![License](https://img.shields.io/crates/l/only.svg)](LICENSE)
 
-<kbd>[Usage guide](docs/usage.md)</kbd> <kbd>[Complete example](examples/Onlyfile)</kbd> <kbd>[VSCode extension](https://marketplace.visualstudio.com/items?itemName=kercyding.onlyfile)</kbd>
+<kbd>[Usage guide](docs/usage.md)</kbd> <kbd>[Complete example](examples/Onlyfile)</kbd> <kbd>[VS Code extension](https://marketplace.visualstudio.com/items?itemName=kercyding.onlyfile)</kbd>
 
 </div>
 
-## Example
+## Quick start
+
+An `Onlyfile` describes tasks and their execution stages:
 
 ```Onlyfile
 !version 0.4
-!var cargo_flags = "--workspace"
+!var pnpm_dir = "web"
 
-[help] Build the Rust app
-build(profile = "dev"):
-    cargo build {{cargo_flags}} --profile {{profile}}
+# Internal setup task.
+[fail] Preparation failed
+_prepare():
+    | cd {{pnpm_dir}}
+    | pnpm install
+    cargo fetch
 
-[help] Run tests in parallel
-ci() & (back.test, front.test):
-    echo "CI complete!"
+[help] Run CI
+[pass] CI complete
+ci()
+    & _prepare
+    & (front.check, back.check)
+    & (front.test, back.test)
+:
 
-[help] Backend tasks
+[help] Frontend checks
+[desc] The pnpm dir is {{pnpm_dir}}/
+group front {
+
+    check():
+        pnpm --dir {{pnpm_dir}} lint
+
+    test():
+        pnpm --dir {{pnpm_dir}} test
+}
+
+[help] Backend checks
 group back {
 
-    [help] Test the backend.
-    # Prefer nextest when available.
+    check():
+        cargo check
+
     test() ? @has("cargo-nextest"):
         cargo nextest run
 
-    [help] Test the backend.
     test():
         cargo test
 }
-
-[help] Frontend tasks
-group front {
-
-    [help] Test the frontend.
-    test():
-        pnpm test
-}
 ```
 
-Run it:
+`&` advances to the next dependency stage; tasks inside `( ... )` run in parallel.
+
+Run `only` to list tasks, or run one directly:
 
 ```shell
 only
-only build
-only build release
 only ci
 ```
 
-Or inspect the execution plan first:
+Inspect the resolved workflow before running it:
 
 ```shell
-only ci --dry-run
+only ci --dry-run --full
 ```
 
 ```text
 Dry run: ci()
-├─ stage 1 (parallel)
-│  ├─ back.test (1 command)
-│  └─ front.test (1 command)
-└─ stage 2
-   └─ ci (1 command)
+├─ stage 1
+│  └─ _prepare
+│     ├─ block (deno)
+│     │  ├─ cd web
+│     │  └─ pnpm install
+│     └─ cargo fetch
+├─ stage 2 (parallel)
+│  ├─ front.check
+│  │  └─ pnpm --dir web lint
+│  └─ back.check
+│     └─ cargo check
+├─ stage 3 (parallel)
+│  ├─ front.test
+│  │  └─ pnpm --dir web test
+│  └─ back.test
+│     └─ cargo nextest run
+└─ stage 4
+   └─ ci
 ```
 
-Format the Onlyfile with:
+Format the file with:
 
 ```shell
 only --fmt
 ```
 
-Dependencies, parallel execution, parameters, and environment-specific task variants stay in the task definition instead of shell control flow.
+The workflow structure stays in the task definition instead of being hidden in shell control flow. See the [usage guide](docs/usage.md) for parameters, guards, shells, command blocks, and groups.
 
-## Features
+## Why Only
 
-- **Structured tasks** — parameters, dependencies, groups, and private helpers.
-- **Predictable execution** — ordered stages, parallel groups, and deduplicated dependencies.
-- **Environment-aware variants** — guards for the OS, architecture, environment, and installed commands.
-- **Cross-platform commands** — a built-in shell, command blocks, and optional host shells.
-- **Consistent files** — global string values, multiline headers, and a zero-config formatter.
-- **Inspectable workflows** — validation, dynamic help, and dry-run execution plans.
+* **Explicit stages** — `&` expresses order and `( ... )` expresses parallelism.
+* **Structured tasks** — parameters, guards, groups, helpers, and metadata are part of the language.
+* **Cross-platform commands** — use the built-in shell by default, or select a host shell when needed.
+* **Inspectable workflows** — the formatter, diagnostics, editor tooling, and `--dry-run --full` understand the same task graph.
 
-## How it differs
+## Compared with just and Task
 
-All three support dependencies and cross-platform workflows. The main difference is how they express them.
+`just`, Task, and Only can all run project commands. Only focuses on making execution stages and parallel groups explicit in the task definition.
 
-| Tool | Configuration style | Emphasis |
-| --- | --- | --- |
-| [`just`](https://github.com/casey/just) | Make-inspired recipes in a `justfile` | mature, shell-oriented command recipes |
-| [`Task`](https://taskfile.dev/) | declarative YAML in `Taskfile.yml` | broad task configuration without a custom syntax |
-| `only` | function-style tasks in an `Onlyfile` | explicit stages, guarded variants, and groups in compact syntax |
+| Tool                                    | Model                      | Best fit                       |
+| --------------------------------------- | -------------------------- | ------------------------------ |
+| [`just`](https://github.com/casey/just) | recipes and dependencies   | command recipes and scripts    |
+| [`Task`](https://taskfile.dev/)         | YAML task definitions      | declarative task configuration |
+| **Only**                                | tasks and execution stages | explicit workflow structure    |
 
 ## Install
 
