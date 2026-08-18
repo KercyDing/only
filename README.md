@@ -32,7 +32,7 @@ ci() & (back.test, front.test):
 [back] {
     # Test the backend.
     // Prefer nextest when available.
-    test() ? @env("CI") ? @has("cargo-nextest"):
+    test() ? @has("cargo-nextest"):
         cargo nextest run
 
     test():
