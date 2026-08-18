@@ -127,6 +127,7 @@ impl Backend {
                 kind: Some(match item.kind {
                     LspCompletionKind::Directive => CompletionItemKind::KEYWORD,
                     LspCompletionKind::Guard => CompletionItemKind::FUNCTION,
+                    LspCompletionKind::Metadata => CompletionItemKind::PROPERTY,
                 }),
                 detail: Some(item.detail),
                 insert_text: Some(item.insert_text.clone()),
@@ -204,7 +205,11 @@ impl LanguageServerProtocol for Backend {
                     TextDocumentSyncKind::FULL,
                 )),
                 completion_provider: Some(CompletionOptions {
-                    trigger_characters: Some(vec!["!".to_string(), "@".to_string()]),
+                    trigger_characters: Some(vec![
+                        "!".to_string(),
+                        "@".to_string(),
+                        "[".to_string(),
+                    ]),
                     ..CompletionOptions::default()
                 }),
                 hover_provider: Some(tower_lsp::lsp_types::HoverProviderCapability::Simple(true)),
@@ -224,8 +229,10 @@ impl LanguageServerProtocol for Backend {
                                     SemanticTokenType::new("parameter"),
                                     SemanticTokenType::new("guard"),
                                     SemanticTokenType::new("dependency"),
-                                    SemanticTokenType::KEYWORD,
+                                    SemanticTokenType::new("shell"),
                                     SemanticTokenType::new("variable"),
+                                    SemanticTokenType::new("metadata"),
+                                    SemanticTokenType::new("blockMarker"),
                                 ],
                                 token_modifiers: Vec::new(),
                             },
@@ -388,6 +395,8 @@ impl LanguageServerProtocol for Backend {
                 LspSemanticTokenKind::Dependency => 5,
                 LspSemanticTokenKind::Shell => 6,
                 LspSemanticTokenKind::Variable => 7,
+                LspSemanticTokenKind::Metadata => 8,
+                LspSemanticTokenKind::BlockMarker => 9,
             };
             data.push(SemanticToken {
                 delta_line: start.line - previous_line,
@@ -432,10 +441,6 @@ fn host_diagnostic_to_protocol(source: &str, diagnostic: HostDiagnostic) -> Diag
 }
 
 fn hover_markdown(hover: &LspHover) -> String {
-    if matches!(hover.kind, crate::LspHoverKind::DocComment) {
-        return hover.docs.clone().unwrap_or_default();
-    }
-
     let mut sections = vec![format!("```onlyfile\n{}\n```", hover.signature)];
 
     if let Some(docs) = &hover.docs {

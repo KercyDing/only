@@ -12,6 +12,8 @@ pub enum LspSemanticTokenKind {
     Dependency,
     Shell,
     Variable,
+    Metadata,
+    BlockMarker,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,7 +66,7 @@ pub fn semantic_tokens(snapshot: &DocumentSnapshot) -> Vec<LspSemanticToken> {
                 }),
         );
         tokens.extend(header.guards.into_iter().map(|guard| LspSemanticToken {
-            range: guard.range,
+            range: guard.name_range,
             kind: LspSemanticTokenKind::Guard,
         }));
         tokens.extend(
@@ -84,7 +86,55 @@ pub fn semantic_tokens(snapshot: &DocumentSnapshot) -> Vec<LspSemanticToken> {
                 kind: LspSemanticTokenKind::Shell,
             });
         }
+        for step in task.steps() {
+            match step {
+                only_syntax::TaskStepNode::Command(command) => {
+                    add_interpolation_tokens(snapshot, command.range, &mut tokens);
+                }
+                only_syntax::TaskStepNode::CommandBlock(block) => {
+                    add_interpolation_tokens(snapshot, block.range, &mut tokens);
+                    tokens.extend(
+                        block
+                            .marker_ranges
+                            .into_iter()
+                            .map(|range| LspSemanticToken {
+                                range,
+                                kind: LspSemanticTokenKind::BlockMarker,
+                            }),
+                    );
+                }
+            }
+        }
+    }
+    for comment in snapshot.syntax.document().metadata() {
+        if let Some(range) = comment.tag_range() {
+            tokens.push(LspSemanticToken {
+                range,
+                kind: LspSemanticTokenKind::Metadata,
+            });
+        }
+        add_interpolation_tokens(snapshot, comment.range(), &mut tokens);
     }
     tokens.sort_by_key(|token| token.range.start());
     tokens
+}
+
+fn add_interpolation_tokens(
+    snapshot: &DocumentSnapshot,
+    source_range: TextRange,
+    tokens: &mut Vec<LspSemanticToken>,
+) {
+    let start = usize::from(source_range.start());
+    let end = usize::from(source_range.end());
+    let Some(source) = snapshot.source.get(start..end) else {
+        return;
+    };
+
+    for local_range in only_semantic::interpolation_name_ranges(source) {
+        let offset = text_size::TextSize::from(start as u32);
+        tokens.push(LspSemanticToken {
+            range: TextRange::new(offset + local_range.start(), offset + local_range.end()),
+            kind: LspSemanticTokenKind::Variable,
+        });
+    }
 }

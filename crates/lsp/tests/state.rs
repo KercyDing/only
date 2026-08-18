@@ -23,7 +23,7 @@ fn stores_and_replaces_document_snapshots_by_uri() {
 fn reads_diagnostics_and_editor_analysis_from_same_snapshot() {
     let mut state = WorkspaceState::new();
     let uri = "file:///workspace/Onlyfile";
-    let source = "# Start the app.\nserve(port=\"3000\"):\n    echo {{port}}\n";
+    let source = "!version 0.4\n[help] Start the app.\nserve(port=\"3000\"):\n    echo {{port}}\n";
     state.upsert(uri, 1, source);
 
     let diagnostics = state.diagnostics(uri).expect("diagnostics should exist");

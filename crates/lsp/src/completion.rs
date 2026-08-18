@@ -1,10 +1,11 @@
-use only_syntax::{DirectiveKind, GuardKind};
+use only_syntax::{DirectiveKind, GuardKind, MetadataKind};
 use text_size::{TextRange, TextSize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LspCompletionKind {
     Directive,
     Guard,
+    Metadata,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +26,7 @@ pub fn completions(source: &str, offset: TextSize) -> Vec<LspCompletion> {
     match prefix.marker {
         '!' if prefix.is_line_start => directive_completions(&prefix),
         '@' if prefix.is_guard => guard_completions(&prefix),
+        '[' if prefix.is_line_start => metadata_completions(&prefix),
         _ => Vec::new(),
     }
 }
@@ -53,22 +55,41 @@ fn completion_prefix(source: &str, cursor: usize) -> Option<CompletionPrefix<'_>
     }
 
     let marker = source[..name_start].chars().next_back()?;
-    if !matches!(marker, '!' | '@') {
+    if !matches!(marker, '!' | '@' | '[') {
         return None;
     }
     let marker_start = name_start - marker.len_utf8();
     let before_marker = &source[line_start..marker_start];
+    let replace_end = if marker == '[' && source[cursor..].starts_with(']') {
+        cursor + ']'.len_utf8()
+    } else {
+        cursor
+    };
 
     Some(CompletionPrefix {
         marker,
         name: &source[name_start..cursor],
         replace_range: TextRange::new(
             TextSize::from(marker_start as u32),
-            TextSize::from(cursor as u32),
+            TextSize::from(replace_end as u32),
         ),
         is_line_start: before_marker.chars().all(char::is_whitespace),
         is_guard: before_marker.contains('?'),
     })
+}
+
+fn metadata_completions(prefix: &CompletionPrefix<'_>) -> Vec<LspCompletion> {
+    MetadataKind::SUPPORTED
+        .iter()
+        .filter(|field| field.as_str().starts_with(prefix.name))
+        .map(|field| LspCompletion {
+            kind: LspCompletionKind::Metadata,
+            label: format!("[{field}]"),
+            detail: field.description().unwrap_or_default().to_string(),
+            insert_text: format!("[{field}] ${{1:text}}"),
+            replace_range: prefix.replace_range,
+        })
+        .collect()
 }
 
 fn directive_completions(prefix: &CompletionPrefix<'_>) -> Vec<LspCompletion> {
@@ -101,7 +122,7 @@ fn guard_completions(prefix: &CompletionPrefix<'_>) -> Vec<LspCompletion> {
 
 fn directive_snippet(directive: &DirectiveKind) -> &'static str {
     match directive {
-        DirectiveKind::Version => "!version ${1:0.3}",
+        DirectiveKind::Version => "!version ${1:0.4}",
         DirectiveKind::Var => "!var ${1:name} = \"${2:value}\"",
         DirectiveKind::Shell => "!shell ${1|deno,bash,sh,pwsh,powershell|}",
         DirectiveKind::Unknown(_) => "",

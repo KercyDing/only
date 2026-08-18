@@ -1,4 +1,4 @@
-use only_semantic::{GuardKind, ShellKind, ShellOperator};
+use only_semantic::{GuardKind, MetadataKind, ShellKind, ShellOperator};
 use text_size::{TextRange, TextSize};
 
 use crate::DocumentSnapshot;
@@ -12,13 +12,16 @@ use crate::DocumentSnapshot;
 /// Stable hover categories detached from semantic internals.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LspHoverKind {
+    ConditionOperator,
     Dependency,
+    DependencyOperator,
     Directive,
-    DocComment,
+    Metadata,
     GuardProbe,
     Interpolation,
     Namespace,
     Parameter,
+    ParallelGroup,
     ShellOperator,
     Task,
     CommandBlock,
@@ -51,7 +54,10 @@ pub struct LspHover {
 /// Host-facing hover payload when one source item matches the offset.
 pub fn hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {
     directive_hover(snapshot, offset)
-        .or_else(|| doc_comment_hover(snapshot, offset))
+        .or_else(|| metadata_hover(snapshot, offset))
+        .or_else(|| condition_operator_hover(snapshot, offset))
+        .or_else(|| dependency_operator_hover(snapshot, offset))
+        .or_else(|| parallel_group_hover(snapshot, offset))
         .or_else(|| probe_hover(snapshot, offset))
         .or_else(|| shell_operator_hover(snapshot, offset))
         .or_else(|| parameter_hover(snapshot, offset))
@@ -60,6 +66,84 @@ pub fn hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> 
         .or_else(|| dependency_hover(snapshot, offset))
         .or_else(|| task_hover(snapshot, offset))
         .or_else(|| namespace_hover(snapshot, offset))
+}
+
+fn parallel_group_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {
+    for task in snapshot.syntax.document().tasks() {
+        let Some(header) = task.header() else {
+            continue;
+        };
+        for dependency in header.dependencies() {
+            let delimiter_ranges = dependency.parallel_group_delimiter_ranges();
+            let Some(range) = delimiter_ranges
+                .into_iter()
+                .find(|range| range.contains(offset))
+            else {
+                continue;
+            };
+            let signature = dependency.text().trim_start_matches('&').trim().to_string();
+            return Some(LspHover {
+                kind: LspHoverKind::ParallelGroup,
+                name: "parallel dependencies".to_string(),
+                signature,
+                docs: Some("Runs these dependencies in parallel.".to_string()),
+                range,
+                container_name: None,
+            });
+        }
+    }
+
+    None
+}
+
+fn condition_operator_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {
+    for task in snapshot.syntax.document().tasks() {
+        let Some(header) = task.header() else {
+            continue;
+        };
+        for condition in header.conditions() {
+            let Some(range) = condition.operator_range() else {
+                continue;
+            };
+            if range.contains(offset) {
+                return Some(LspHover {
+                    kind: LspHoverKind::ConditionOperator,
+                    name: "condition".to_string(),
+                    signature: "?".to_string(),
+                    docs: Some("Runs the task only when the guard returns true.".to_string()),
+                    range,
+                    container_name: None,
+                });
+            }
+        }
+    }
+
+    None
+}
+
+fn dependency_operator_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {
+    for task in snapshot.syntax.document().tasks() {
+        let Some(header) = task.header() else {
+            continue;
+        };
+        for dependency in header.dependencies() {
+            let Some(range) = dependency.operator_range() else {
+                continue;
+            };
+            if range.contains(offset) {
+                return Some(LspHover {
+                    kind: LspHoverKind::DependencyOperator,
+                    name: "dependency".to_string(),
+                    signature: "&".to_string(),
+                    docs: Some("Runs the dependency before this task.".to_string()),
+                    range,
+                    container_name: None,
+                });
+            }
+        }
+    }
+
+    None
 }
 
 fn parameter_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {
@@ -174,16 +258,24 @@ fn directive_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspH
     None
 }
 
-fn doc_comment_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {
-    for doc_comment in snapshot.syntax.document().doc_comments() {
-        if doc_comment.range().contains(offset) {
-            let docs = doc_comment.text()?.to_string();
+fn metadata_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {
+    for metadata in snapshot.syntax.document().metadata() {
+        if metadata.range().contains(offset) {
+            let (field, value) = metadata.field()?;
+            let kind = MetadataKind::parse(field.as_str());
+            let mut docs = kind
+                .description()
+                .unwrap_or("Unknown metadata field.")
+                .to_string();
+            if !value.is_empty() {
+                docs.push_str(&format!("\n\nCurrent text: {value}"));
+            }
             return Some(LspHover {
-                kind: LspHoverKind::DocComment,
-                name: "documentation".to_string(),
-                signature: String::new(),
+                kind: LspHoverKind::Metadata,
+                name: field.to_string(),
+                signature: format!("[{field}]"),
                 docs: Some(docs),
-                range: doc_comment.range(),
+                range: metadata.range(),
                 container_name: None,
             });
         }
@@ -405,7 +497,11 @@ fn namespace_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspH
                 signature: if syntax.is_close() {
                     "}".to_owned()
                 } else if syntax.has_open_brace() {
-                    format!("namespace [{name}] {{")
+                    if namespace.is_group {
+                        format!("group {name} {{")
+                    } else {
+                        format!("namespace [{name}] {{")
+                    }
                 } else {
                     format!("namespace [{name}]")
                 },

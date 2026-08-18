@@ -31,16 +31,32 @@ fn keeps_uri_when_reparsing_new_version() {
 }
 
 #[test]
-fn keeps_doc_comment_hover_separate_from_following_task() {
+fn ordinary_comment_has_no_hover() {
     let source =
         "// section header\n\n# macOS-only task.\nbuild-macos(target=\"debug\"):\n    echo ok\n";
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
     let offset = TextSize::from(source.find("macOS-only").expect("doc text should exist") as u32);
 
-    let hover = hover(&snapshot, offset).expect("hover should exist");
+    assert!(hover(&snapshot, offset).is_none());
+}
 
-    assert_eq!(hover.kind, LspHoverKind::DocComment);
-    assert_eq!(hover.docs.as_deref(), Some("macOS-only task."));
+#[test]
+fn returns_metadata_hover() {
+    let source = "!version 0.4\n[help] Build the project\nbuild():\n    true\n";
+    let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
+    let offset = TextSize::from(source.find("help").expect("metadata field should exist") as u32);
+
+    let hover = hover(&snapshot, offset).expect("metadata hover should exist");
+
+    assert_eq!(hover.kind, LspHoverKind::Metadata);
+    assert_eq!(hover.signature, "[help]");
+    assert!(
+        hover
+            .docs
+            .as_deref()
+            .unwrap_or_default()
+            .contains("Build the project")
+    );
 }
 
 #[test]
@@ -96,6 +112,22 @@ fn returns_guard_probe_hover() {
             .is_some_and(|docs| docs.contains("Current argument: `macos`"))
     );
     assert!(hover(&snapshot, argument_offset).is_none());
+}
+
+#[test]
+fn describes_condition_operator() {
+    let source = "build() ? @os(\"macos\"):\n    echo ok\n";
+    let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
+    let offset = TextSize::from(source.find('?').expect("condition should exist") as u32);
+
+    let info = hover(&snapshot, offset).expect("condition hover should exist");
+
+    assert_eq!(info.kind, LspHoverKind::ConditionOperator);
+    assert_eq!(info.signature, "?");
+    assert_eq!(
+        info.docs.as_deref(),
+        Some("Runs the task only when the guard returns true.")
+    );
 }
 
 #[test]
@@ -176,10 +208,11 @@ fn returns_command_block_hover_with_shell() {
 #[test]
 fn returns_dependency_hover_for_serial_chain_entries() {
     let source = concat!(
-        "# Formatting task.\n",
+        "!version 0.4\n",
+        "[help] Formatting task.\n",
         "fmt():\n",
         "    cargo fmt\n",
-        "# CI wrapper.\n",
+        "[help] CI wrapper.\n",
         "ci() & fmt:\n",
         "    echo done\n",
     );
@@ -194,18 +227,59 @@ fn returns_dependency_hover_for_serial_chain_entries() {
     assert_eq!(info.name, "fmt");
     assert_eq!(info.signature, "fmt()");
     assert_eq!(info.docs.as_deref(), Some("Formatting task."));
-    assert!(hover(&snapshot, amp_offset).is_none());
+    let operator = hover(&snapshot, amp_offset).expect("dependency operator hover should exist");
+    assert_eq!(operator.kind, LspHoverKind::DependencyOperator);
+    assert_eq!(operator.signature, "&");
+    assert_eq!(
+        operator.docs.as_deref(),
+        Some("Runs the dependency before this task.")
+    );
+}
+
+#[test]
+fn describes_parallel_dependency_group() {
+    let source = concat!(
+        "check():\n    true\n",
+        "test():\n    true\n",
+        "ci() & (check, test):\n    true\n",
+    );
+    let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
+    let group_start = source.rfind("(check").expect("parallel group should exist");
+    let comma = source.rfind(',').expect("parallel separator should exist");
+    let check = source
+        .rfind("check")
+        .expect("check dependency should exist");
+    let test = source.rfind("test").expect("test dependency should exist");
+
+    for offset in [group_start, comma] {
+        let info = hover(&snapshot, TextSize::from(offset as u32))
+            .expect("parallel group hover should exist");
+        assert_eq!(info.kind, LspHoverKind::ParallelGroup);
+        assert_eq!(info.signature, "(check, test)");
+        assert_eq!(
+            info.docs.as_deref(),
+            Some("Runs these dependencies in parallel.")
+        );
+    }
+
+    for offset in [check, test] {
+        let info = hover(&snapshot, TextSize::from(offset as u32))
+            .expect("dependency hover should remain available");
+        assert_eq!(info.kind, LspHoverKind::Dependency);
+    }
 }
 
 #[test]
 fn resolves_local_namespace_dependency_hover() {
     let source = concat!(
-        "[dev]\n",
-        "# Build assets.\n",
+        "!version 0.4\n",
+        "[dev] {\n",
+        "[help] Build assets.\n",
         "build():\n",
         "    cargo build\n",
         "ci() & build:\n",
         "    echo done\n",
+        "}\n",
     );
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
     let dependency_offset =
@@ -223,9 +297,9 @@ fn resolves_local_namespace_dependency_hover() {
 #[test]
 fn returns_braced_namespace_hover() {
     let source = concat!(
-        "!version 0.3\n",
-        "# Development tasks.\n",
-        "[dev] {\n",
+        "!version 0.4\n",
+        "[help] Development tasks.\n",
+        "group dev {\n",
         "    run():\n",
         "        true\n",
         "}\n",
@@ -239,7 +313,7 @@ fn returns_braced_namespace_hover() {
 
     assert_eq!(open.kind, LspHoverKind::Namespace);
     assert_eq!(open.name, "dev");
-    assert_eq!(open.signature, "namespace [dev] {");
+    assert_eq!(open.signature, "group dev {");
     assert_eq!(open.docs.as_deref(), Some("Development tasks."));
     assert_eq!(close.kind, LspHoverKind::Namespace);
     assert_eq!(close.name, "dev");

@@ -18,7 +18,7 @@ fn completes_directives() {
             .iter()
             .all(|item| item.kind == LspCompletionKind::Directive)
     );
-    assert_eq!(items[0].insert_text, "!version ${1:0.3}");
+    assert_eq!(items[0].insert_text, "!version ${1:0.4}");
 }
 
 #[test]
@@ -59,4 +59,34 @@ fn ignores_command_at_signs() {
     let items = completions(source, TextSize::of(source));
 
     assert!(items.is_empty());
+}
+
+#[test]
+fn completes_metadata_fields() {
+    let source = "[";
+    let items = completions(source, TextSize::of(source));
+
+    assert_eq!(
+        items
+            .iter()
+            .map(|item| item.label.as_str())
+            .collect::<Vec<_>>(),
+        ["[help]", "[desc]", "[pass]", "[fail]"]
+    );
+    assert!(
+        items
+            .iter()
+            .all(|item| item.kind == LspCompletionKind::Metadata)
+    );
+    assert_eq!(items[0].insert_text, "[help] ${1:text}");
+}
+
+#[test]
+fn replaces_auto_closed_bracket() {
+    let source = "[]";
+    let items = completions(source, TextSize::from(1));
+
+    assert_eq!(usize::from(items[0].replace_range.start()), 0);
+    assert_eq!(usize::from(items[0].replace_range.end()), source.len());
+    assert_eq!(items[0].insert_text, "[help] ${1:text}");
 }
