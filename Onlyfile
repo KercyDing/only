@@ -1,54 +1,80 @@
-!version 0.3
+!version 0.4
 !var cargo_flags = "--all-targets"
 
-# Dev builds
-[dev] {
-    # Build the project in dev mode.
+[help] Development builds
+group dev {
+
+    [help] Build for development
+    [desc] Build with {{cargo_flags}}.
+    [pass] Build complete.
+    [fail] Build failed.
     build():
         cargo build {{cargo_flags}}
 }
 
-# Release builds
-[rel] {
-    # Build the project in release mode.
+[help] Release builds
+group rel {
+
+    [help] Build for release
+    [pass] Build complete.
+    [fail] Build failed.
     build():
-        cargo build --release {{cargo_flags}}
+        cargo build --release
 }
 
-# Run all checks and tests
+[help] Run CI
+[desc] Format, check, lint, and test.
+[pass] CI passed.
+[fail] CI failed.
 ci()
     & fmt
     & check
     & clippy
     & test
 :
-    echo "CI complete!"
 
-# Format codebase
+[help] Format code
+[pass] Format complete.
+[fail] Format failed.
 fmt():
     cargo fmt --all
 
-# Run Cargo check
+[help] Check code
+[pass] Check passed.
+[fail] Check failed.
 check(level = "dev"):
     cargo check --profile {{level}} {{cargo_flags}}
 
-# Run Clippy
+[help] Lint code
+[pass] Clippy passed.
+[fail] Clippy failed.
 clippy():
     cargo clippy {{cargo_flags}} -- -D warnings
 
-# Run the test suite
+[help] Run tests
+[desc] Use cargo-nextest.
+[pass] Tests passed.
+[fail] Tests failed.
 test() ? @has("cargo-nextest"):
     cargo nextest run {{cargo_flags}}
 
+[desc] Fall back to cargo test.
+[pass] Tests passed.
+[fail] Tests failed.
 test():
     cargo test {{cargo_flags}}
 
-# Clean up build artifacts
+[help] Clean builds
+[desc] Remove Cargo build artifacts.
+[pass] Clean complete.
+[fail] Clean failed.
 clean():
     cargo clean
-    echo "Cleaned up."
 
-# Install the local only binary
+[help] Install only
+[desc] Install the Windows binary after exit.
+[pass] Installed. Restart your shell.
+[fail] Installation failed.
 install()
     ? @os("windows")
     & rel.build
@@ -69,8 +95,10 @@ install()
     |
     | # Install after only exits.
     | Start-Process -WindowStyle Hidden -FilePath $shellPath -ArgumentList "-NoProfile", "-EncodedCommand", $encoded
-    | Write-Output "Install will complete after this only process exits: $installPath"
 
+[desc] Install to ~/.local/bin/only.
+[pass] Installed to ~/.local/bin/only.
+[fail] Installation failed.
 install() & rel.build:
     | # Resolve paths.
     | install_dir="$HOME/.local/bin"
@@ -83,4 +111,3 @@ install() & rel.build:
     |
     | # Replace the installed binary.
     | mv "$staged_path" "$install_dir/only"
-    | echo "Installed only to $install_dir/only"
