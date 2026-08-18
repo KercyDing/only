@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.3 - 2026-08-18
+
+- Changed Cargo-installed upgrades to start Cargo asynchronously so the running binary can be replaced safely.
+
 ## 0.3.2 - 2026-08-18
 
 - Fixed Cargo-installed upgrades to check for a newer release before prompting to reinstall.
