@@ -1,51 +1,52 @@
 !version 0.3
-!var cargo_flags = "--workspace --all-targets"
+!var cargo_flags = "--all-targets"
 
-# Development builds
+# Dev builds
 [dev] {
-    # Build the project in development mode.
+    # Build the project in dev mode.
     build():
-        cargo build
-
-    # Run the project in development mode
-    run():
-        cargo run
+        cargo build {{cargo_flags}}
 }
 
 # Release builds
 [rel] {
     # Build the project in release mode.
     build():
-        cargo build --release
-
-    # Run the project in release mode
-    run():
-        cargo run --release
-
-    # Run the release test suite
-    test() ? @has("cargo-nextest"):
-        cargo nextest run --release
-
-    test():
-        cargo test --release
+        cargo build --release {{cargo_flags}}
 }
 
-# Run cargo check
-check():
-    cargo fmt --all
-    cargo check {{cargo_flags}}
-    cargo clippy --workspace --all-targets -- -D warnings
+# Run all checks and tests
+ci()
+    & fmt
+    & check
+    & clippy
+    & test
+:
+    echo "CI complete!"
 
-# Run the full test suite
+# Format codebase
+fmt():
+    cargo fmt --all
+
+# Run Cargo check
+check(level = "dev"):
+    cargo check --profile {{level}} {{cargo_flags}}
+
+# Run Clippy
+clippy():
+    cargo clippy {{cargo_flags}} -- -D warnings
+
+# Run the test suite
 test() ? @has("cargo-nextest"):
-    cargo nextest run
+    cargo nextest run {{cargo_flags}}
 
 test():
-    cargo test
+    cargo test {{cargo_flags}}
 
-# Run formatter, type checks, and tests
-ci() & check & test:
-    echo "CI complete!"
+# Clean up build artifacts
+clean():
+    cargo clean
+    echo "Cleaned up."
 
 # Install the local only binary
 install()
