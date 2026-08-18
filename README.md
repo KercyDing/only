@@ -30,6 +30,7 @@ ci() & (back.test, front.test):
 
 [help] Backend tasks
 group back {
+
     [help] Test the backend.
     # Prefer nextest when available.
     test() ? @has("cargo-nextest"):
@@ -42,6 +43,7 @@ group back {
 
 [help] Frontend tasks
 group front {
+
     [help] Test the frontend.
     test():
         pnpm test

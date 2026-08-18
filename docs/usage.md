@@ -520,6 +520,7 @@ Use groups when several parts of your project have similar tasks.
 
 ```Onlyfile
 group front {
+
     check():
         pnpm lint
 
@@ -528,6 +529,7 @@ group front {
 }
 
 group back {
+
     check():
         cargo check
 
@@ -578,6 +580,7 @@ ci() & (back.test, front.test):
     echo "CI complete"
 
 group back {
+
     test() ? @has("cargo-nextest"):
         cargo nextest run
 
@@ -586,6 +589,7 @@ group back {
 }
 
 group front {
+
     test():
         pnpm test
 }
