@@ -1,4 +1,4 @@
-use only_syntax::{format_range, format_source};
+use only_syntax::{ParseResultExt, format_range, format_source};
 use text_size::{TextRange, TextSize};
 
 #[test]
@@ -48,6 +48,36 @@ fn wraps_headers_with_three_clauses() {
         format_source(source).expect("valid source should format"),
         "install()\n    ? @os(\"windows\")\n    & _release_build\n    shell~=pwsh\n:\n    echo ok\n"
     );
+}
+
+#[test]
+fn formats_multiline_header_inside_namespace() {
+    let source = concat!(
+        "!version 0.3\n",
+        "[back] {\n",
+        "    ci() & fmt & check & clippy & test:\n",
+        "        echo done\n",
+        "}\n",
+    );
+
+    let formatted = format_source(source).expect("valid source should format");
+    assert_eq!(
+        formatted,
+        concat!(
+            "!version 0.3\n",
+            "\n",
+            "[back] {\n",
+            "    ci()\n",
+            "        & fmt\n",
+            "        & check\n",
+            "        & clippy\n",
+            "        & test\n",
+            "    :\n",
+            "        echo done\n",
+            "}\n",
+        )
+    );
+    assert!(only_syntax::parse(&formatted).diagnostics().is_empty());
 }
 
 #[test]

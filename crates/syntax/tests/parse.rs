@@ -12,6 +12,31 @@ fn parses_document_with_directive_task_and_namespace() {
 }
 
 #[test]
+fn multiline_task_header_inside_namespace() {
+    let parsed = parse(concat!(
+        "!version 0.3\n",
+        "[back] {\n",
+        "    ci()\n",
+        "        & fmt\n",
+        "        & check\n",
+        "        & clippy\n",
+        "        & test\n",
+        "    :\n",
+        "        echo done\n",
+        "}\n",
+    ));
+
+    assert_eq!(
+        parsed
+            .root_children()
+            .filter(|node| node.kind() == SyntaxKind::TaskDecl)
+            .count(),
+        1
+    );
+    assert!(parsed.diagnostics().is_empty());
+}
+
+#[test]
 fn parses_document_with_crlf_line_endings() {
     let parsed = parse("!shell deno\r\n\r\nbuild():\r\n    echo hi\r\n");
     let kinds: Vec<_> = parsed.root_children().map(|node| node.kind()).collect();

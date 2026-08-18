@@ -37,6 +37,30 @@ fn leaves_runner_version_checks_to_the_cli() {
 }
 
 #[test]
+fn accepts_multiline_header_inside_namespace() {
+    let snapshot = DocumentSnapshot::new(
+        "file:///workspace/Onlyfile",
+        1,
+        concat!(
+            "!version 0.3\n",
+            "[back] {\n",
+            "    fmt():\n",
+            "        true\n",
+            "    check():\n",
+            "        true\n",
+            "    ci()\n",
+            "        & fmt\n",
+            "        & check\n",
+            "    :\n",
+            "        true\n",
+            "}\n",
+        ),
+    );
+
+    assert!(diagnostics(&snapshot).is_empty());
+}
+
+#[test]
 fn reports_inline_task_command() {
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, "build(): cargo build\n");
 

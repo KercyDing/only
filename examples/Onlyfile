@@ -1,5 +1,7 @@
 !version 0.3
-!var cargo_flags = "--workspace --all-targets"
+!var cargo_flags = "--all-targets"
+!var pnpm_dir = "web"
+!var dist_dir = "dist"
 
 // Example workflow for a Rust backend and web frontend.
 # Run all checks.
@@ -8,7 +10,7 @@ ci() & (front.ci, back.ci):
 
 # Package a verified release.
 release() & ci & package:
-    echo "Release ready in dist"
+    echo "Release ready in {{dist_dir}}"
 
 # Package Windows artifacts.
 package()
@@ -16,22 +18,22 @@ package()
     & (front.build, back.build)
     shell~=pwsh
 :
-    | $archive = "dist/app.zip"
-    | New-Item -ItemType Directory -Force -Path dist | Out-Null
-    | Compress-Archive -Path target/release/app.exe, web/dist -DestinationPath $archive -Force
+    | $archive = "{{dist_dir}}/app.zip"
+    | New-Item -ItemType Directory -Force -Path {{dist_dir}} | Out-Null
+    | Compress-Archive -Path target/release/app.exe, {{pnpm_dir}}/dist -DestinationPath $archive -Force
     | Write-Output "Created $archive"
 
 // macOS/Linux fallback.
 package() & (front.build, back.build):
-    | archive="dist/app.tar.gz"
-    | mkdir -p dist
-    | tar -czf "$archive" target/release/app web/dist
+    | archive="{{dist_dir}}/app.tar.gz"
+    | mkdir -p {{dist_dir}}
+    | tar -czf "$archive" target/release/app {{pnpm_dir}}/dist
     | echo "Created $archive"
 
 # Frontend tasks.
 [front] {
     _prepare() ? @has("pnpm"):
-        pnpm --dir web install --frozen-lockfile
+        pnpm --dir {{pnpm_dir}} install --frozen-lockfile
 
     _prepare():
         echo "pnpm is required"
@@ -39,19 +41,19 @@ package() & (front.build, back.build):
 
     # Start the dev server.
     dev(port = "5173") & _prepare:
-        pnpm --dir web dev -- --port {{port}}
+        pnpm --dir {{pnpm_dir}} dev -- --port {{port}}
 
     # Check the frontend.
     check() & _prepare:
-        pnpm --dir web lint
+        pnpm --dir {{pnpm_dir}} lint
 
     # Test the frontend.
     test() & _prepare:
-        pnpm --dir web test
+        pnpm --dir {{pnpm_dir}} test
 
     # Build the frontend.
     build() & _prepare:
-        pnpm --dir web build
+        pnpm --dir {{pnpm_dir}} build
 
     # Run frontend checks.
     ci() & (check, test):
@@ -60,24 +62,35 @@ package() & (front.build, back.build):
 
 # Backend tasks.
 [back] {
-    # Check the Rust workspace.
-    check():
+    # Format the Rust workspace.
+    fmt():
         cargo fmt --all -- --check
+
+    # Run Cargo check.
+    check():
         cargo check {{cargo_flags}}
+
+    # Run Clippy.
+    clippy():
         cargo clippy {{cargo_flags}} -- -D warnings
 
     # Run CI tests with nextest when available.
     test() ? @env("CI") ? @has("cargo-nextest"):
-        cargo nextest run --no-fail-fast
+        cargo nextest run {{cargo_flags}} --no-fail-fast
 
     test():
-        cargo test --workspace --all-targets
+        cargo test {{cargo_flags}}
 
     # Build the release binary.
     build():
         cargo build --release
 
-    # Run backend checks in order.
-    ci() & check & test:
+    # Run all backend checks.
+    ci()
+        & fmt
+        & check
+        & clippy
+        & test
+    :
         echo "Backend CI complete"
 }

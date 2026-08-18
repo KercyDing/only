@@ -278,7 +278,6 @@ fn parse_task_item(
     let mut saw_parameter_list = false;
     let mut continuation_header = false;
     let mut expect_clause_start = false;
-    let mut continuation_indent = false;
     let mut expect_param_indent = false;
 
     while let Some(kind) = input.first().copied() {
@@ -316,18 +315,16 @@ fn parse_task_item(
 
             if continuation_header && expect_clause_start {
                 match kind {
-                    SyntaxKind::Indent | SyntaxKind::Whitespace => {
-                        continuation_indent = true;
-                    }
+                    // Header indentation is formatting, not syntax. The first meaningful token
+                    // determines whether this line is a clause or the header terminator.
+                    SyntaxKind::Indent | SyntaxKind::Whitespace => {}
                     SyntaxKind::Question
                     | SyntaxKind::Amp
                     | SyntaxKind::ShellKw
                     | SyntaxKind::ShellFallbackKw => {
-                        malformed |= !continuation_indent;
                         expect_clause_start = false;
                     }
                     SyntaxKind::Colon => {
-                        malformed |= continuation_indent;
                         expect_clause_start = false;
                     }
                     SyntaxKind::Newline => malformed = true,
@@ -447,7 +444,6 @@ fn parse_task_item(
             if saw_parameter_list && phase.is_balanced() && !expect_guard_at {
                 continuation_header = true;
                 expect_clause_start = true;
-                continuation_indent = false;
                 line_start = true;
                 continue;
             }
