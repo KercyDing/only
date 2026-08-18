@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2 - 2026-08-18
+
+- Fixed Cargo-installed upgrades to check for a newer release before prompting to reinstall.
+
 ## 0.3.1 - 2026-08-18
 
 - Added an interactive Cargo update path that keeps `cargo install --list` in sync.
