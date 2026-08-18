@@ -120,3 +120,65 @@ fn lowers_multiline_parameter_list() {
     assert_eq!(params[0].default_value.as_deref(), Some("production"));
     assert_eq!(params[1].default_value.as_deref(), Some("global,primary"));
 }
+
+#[test]
+fn normalizes_help_fields_and_keeps_block_comments_in_commands() {
+    let compiled = compile_document(
+        "!version 0.4\n!var dist_dir = \"dist\"\n[help] Deploy artifacts\n[desc] Write to {{dist_dir}}\n[pass] Deploy complete\n[fail] Deploy failed\ndeploy():\n    | # shell comment\n    | echo {{dist_dir}}\n",
+    );
+    let task = &compiled.document.tasks[0];
+
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "{:?}",
+        compiled.diagnostics
+    );
+    assert_eq!(task.doc.as_deref(), Some("Deploy artifacts"));
+    assert_eq!(task.metadata.desc.as_deref(), Some("Write to {{dist_dir}}"));
+    assert_eq!(task.metadata.pass.as_deref(), Some("Deploy complete"));
+    assert_eq!(task.metadata.fail.as_deref(), Some("Deploy failed"));
+    assert!(task.steps[0].source().contains("# shell comment"));
+}
+
+#[test]
+fn inherits_variant_docs() {
+    let compiled = compile_document(
+        "!version 0.4\n[help] Run tests\n[desc] Use the preferred runner.\ntest() ? @os(\"not-a-real-os\"):\n    true\n\n[desc] Use Cargo.\ntest():\n    true\n",
+    );
+    let fallback = &compiled.document.tasks[1];
+
+    assert!(
+        compiled.diagnostics.is_empty(),
+        "{:?}",
+        compiled.diagnostics
+    );
+    assert_eq!(fallback.metadata.help.as_deref(), Some("Run tests"));
+    assert_eq!(fallback.doc.as_deref(), Some("Run tests"));
+    assert_eq!(fallback.metadata.desc.as_deref(), Some("Use Cargo."));
+}
+
+#[test]
+fn plain_comments_are_not_task_help() {
+    let compiled =
+        compile_document("# Run checks.\n# Use the local toolchain.\ncheck():\n    true\n");
+    let task = &compiled.document.tasks[0];
+
+    assert_eq!(task.doc, None);
+    assert_eq!(task.metadata.help, None);
+}
+
+#[test]
+fn rejects_unknown_metadata_fields() {
+    let compiled = compile_document("[summary] Build everything\nbuild():\n    true\n");
+    let task = &compiled.document.tasks[0];
+
+    assert!(
+        compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "semantic.unknown-metadata-field")
+    );
+    assert_eq!(task.doc, None);
+    assert_eq!(task.metadata.unknown_fields.len(), 1);
+    assert_eq!(task.metadata.unknown_fields[0], "summary");
+}

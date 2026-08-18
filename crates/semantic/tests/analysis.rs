@@ -35,18 +35,20 @@ fn reports_undefined_dependency_and_variable() {
 #[test]
 fn lowers_directives_and_namespaced_tasks() {
     let compiled = compile_document(concat!(
+        "!version 0.4\n",
         "!shell deno\n",
-        "# Developer commands.\n",
-        "[dev]\n",
-        "# Start the app.\n",
-        "serve(port=\"3000\") & build:\n",
-        "    echo {{port}}\n",
-        "build():\n",
-        "    cargo build\n",
+        "[help] Developer commands.\n",
+        "group dev {\n",
+        "    [help] Start the app.\n",
+        "    serve(port=\"3000\") & build:\n",
+        "        echo {{port}}\n",
+        "    build():\n",
+        "        cargo build\n",
+        "}\n",
     ));
 
     assert!(compiled.diagnostics.is_empty());
-    assert_eq!(compiled.document.directives.len(), 1);
+    assert_eq!(compiled.document.directives.len(), 2);
     assert_eq!(compiled.document.namespaces.len(), 1);
     assert_eq!(compiled.document.namespaces[0].name, "dev");
     assert_eq!(

@@ -15,13 +15,14 @@ pub use analysis::{
 };
 pub use ast::{
     CommandAst, CommandBlockAst, DependencyAst, DirectiveAst, DocumentAst, GuardAst,
-    InterpolationAst, NamespaceAst, ParamAst, ShellAst, TaskAst, TaskStepAst,
+    InterpolationAst, NamespaceAst, ParamAst, ShellAst, TaskAst, TaskMetadataAst, TaskStepAst,
 };
 pub use document_symbols::{DocumentSymbol, DocumentSymbolKind, document_symbols};
 pub use folding::{FoldingRange, FoldingRangeKind, folding_ranges};
 pub use hover::{HoverInfo, HoverKind, hover_at};
+pub use interpolation::interpolation_name_ranges;
 pub use only_syntax::{
-    DirectiveKind, GuardKind, ShellKind, ShellOperator, ShellSelection, TaskShellRef,
+    DirectiveKind, GuardKind, MetadataKind, ShellKind, ShellOperator, ShellSelection, TaskShellRef,
 };
 pub use semantic_snapshot::SemanticSnapshot;
 pub use symbols::{NamespaceSymbol, SymbolIndex, TaskSymbol};

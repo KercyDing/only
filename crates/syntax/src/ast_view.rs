@@ -38,7 +38,7 @@ pub struct DirectiveNode {
 /// Returns:
 /// Stable accessors for doc-comment text and span.
 #[derive(Debug, Clone)]
-pub struct DocCommentNode {
+pub struct MetadataNode {
     syntax: SyntaxNode,
 }
 
@@ -82,7 +82,7 @@ pub struct ParameterNode {
 }
 
 #[derive(Debug, Clone)]
-pub struct GuardClauseNode {
+pub struct ConditionClauseNode {
     syntax: SyntaxNode,
 }
 
@@ -152,6 +152,7 @@ pub struct TaskGuardRef {
     pub kind: GuardKind,
     pub argument: SmolStr,
     pub range: TextRange,
+    pub name_range: TextRange,
 }
 
 /// Structured task header data parsed from the CST token stream.
@@ -224,8 +225,8 @@ impl DocumentNode {
     ///
     /// Returns:
     /// Typed doc-comment iterator.
-    pub fn doc_comments(&self) -> impl Iterator<Item = DocCommentNode> + '_ {
-        self.syntax.children().filter_map(DocCommentNode::cast)
+    pub fn metadata(&self) -> impl Iterator<Item = MetadataNode> + '_ {
+        self.syntax.children().filter_map(MetadataNode::cast)
     }
 
     /// Iterates namespace children.
@@ -370,16 +371,16 @@ impl DirectiveNode {
     }
 }
 
-impl DocCommentNode {
+impl MetadataNode {
     /// Casts a raw rowan node into a typed doc-comment wrapper.
     ///
     /// Args:
     /// syntax: Raw rowan syntax node.
     ///
     /// Returns:
-    /// Typed doc-comment wrapper when the kind matches `DocComment`.
+    /// Typed wrapper for structured declaration metadata.
     pub fn cast(syntax: SyntaxNode) -> Option<Self> {
-        (syntax.kind() == SyntaxKind::DocComment).then_some(Self { syntax })
+        (syntax.kind() == SyntaxKind::MetadataComment).then_some(Self { syntax })
     }
 
     /// Returns the doc-comment text range.
@@ -393,7 +394,7 @@ impl DocCommentNode {
         self.syntax.text_range()
     }
 
-    /// Returns normalized doc-comment text without the leading `#`.
+    /// Returns the comment payload without its marker or field header.
     ///
     /// Args:
     /// None.
@@ -401,14 +402,69 @@ impl DocCommentNode {
     /// Returns:
     /// Trimmed doc-comment payload when present.
     pub fn text(&self) -> Option<SmolStr> {
-        self.syntax
-            .text()
-            .to_string()
-            .trim()
-            .strip_prefix('#')
-            .map(str::trim)
-            .filter(|text| !text.is_empty())
-            .map(SmolStr::new)
+        let text = self.syntax.text().to_string();
+        let text = text.trim();
+        let text = if self.syntax.kind() == SyntaxKind::MetadataComment {
+            let close = text.find(']')?;
+            text.get(close + 1..)?.trim()
+        } else {
+            text.strip_prefix('#')?.trim()
+        };
+        (!text.is_empty()).then(|| SmolStr::new(text))
+    }
+
+    /// Returns a structured metadata field when the comment starts with `[name]`.
+    pub fn field(&self) -> Option<(SmolStr, SmolStr)> {
+        if self.syntax.kind() != SyntaxKind::MetadataComment {
+            return None;
+        }
+        let text = self.syntax.text().to_string();
+        let text = text.trim().strip_prefix('[')?;
+        let close = text.find(']')?;
+        let name = &text[..close];
+        if name.is_empty()
+            || !name.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '_' | '-')
+            })
+        {
+            return None;
+        }
+
+        Some((SmolStr::new(name), SmolStr::new(text[close + 1..].trim())))
+    }
+
+    /// Returns the source range of a structured metadata field name.
+    pub fn field_range(&self) -> Option<TextRange> {
+        if self.syntax.kind() != SyntaxKind::MetadataComment {
+            return None;
+        }
+        let text = self.syntax.text().to_string();
+        let text = text.trim().strip_prefix('[')?;
+        let close = text.find(']')?;
+        let name = &text[..close];
+        if name.is_empty()
+            || !name.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '_' | '-')
+            })
+        {
+            return None;
+        }
+
+        let start = self.syntax.text_range().start() + TextSize::from(1);
+        Some(TextRange::new(
+            start,
+            start + TextSize::from(name.len() as u32),
+        ))
+    }
+
+    /// Returns the source range of the complete metadata tag.
+    pub fn tag_range(&self) -> Option<TextRange> {
+        let field = self.field_range()?;
+        let delimiter = TextSize::from(1);
+        Some(TextRange::new(
+            field.start() - delimiter,
+            field.end() + delimiter,
+        ))
     }
 }
 
@@ -443,14 +499,11 @@ impl NamespaceNode {
     /// Returns:
     /// Namespace name when present.
     pub fn name(&self) -> Option<SmolStr> {
-        let source = self.syntax.text().to_string();
-        let label = source
-            .trim()
-            .strip_prefix('[')
-            .and_then(|text| text.split_once(']'))
-            .map(|(label, _)| label)
-            .map(str::trim)?;
-        (!label.is_empty()).then(|| SmolStr::new(label))
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|element| element.into_token())
+            .find(|token| token.kind() == SyntaxKind::Ident)
+            .map(|token| SmolStr::new(token.text()))
     }
 
     /// Returns the namespace name range inside the brackets.
@@ -466,6 +519,14 @@ impl NamespaceNode {
             .filter_map(|element| element.into_token())
             .find(|token| token.kind() == SyntaxKind::Ident)
             .map(|token| token.text_range())
+    }
+
+    /// Returns whether this node uses the 0.4 `group name {` syntax.
+    pub fn is_group(&self) -> bool {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|element| element.into_token())
+            .any(|token| token.kind() == SyntaxKind::GroupKw)
     }
 
     /// Returns whether this node closes the current namespace.
@@ -486,16 +547,7 @@ impl NamespaceNode {
         if self.is_close() {
             return false;
         }
-        self.syntax
-            .text()
-            .to_string()
-            .trim()
-            .strip_prefix('[')
-            .and_then(|text| text.split_once(']'))
-            .map(|(label, _)| label)
-            .map(str::trim)
-            .filter(|text| !text.is_empty())
-            .is_none()
+        self.name().is_none()
     }
 }
 
@@ -784,8 +836,8 @@ impl TaskHeaderNode {
         self.syntax.children().find_map(ParameterListNode::cast)
     }
 
-    pub fn guards(&self) -> impl Iterator<Item = GuardClauseNode> + '_ {
-        self.syntax.children().filter_map(GuardClauseNode::cast)
+    pub fn conditions(&self) -> impl Iterator<Item = ConditionClauseNode> + '_ {
+        self.syntax.children().filter_map(ConditionClauseNode::cast)
     }
 
     pub fn dependencies(&self) -> impl Iterator<Item = DependencyClauseNode> + '_ {
@@ -889,10 +941,53 @@ macro_rules! clause_node {
     };
 }
 
-clause_node!(GuardClauseNode, GuardClause);
+clause_node!(ConditionClauseNode, ConditionClause);
 clause_node!(DependencyClauseNode, DependencyClause);
 clause_node!(ShellClauseNode, ShellClause);
 clause_node!(HeaderTerminatorNode, HeaderTerminator);
+
+impl ConditionClauseNode {
+    /// Returns the range of the leading conditional operator.
+    pub fn operator_range(&self) -> Option<TextRange> {
+        node_tokens(&self.syntax)
+            .find(|token| token.kind() == SyntaxKind::Question)
+            .map(|token| token.text_range())
+    }
+}
+
+impl DependencyClauseNode {
+    /// Returns the range of the leading dependency operator.
+    pub fn operator_range(&self) -> Option<TextRange> {
+        node_tokens(&self.syntax)
+            .find(|token| token.kind() == SyntaxKind::Amp)
+            .map(|token| token.text_range())
+    }
+
+    /// Returns the delimiter ranges for a parallel dependency group.
+    pub fn parallel_group_delimiter_ranges(&self) -> Vec<TextRange> {
+        let tokens = node_tokens(&self.syntax).collect::<Vec<_>>();
+        if !tokens
+            .iter()
+            .any(|token| token.kind() == SyntaxKind::LParen)
+            || !tokens
+                .iter()
+                .any(|token| token.kind() == SyntaxKind::RParen)
+        {
+            return Vec::new();
+        }
+
+        tokens
+            .into_iter()
+            .filter(|token| {
+                matches!(
+                    token.kind(),
+                    SyntaxKind::LParen | SyntaxKind::Comma | SyntaxKind::RParen
+                )
+            })
+            .map(|token| token.text_range())
+            .collect()
+    }
+}
 
 impl ShellClauseNode {
     /// Returns the shell selection operator.
@@ -954,7 +1049,7 @@ fn parse_task_header(node: &TaskHeaderNode) -> TaskHeaderInfo {
         info.param_refs = refs;
     }
 
-    info.guards = node.guards().filter_map(parse_guard_ref).collect();
+    info.guards = node.conditions().filter_map(parse_guard_ref).collect();
     info.guard = info
         .guards
         .first()
@@ -1005,7 +1100,7 @@ fn render_param_ref(parameter: &TaskParamRef) -> String {
     }
 }
 
-fn parse_guard_ref(clause: GuardClauseNode) -> Option<TaskGuardRef> {
+fn parse_guard_ref(clause: ConditionClauseNode) -> Option<TaskGuardRef> {
     let tokens = node_tokens(&clause.syntax)
         .filter(|token| {
             !matches!(
@@ -1014,10 +1109,17 @@ fn parse_guard_ref(clause: GuardClauseNode) -> Option<TaskGuardRef> {
             )
         })
         .collect::<Vec<_>>();
-    let name = tokens
+    let name_token = tokens
         .iter()
-        .find(|token| token.kind() == SyntaxKind::Ident)?
-        .text();
+        .find(|token| token.kind() == SyntaxKind::Ident)?;
+    let name = name_token.text();
+    let name_start = tokens
+        .iter()
+        .find(|token| token.kind() == SyntaxKind::At)
+        .map_or_else(
+            || name_token.text_range().start(),
+            |token| token.text_range().start(),
+        );
     let argument = tokens
         .iter()
         .find(|token| token.kind() == SyntaxKind::String)?
@@ -1029,6 +1131,7 @@ fn parse_guard_ref(clause: GuardClauseNode) -> Option<TaskGuardRef> {
         kind: GuardKind::parse(name),
         argument: SmolStr::new(argument),
         range: clause.range(),
+        name_range: TextRange::new(name_start, name_token.text_range().end()),
     })
 }
 
@@ -1042,7 +1145,7 @@ fn parse_dependency_clause(node: &SyntaxNode, stage: usize, refs: &mut Vec<TaskD
             | SyntaxKind::Indent
             | SyntaxKind::Newline => {}
             SyntaxKind::RParen => pending.flush(refs, stage),
-            SyntaxKind::Unknown if token.text() == "," => pending.flush(refs, stage),
+            SyntaxKind::Comma => pending.flush(refs, stage),
             _ => pending.extend(&token),
         }
     }

@@ -17,7 +17,7 @@ pub(crate) fn starts_top_level_item(current: SyntaxKind) -> bool {
         current,
         SyntaxKind::Bang
             | SyntaxKind::Comment
-            | SyntaxKind::Percent
+            | SyntaxKind::GroupKw
             | SyntaxKind::LBracket
             | SyntaxKind::RBrace
             | SyntaxKind::Ident
@@ -69,7 +69,7 @@ pub(crate) fn starts_indented_namespace_member(input: &[SyntaxKind]) -> bool {
 
     if matches!(
         input.get(index),
-        Some(SyntaxKind::Bang | SyntaxKind::Percent | SyntaxKind::Comment)
+        Some(SyntaxKind::Bang | SyntaxKind::GroupKw | SyntaxKind::Comment | SyntaxKind::LBracket)
     ) {
         return true;
     }
@@ -85,7 +85,7 @@ pub(crate) fn starts_indented_namespace_member(input: &[SyntaxKind]) -> bool {
 
 fn starts_braced_namespace(input: &[SyntaxKind]) -> bool {
     let mut index = 0;
-    if input.get(index) != Some(&SyntaxKind::LBracket) {
+    if input.get(index) != Some(&SyntaxKind::GroupKw) {
         return false;
     }
     index += 1;
@@ -93,13 +93,7 @@ fn starts_braced_namespace(input: &[SyntaxKind]) -> bool {
     while input.get(index) == Some(&SyntaxKind::Whitespace) {
         index += 1;
     }
-    if input.get(index) == Some(&SyntaxKind::Ident) {
-        index += 1;
-    }
-    while input.get(index) == Some(&SyntaxKind::Whitespace) {
-        index += 1;
-    }
-    if input.get(index) != Some(&SyntaxKind::RBracket) {
+    if input.get(index) != Some(&SyntaxKind::Ident) {
         return false;
     }
     index += 1;

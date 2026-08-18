@@ -101,8 +101,8 @@ impl ParseTreeBuilder {
                     continue;
                 }
                 SyntaxKind::Question => (
-                    SyntaxKind::GuardClause,
-                    clause_end(tokens, index + 1, ClauseBoundary::Guard),
+                    SyntaxKind::ConditionClause,
+                    clause_end(tokens, index + 1, ClauseBoundary::Condition),
                 ),
                 SyntaxKind::Amp => (
                     SyntaxKind::DependencyClause,
@@ -159,7 +159,7 @@ impl ParseTreeBuilder {
 
 #[derive(Debug, Clone, Copy)]
 enum ClauseBoundary {
-    Guard,
+    Condition,
     Dependency,
     Shell,
 }
@@ -195,7 +195,7 @@ fn clause_end(tokens: &[LexToken], start: usize, boundary: ClauseBoundary) -> us
             _ => {}
         }
 
-        if matches!(boundary, ClauseBoundary::Guard)
+        if matches!(boundary, ClauseBoundary::Condition)
             && depth == 0
             && token.kind == SyntaxKind::RParen
         {
@@ -216,7 +216,7 @@ fn parameter_end(tokens: &[LexToken], start: usize) -> usize {
             SyntaxKind::LParen | SyntaxKind::LBracket => depth += 1,
             SyntaxKind::RParen | SyntaxKind::RBracket if depth > 0 => depth -= 1,
             SyntaxKind::RParen if depth == 0 => return index,
-            SyntaxKind::Unknown if depth == 0 && token.text == "," => return index,
+            SyntaxKind::Comma if depth == 0 => return index,
             _ => {}
         }
     }

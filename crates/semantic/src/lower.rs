@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+
 use only_diagnostic::{Diagnostic, DiagnosticCode, DiagnosticPhase, DiagnosticSeverity};
 use only_syntax::{
-    DirectiveKind, DirectiveNode, DocCommentNode, NamespaceNode, ShellKind, SyntaxKind,
+    DirectiveKind, DirectiveNode, MetadataKind, MetadataNode, NamespaceNode, ShellKind, SyntaxKind,
     SyntaxSnapshot, TaskNode, parse_version_requirement,
 };
 use smol_str::SmolStr;
@@ -10,17 +12,18 @@ use crate::interpolation::scan_interpolations;
 use crate::names::resolve_dependency_names;
 use crate::{
     CommandAst, CommandBlockAst, DependencyAst, DirectiveAst, DocumentAst, GuardAst, NamespaceAst,
-    ParamAst, ShellAst, TaskAst, TaskStepAst,
+    ParamAst, ShellAst, TaskAst, TaskMetadataAst, TaskStepAst,
 };
 
 pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagnostic>) {
     let document = snapshot.document();
+    let source = document.syntax().text().to_string();
     let mut directives = Vec::new();
     let mut namespaces = Vec::new();
     let mut tasks = Vec::new();
     let mut diagnostics = snapshot.diagnostics().to_vec();
     let mut current_namespace: Option<SmolStr> = None;
-    let mut pending_doc: Option<SmolStr> = None;
+    let mut pending_docs = Vec::new();
     let mut saw_declaration = false;
     let mut saw_version = false;
     let mut left_directive_region = false;
@@ -28,6 +31,7 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
 
     for node in document.syntax().children() {
         if let Some(directive) = DirectiveNode::cast(node.clone()) {
+            pending_docs.clear();
             let directive_kind = directive.directive_kind();
             if directive_kind == Some(DirectiveKind::Var) && left_directive_region {
                 diagnostics.push(semantic_error(
@@ -60,8 +64,8 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
             continue;
         }
 
-        if let Some(doc_comment) = DocCommentNode::cast(node.clone()) {
-            pending_doc = lower_doc_comment(&doc_comment);
+        if let Some(doc_comment) = MetadataNode::cast(node.clone()) {
+            pending_docs.push(doc_comment);
             saw_declaration = true;
             continue;
         }
@@ -87,7 +91,7 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
                         current_namespace = None;
                     }
                 }
-                pending_doc = None;
+                pending_docs.clear();
             } else if namespace.is_empty() {
                 diagnostics.push(semantic_error(
                     "namespace.empty-label",
@@ -95,7 +99,9 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
                     namespace.range(),
                 ));
             } else {
-                match lower_namespace(&namespace, pending_doc.take()) {
+                discard_detached_metadata(&mut pending_docs, &source, namespace.range().start());
+                let docs = std::mem::take(&mut pending_docs);
+                match lower_namespace(&namespace, docs) {
                     Ok(namespace) => {
                         current_namespace = Some(namespace.name.clone());
                         namespaces.push(namespace);
@@ -109,7 +115,9 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
 
         if let Some(task) = TaskNode::cast(node.clone()) {
             left_directive_region = true;
-            match lower_task(&task, current_namespace.clone(), pending_doc.take()) {
+            discard_detached_metadata(&mut pending_docs, &source, task.range().start());
+            let docs = std::mem::take(&mut pending_docs);
+            match lower_task(&task, current_namespace.clone(), docs) {
                 Ok(task) => tasks.push(task),
                 Err(diagnostic) => diagnostics.push(diagnostic),
             }
@@ -118,10 +126,12 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
         }
 
         if node.kind() == SyntaxKind::Error {
+            pending_docs.clear();
             saw_declaration = true;
         }
     }
 
+    inherit_variant_docs(&mut tasks);
     resolve_dependency_names(&mut tasks);
 
     (
@@ -133,6 +143,46 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
         },
         diagnostics,
     )
+}
+
+fn inherit_variant_docs(tasks: &mut [TaskAst]) {
+    let mut base_metadata = HashMap::new();
+
+    for task in tasks {
+        let base = base_metadata
+            .entry(task.qualified_name())
+            .or_insert_with(|| task.metadata.clone());
+
+        if task.metadata.help.is_none() {
+            task.metadata.help = base.help.clone();
+        }
+        if task.metadata.desc.is_none() {
+            task.metadata.desc = base.desc.clone();
+        }
+        task.doc = task.metadata.help.clone();
+    }
+}
+
+fn discard_detached_metadata(
+    pending: &mut Vec<MetadataNode>,
+    source: &str,
+    declaration_start: text_size::TextSize,
+) {
+    let Some(last) = pending.last() else {
+        return;
+    };
+    let start = usize::from(last.range().end());
+    let end = usize::from(declaration_start);
+    let gap = source.get(start..end).unwrap_or_default();
+    let detached = gap.contains('\n')
+        || gap.contains('\r')
+        || gap.lines().any(|line| {
+            let line = line.trim_start();
+            line.starts_with('#') || line.starts_with("//")
+        });
+    if detached {
+        pending.clear();
+    }
 }
 
 fn lower_directive(node: &DirectiveNode) -> Result<DirectiveAst, Diagnostic> {
@@ -241,34 +291,99 @@ fn semantic_error(code: &str, message: &str, range: TextRange) -> Diagnostic {
     )
 }
 
-fn lower_doc_comment(node: &DocCommentNode) -> Option<SmolStr> {
-    node.text()
+fn lower_task_comments(nodes: &[MetadataNode]) -> (Option<SmolStr>, TaskMetadataAst) {
+    let metadata = lower_metadata_comments(nodes);
+    (metadata.help.clone(), metadata)
 }
 
-fn lower_namespace(node: &NamespaceNode, doc: Option<SmolStr>) -> Result<NamespaceAst, Diagnostic> {
+fn lower_metadata_comments(nodes: &[MetadataNode]) -> TaskMetadataAst {
+    let mut help = Vec::new();
+    let mut desc = Vec::new();
+    let mut pass = Vec::new();
+    let mut fail = Vec::new();
+    let mut unknown_fields = Vec::new();
+    let mut has_structured_fields = false;
+    let mut help_count = 0;
+
+    for node in nodes {
+        if let Some((field, value)) = node.field() {
+            match MetadataKind::parse(field.as_str()) {
+                MetadataKind::Help => {
+                    has_structured_fields = true;
+                    help_count += 1;
+                    help.push(value);
+                }
+                MetadataKind::Desc => {
+                    has_structured_fields = true;
+                    desc.push(value);
+                }
+                MetadataKind::Pass => {
+                    has_structured_fields = true;
+                    pass.push(value);
+                }
+                MetadataKind::Fail => {
+                    has_structured_fields = true;
+                    fail.push(value);
+                }
+                MetadataKind::Unknown(_) => unknown_fields.push(field),
+            }
+        }
+    }
+
+    TaskMetadataAst {
+        help: join_comment_lines(&help),
+        help_count,
+        desc: join_comment_lines(&desc),
+        pass: join_comment_lines(&pass),
+        fail: join_comment_lines(&fail),
+        unknown_fields,
+        has_structured_fields,
+    }
+}
+
+fn join_comment_lines(lines: &[SmolStr]) -> Option<SmolStr> {
+    (!lines.is_empty()).then(|| {
+        SmolStr::new(
+            lines
+                .iter()
+                .map(AsRef::as_ref)
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
+    })
+}
+
+fn lower_namespace(
+    node: &NamespaceNode,
+    docs: Vec<MetadataNode>,
+) -> Result<NamespaceAst, Diagnostic> {
     let range = node.range();
     let name = node
         .name()
         .ok_or_else(|| lower_error("lower.invalid-namespace", "invalid namespace", range))?;
 
+    let metadata = lower_metadata_comments(&docs);
     Ok(NamespaceAst {
         name,
-        doc,
+        doc: metadata.help.clone(),
+        metadata,
         range,
         close_range: None,
         is_braced: node.has_open_brace(),
+        is_group: node.is_group(),
     })
 }
 
 fn lower_task(
     node: &TaskNode,
     namespace: Option<SmolStr>,
-    doc: Option<SmolStr>,
+    docs: Vec<MetadataNode>,
 ) -> Result<TaskAst, Diagnostic> {
     let range = node.range();
     let name = node
         .name()
         .ok_or_else(|| lower_error("lower.invalid-task", "invalid task", range))?;
+    let (doc, metadata) = lower_task_comments(&docs);
     let header = node.header_info();
     let shell = header.shell.as_ref().map(|shell| ShellAst {
         selection: shell.selection.clone(),
@@ -329,6 +444,7 @@ fn lower_task(
         name,
         namespace,
         doc,
+        metadata,
         params,
         guards,
         dependencies,

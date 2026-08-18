@@ -2,6 +2,7 @@ use logos::Logos;
 use smol_str::SmolStr;
 use text_size::{TextRange, TextSize};
 
+use crate::builtin::GROUP_KEYWORD;
 use crate::{LexToken, SyntaxKind};
 
 #[derive(Logos, Debug, Clone, Copy, PartialEq, Eq)]
@@ -14,8 +15,8 @@ enum RawTokenKind {
     ShellKw,
     #[token("!")]
     Bang,
-    #[token("#")]
-    Percent,
+    #[regex(r"#[^\n]*", allow_greedy = true)]
+    HashComment,
     #[token(":")]
     Colon,
     #[token("?")]
@@ -38,6 +39,8 @@ enum RawTokenKind {
     LBrace,
     #[token("}")]
     RBrace,
+    #[token(",")]
+    Comma,
     #[regex(r#""([^"\n]|\\.)*""#)]
     String,
     #[regex(r"[A-Za-z_-][A-Za-z0-9_-]*")]
@@ -73,7 +76,7 @@ pub fn lex(source: &str) -> Vec<LexToken> {
             Ok(RawTokenKind::ShellFallbackKw) => SyntaxKind::ShellFallbackKw,
             Ok(RawTokenKind::ShellKw) => SyntaxKind::ShellKw,
             Ok(RawTokenKind::Bang) => SyntaxKind::Bang,
-            Ok(RawTokenKind::Percent) => SyntaxKind::Percent,
+            Ok(RawTokenKind::HashComment) => SyntaxKind::Comment,
             Ok(RawTokenKind::Colon) => SyntaxKind::Colon,
             Ok(RawTokenKind::Question) => SyntaxKind::Question,
             Ok(RawTokenKind::Amp) => SyntaxKind::Amp,
@@ -85,7 +88,9 @@ pub fn lex(source: &str) -> Vec<LexToken> {
             Ok(RawTokenKind::RBracket) => SyntaxKind::RBracket,
             Ok(RawTokenKind::LBrace) => SyntaxKind::LBrace,
             Ok(RawTokenKind::RBrace) => SyntaxKind::RBrace,
+            Ok(RawTokenKind::Comma) => SyntaxKind::Comma,
             Ok(RawTokenKind::String) => SyntaxKind::String,
+            Ok(RawTokenKind::Ident) if text == GROUP_KEYWORD => SyntaxKind::GroupKw,
             Ok(RawTokenKind::Ident) => SyntaxKind::Ident,
             Ok(RawTokenKind::Comment) => SyntaxKind::Comment,
             Ok(RawTokenKind::Newline) => SyntaxKind::Newline,

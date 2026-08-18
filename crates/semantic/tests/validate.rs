@@ -221,3 +221,94 @@ fn reports_slice_parameter_default_value() {
 
     assert!(messages.contains(&"slice parameter 'args..' cannot have a default"));
 }
+
+#[test]
+fn metadata_needs_version_0_4() {
+    let compiled = compile_document("[pass] Done\nbuild():\n    true\n");
+
+    assert!(
+        compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "semantic.result-metadata-version")
+    );
+}
+
+#[test]
+fn metadata_interpolation_only_uses_global_variables() {
+    let compiled = compile_document(
+        "!version 0.4\n!var output = \"dist\"\n[pass] wrote {{output}}\n[fail] {{name}} failed\nbuild(name):\n    true\n",
+    );
+
+    let diagnostics = compiled
+        .diagnostics
+        .iter()
+        .filter(|diagnostic| diagnostic.code.as_str() == "semantic.metadata-variable")
+        .collect::<Vec<_>>();
+    assert_eq!(diagnostics.len(), 1);
+    assert!(diagnostics[0].message.contains("name"));
+}
+
+#[test]
+fn desc_requires_help() {
+    let compiled = compile_document("!version 0.4\n[desc] Details\nbuild():\n    true\n");
+
+    assert!(
+        compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code.as_str() == "semantic.metadata-help-required" })
+    );
+}
+
+#[test]
+fn result_messages_can_omit_help() {
+    let compiled =
+        compile_document("!version 0.4\n[pass] Done\n[fail] Failed\n_private():\n    true\n");
+
+    assert!(
+        !compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "semantic.metadata-help-required")
+    );
+}
+
+#[test]
+fn rejects_duplicate_help_and_group_result_messages() {
+    let compiled = compile_document(
+        "!version 0.4\n[help] One\n[help] Two\n[pass] Done\ngroup dev {\n    build():\n        true\n}\n",
+    );
+
+    assert!(
+        compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "semantic.duplicate-help")
+    );
+    assert!(
+        compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "semantic.group-result-metadata")
+    );
+}
+
+#[test]
+fn blank_line_detaches_metadata() {
+    let compiled = compile_document("!version 0.4\n[help] Detached\n\nbuild():\n    true\n");
+
+    assert!(compiled.document.tasks[0].metadata.help.is_none());
+}
+
+#[test]
+fn group_requires_version_0_4() {
+    let compiled = compile_document("!version 0.3\ngroup dev {\n    build():\n        true\n}\n");
+
+    assert!(
+        compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "semantic.group-version")
+    );
+}

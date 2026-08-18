@@ -113,6 +113,52 @@ fn preserves_comments_and_namespace_boundaries() {
 }
 
 #[test]
+fn preserves_structured_metadata_comments() {
+    let source = "[help] Deploy app\n[desc] Supports staging\nrun():\n    true\n";
+
+    assert_eq!(format_source(source).expect("source should format"), source);
+}
+
+#[test]
+fn keeps_group_metadata_attached_after_blank_lines() {
+    let source = concat!(
+        "!version 0.4\n",
+        "[help] Development builds\n",
+        "[desc] Build in development mode.\n",
+        "\n",
+        "group dev {\n",
+        "    build():\n",
+        "        cargo build\n",
+        "}\n",
+    );
+
+    assert_eq!(
+        format_source(source).expect("source should format"),
+        concat!(
+            "!version 0.4\n",
+            "\n",
+            "[help] Development builds\n",
+            "[desc] Build in development mode.\n",
+            "group dev {\n",
+            "\n",
+            "    build():\n",
+            "        cargo build\n",
+            "}\n",
+        )
+    );
+}
+
+#[test]
+fn orders_declaration_metadata() {
+    let source = "[fail] Failed\n[desc] Details\n[pass] Done\n[help] Build\nbuild():\n    true\n";
+
+    assert_eq!(
+        format_source(source).expect("source should format"),
+        "[help] Build\n[desc] Details\n[pass] Done\n[fail] Failed\nbuild():\n    true\n"
+    );
+}
+
+#[test]
 fn formats_namespace_indentation() {
     let source = "!version 0.3\n[dev] {\nrun():\n    true\n    }\n";
 

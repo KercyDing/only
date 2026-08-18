@@ -1,4 +1,6 @@
-use only_syntax::{DirectiveKind, GuardKind, ShellKind, ShellOperator, ShellSelection};
+use only_syntax::{
+    DirectiveKind, GuardKind, MetadataKind, ShellKind, ShellOperator, ShellSelection,
+};
 
 #[test]
 fn builtins_round_trip() {
@@ -13,6 +15,10 @@ fn builtins_round_trip() {
     for shell in ShellKind::SUPPORTED {
         assert_eq!(ShellKind::parse(shell.as_str()), *shell);
         assert!(shell.description().is_some());
+    }
+    for metadata in MetadataKind::SUPPORTED {
+        assert_eq!(MetadataKind::parse(metadata.as_str()), *metadata);
+        assert!(metadata.description().is_some());
     }
 }
 

@@ -34,16 +34,20 @@ pub enum DirectiveAst {
 pub struct NamespaceAst {
     pub name: SmolStr,
     pub doc: Option<SmolStr>,
+    pub metadata: TaskMetadataAst,
     pub range: TextRange,
     pub close_range: Option<TextRange>,
     pub is_braced: bool,
+    pub is_group: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskAst {
     pub name: SmolStr,
     pub namespace: Option<SmolStr>,
+    /// Legacy alias for the task help text.
     pub doc: Option<SmolStr>,
+    pub metadata: TaskMetadataAst,
     pub params: Vec<ParamAst>,
     pub guards: Vec<GuardAst>,
     pub dependencies: Vec<DependencyAst>,
@@ -51,6 +55,17 @@ pub struct TaskAst {
     pub steps: Vec<TaskStepAst>,
     pub range: TextRange,
     pub uses_multiline_header: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct TaskMetadataAst {
+    pub help: Option<SmolStr>,
+    pub help_count: usize,
+    pub desc: Option<SmolStr>,
+    pub pass: Option<SmolStr>,
+    pub fail: Option<SmolStr>,
+    pub unknown_fields: Vec<SmolStr>,
+    pub has_structured_fields: bool,
 }
 
 impl TaskAst {

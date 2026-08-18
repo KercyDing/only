@@ -8,6 +8,69 @@ use std::fmt;
 
 use smol_str::SmolStr;
 
+pub const GROUP_KEYWORD: &str = "group";
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MetadataKind {
+    Help,
+    Desc,
+    Pass,
+    Fail,
+    Unknown(SmolStr),
+}
+
+impl MetadataKind {
+    pub const SUPPORTED: &'static [Self] = &[Self::Help, Self::Desc, Self::Pass, Self::Fail];
+
+    pub fn parse(name: &str) -> Self {
+        match name {
+            "help" => Self::Help,
+            "desc" => Self::Desc,
+            "pass" => Self::Pass,
+            "fail" => Self::Fail,
+            unknown => Self::Unknown(SmolStr::new(unknown)),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Help => "help",
+            Self::Desc => "desc",
+            Self::Pass => "pass",
+            Self::Fail => "fail",
+            Self::Unknown(name) => name,
+        }
+    }
+
+    pub fn is_supported(&self) -> bool {
+        !matches!(self, Self::Unknown(_))
+    }
+
+    pub fn is_result_message(&self) -> bool {
+        matches!(self, Self::Pass | Self::Fail)
+    }
+
+    pub fn description(&self) -> Option<&'static str> {
+        match self {
+            Self::Help => Some("Sets the short task or group summary."),
+            Self::Desc => Some("Adds details shown in task help."),
+            Self::Pass => Some("Shown when a task succeeds."),
+            Self::Fail => Some("Shown when a task fails."),
+            Self::Unknown(_) => None,
+        }
+    }
+
+    pub fn expected_list() -> &'static str {
+        "help, desc, pass, or fail"
+    }
+}
+
+impl fmt::Display for MetadataKind {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(self.as_str())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DirectiveKind {
     Version,

@@ -89,8 +89,27 @@ fn keeps_parsing_after_comments_and_blank_lines() {
     let parsed = parse("# docs\n\n// comment\nbuild():\n    cargo build\n");
     let kinds: Vec<_> = parsed.root_children().map(|node| node.kind()).collect();
 
-    assert!(kinds.contains(&SyntaxKind::DocComment));
     assert!(kinds.contains(&SyntaxKind::TaskDecl));
+    assert!(parsed.diagnostics().is_empty());
+}
+
+#[test]
+fn parses_task_metadata_without_namespace_conflicts() {
+    let parsed =
+        parse("[help] Build the project\n[unknown] ignored text\nbuild():\n    true\n[dev] {\n}\n");
+    let kinds = parsed
+        .root_children()
+        .map(|node| node.kind())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        kinds
+            .iter()
+            .filter(|kind| **kind == SyntaxKind::MetadataComment)
+            .count(),
+        2
+    );
+    assert!(kinds.contains(&SyntaxKind::NamespaceBlock));
     assert!(parsed.diagnostics().is_empty());
 }
 

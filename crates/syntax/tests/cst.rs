@@ -3,7 +3,7 @@ use only_syntax::{ShellKind, ShellOperator, TaskStepNode, snapshot};
 #[test]
 fn exposes_typed_top_level_nodes() {
     let parsed = only_syntax::parse(
-        "!shell deno\n# Developer tasks.\n[dev]\nserve(port=\"3000\"):\n    echo {{port}}\n",
+        "!shell deno\n[help] Developer tasks.\ngroup dev {\n    serve(port=\"3000\"):\n        echo {{port}}\n}\n",
     );
     let document = parsed.document();
 
@@ -14,10 +14,7 @@ fn exposes_typed_top_level_nodes() {
     assert_eq!(directive.name().as_deref(), Some("shell"));
     assert_eq!(directive.value().as_deref(), Some("deno"));
 
-    let doc = document
-        .doc_comments()
-        .next()
-        .expect("doc comment should exist");
+    let doc = document.metadata().next().expect("metadata should exist");
     assert_eq!(doc.text().as_deref(), Some("Developer tasks."));
 
     let namespace = document
@@ -31,6 +28,32 @@ fn exposes_typed_top_level_nodes() {
     assert_eq!(task.header_text().as_deref(), Some("serve(port=\"3000\")"));
     assert_eq!(task.commands().collect::<Vec<_>>(), vec!["echo {{port}}"]);
     assert!(!task.range().is_empty());
+}
+
+#[test]
+fn exposes_structured_doc_comment_fields() {
+    let source = "[desc] Extra details\nrun():\n    true\n";
+    let syntax = snapshot(source);
+    let comment = syntax
+        .document()
+        .metadata()
+        .next()
+        .expect("metadata comment should exist");
+
+    assert_eq!(
+        comment
+            .field()
+            .as_ref()
+            .map(|(name, value)| (name.as_str(), value.as_str())),
+        Some(("desc", "Extra details"))
+    );
+    let tag = comment
+        .tag_range()
+        .expect("metadata tag should have a range");
+    assert_eq!(
+        &source[usize::from(tag.start())..usize::from(tag.end())],
+        "[desc]"
+    );
 }
 
 #[test]
@@ -68,14 +91,19 @@ fn top_level_doc_comment_ends_previous_task_body() {
 
 #[test]
 fn exposes_structured_task_header_sections() {
-    let syntax = snapshot(
-        "build(tag=\"v1\") ? @env(\"CI\") & install & bootstrap shell~=bash:\n    echo {{tag}}\n",
-    );
+    let source =
+        "build(tag=\"v1\") ? @env(\"CI\") & install & bootstrap shell~=bash:\n    echo {{tag}}\n";
+    let syntax = snapshot(source);
     let task = syntax.document().tasks().next().expect("task should exist");
     let header = task.header_info();
 
     assert_eq!(header.params.as_deref(), Some("tag=\"v1\""));
     assert_eq!(header.guard.as_deref(), Some("@env(\"CI\")"));
+    let guard = &header.guards[0];
+    assert_eq!(
+        &source[usize::from(guard.name_range.start())..usize::from(guard.name_range.end())],
+        "@env"
+    );
     assert_eq!(header.dependencies.as_deref(), Some("install & bootstrap"));
     let shell = header.shell.expect("shell should exist");
     assert_eq!(shell.selection.kind, ShellKind::Bash);
@@ -246,7 +274,7 @@ fn exposes_structured_multiline_header_nodes() {
         parameters[1].default_value().as_deref(),
         Some("x86_64,static")
     );
-    assert_eq!(header.guards().count(), 2);
+    assert_eq!(header.conditions().count(), 2);
     assert_eq!(header.dependencies().count(), 2);
     assert_eq!(
         header.shell().expect("shell should exist").text(),

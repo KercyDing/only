@@ -30,6 +30,23 @@ pub(crate) fn scan_interpolations(text: &str) -> Vec<InterpolationAst> {
     out
 }
 
+/// Returns the source ranges of interpolation names without their delimiters.
+pub fn interpolation_name_ranges(text: &str) -> Vec<TextRange> {
+    scan_interpolations(text)
+        .into_iter()
+        .filter_map(|interpolation| {
+            let start = usize::from(interpolation.range.start()) + 2;
+            let end = usize::from(interpolation.range.end()) - 2;
+            let name = text.get(start..end)?.trim();
+            let name_start = start + text.get(start..end)?.find(name)?;
+            Some(TextRange::new(
+                (name_start as u32).into(),
+                ((name_start + name.len()) as u32).into(),
+            ))
+        })
+        .collect()
+}
+
 fn marker_is_escaped(text: &str, marker_start: usize) -> bool {
     let mut slash_count = 0usize;
     let bytes = text.as_bytes();

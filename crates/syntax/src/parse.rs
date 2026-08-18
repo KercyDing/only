@@ -106,8 +106,8 @@ pub(crate) fn parse_tokens(tokens: &[LexToken]) -> ParseResult {
                 }
                 builder.push_node(SyntaxKind::Directive, token_slice);
             }
-            ParsedTopLevelItem::DocComment => {
-                builder.push_node(SyntaxKind::DocComment, token_slice);
+            ParsedTopLevelItem::MetadataComment => {
+                builder.push_node(SyntaxKind::MetadataComment, token_slice);
             }
             ParsedTopLevelItem::Namespace {
                 malformed,
@@ -163,7 +163,7 @@ enum ParsedTopLevelItem {
     Directive {
         malformed: bool,
     },
-    DocComment,
+    MetadataComment,
     Namespace {
         malformed: bool,
         is_close: bool,
@@ -182,7 +182,7 @@ fn parse_top_level_item(
 ) -> ModalResult<ParsedTopLevelItem> {
     alt((
         parse_directive_item,
-        parse_doc_comment_item,
+        parse_metadata_item,
         parse_namespace_item,
         |input: &mut &[SyntaxKind]| parse_task_item(input, in_braced_namespace),
         parse_unexpected_item,
@@ -197,10 +197,26 @@ fn parse_directive_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevel
     Ok(ParsedTopLevelItem::Directive { malformed })
 }
 
-fn parse_doc_comment_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem> {
-    token_kind(input, SyntaxKind::Percent)?;
+fn parse_metadata_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem> {
+    token_kind(input, SyntaxKind::LBracket)?;
+    token_kind(input, SyntaxKind::Ident)?;
+    token_kind(input, SyntaxKind::RBracket)?;
+
+    let mut rest = *input;
+    while matches!(rest.first(), Some(SyntaxKind::Whitespace)) {
+        advance(&mut rest);
+    }
+    let starts_namespace_brace =
+        rest.first() == Some(&SyntaxKind::LBrace) && rest.get(1) != Some(&SyntaxKind::LBrace);
+    let has_text = !matches!(rest.first(), Some(SyntaxKind::Newline | SyntaxKind::Eof))
+        && !starts_namespace_brace
+        && rest.first() != Some(&SyntaxKind::Comment);
+    if !has_text {
+        return Err(ErrMode::Backtrack(ContextError::new()));
+    }
+
     consume_line(input);
-    Ok(ParsedTopLevelItem::DocComment)
+    Ok(ParsedTopLevelItem::MetadataComment)
 }
 
 fn parse_namespace_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevelItem> {
@@ -216,9 +232,23 @@ fn parse_namespace_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevel
         });
     }
 
+    if input.first() == Some(&SyntaxKind::GroupKw)
+        && input.get(1) == Some(&SyntaxKind::Whitespace)
+        && input.get(2) == Some(&SyntaxKind::Ident)
+    {
+        let has_open_brace = line_contains_kind(input, SyntaxKind::LBrace);
+        let malformed = group_open_is_malformed(input);
+        consume_line(input);
+        return Ok(ParsedTopLevelItem::Namespace {
+            malformed,
+            is_close: false,
+            has_open_brace,
+        });
+    }
+
     token_kind(input, SyntaxKind::LBracket)?;
     let has_open_brace = line_contains_kind(input, SyntaxKind::LBrace);
-    let malformed = namespace_open_is_malformed(input);
+    let malformed = legacy_namespace_is_malformed(input);
     consume_line(input);
     Ok(ParsedTopLevelItem::Namespace {
         malformed,
@@ -227,14 +257,44 @@ fn parse_namespace_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevel
     })
 }
 
-fn namespace_open_is_malformed(input: &[SyntaxKind]) -> bool {
+fn group_open_is_malformed(input: &[SyntaxKind]) -> bool {
     let line = input
         .iter()
         .copied()
         .take_while(|kind| !matches!(kind, SyntaxKind::Newline | SyntaxKind::Eof))
         .collect::<Vec<_>>();
     let mut index = 0;
+    if line.get(index) != Some(&SyntaxKind::GroupKw) {
+        return true;
+    }
+    index += 1;
+    while line.get(index) == Some(&SyntaxKind::Whitespace) {
+        index += 1;
+    }
+    if line.get(index) != Some(&SyntaxKind::Ident) {
+        return true;
+    }
+    index += 1;
+    while line.get(index) == Some(&SyntaxKind::Whitespace) {
+        index += 1;
+    }
+    if line.get(index) != Some(&SyntaxKind::LBrace) {
+        return true;
+    }
+    index += 1;
+    while line.get(index) == Some(&SyntaxKind::Whitespace) {
+        index += 1;
+    }
+    index != line.len()
+}
 
+fn legacy_namespace_is_malformed(input: &[SyntaxKind]) -> bool {
+    let line = input
+        .iter()
+        .copied()
+        .take_while(|kind| !matches!(kind, SyntaxKind::Newline | SyntaxKind::Eof))
+        .collect::<Vec<_>>();
+    let mut index = 0;
     while line.get(index) == Some(&SyntaxKind::Whitespace) {
         index += 1;
     }
@@ -342,7 +402,7 @@ fn parse_task_item(
                         phase = TaskHeaderPhase::Params { depth: 1 };
                     }
                     SyntaxKind::Question => {
-                        phase = TaskHeaderPhase::Guard { depth: 0 };
+                        phase = TaskHeaderPhase::Condition { depth: 0 };
                         expect_guard_at = true;
                     }
                     SyntaxKind::Amp => {
@@ -376,7 +436,7 @@ fn parse_task_item(
                     }
                     _ => {}
                 },
-                TaskHeaderPhase::Guard { depth } => match kind {
+                TaskHeaderPhase::Condition { depth } => match kind {
                     SyntaxKind::LParen => *depth += 1,
                     SyntaxKind::RParen => {
                         if *depth > 0 {
@@ -469,7 +529,7 @@ fn parse_task_item(
 enum TaskHeaderPhase {
     BeforeTail,
     Params { depth: usize },
-    Guard { depth: usize },
+    Condition { depth: usize },
     Dependencies { group_depth: usize, saw_group: bool },
     Shell,
 }
@@ -478,7 +538,7 @@ impl TaskHeaderPhase {
     fn is_balanced(self) -> bool {
         match self {
             TaskHeaderPhase::BeforeTail | TaskHeaderPhase::Shell => true,
-            TaskHeaderPhase::Params { depth } | TaskHeaderPhase::Guard { depth } => depth == 0,
+            TaskHeaderPhase::Params { depth } | TaskHeaderPhase::Condition { depth } => depth == 0,
             TaskHeaderPhase::Dependencies { group_depth, .. } => group_depth == 0,
         }
     }

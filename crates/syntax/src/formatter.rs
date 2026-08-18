@@ -2,8 +2,8 @@ use rowan::NodeOrToken;
 use text_size::TextRange;
 
 use crate::{
-    DirectiveKind, DirectiveNode, DocCommentNode, NamespaceNode, ParameterNode, SyntaxKind,
-    SyntaxNode, TaskHeaderNode, TaskNode, snapshot,
+    DirectiveKind, DirectiveNode, MetadataKind, MetadataNode, NamespaceNode, ParameterNode,
+    SyntaxKind, SyntaxNode, TaskHeaderNode, TaskNode, snapshot,
 };
 
 const INDENT: &str = "    ";
@@ -64,9 +64,10 @@ pub fn format_range(source: &str, range: TextRange) -> Result<Option<(TextRange,
 enum ItemKind {
     Directive,
     Comment,
-    DocComment,
+    Metadata,
     LegacyNamespace,
     NamespaceOpen,
+    GroupOpen,
     NamespaceClose,
     Task,
 }
@@ -77,6 +78,7 @@ struct DocumentFormatter<'a> {
     previous: Option<ItemKind>,
     pending_newlines: usize,
     in_braced_namespace: bool,
+    pending_metadata: Vec<(usize, String)>,
 }
 
 impl<'a> DocumentFormatter<'a> {
@@ -87,6 +89,7 @@ impl<'a> DocumentFormatter<'a> {
             previous: None,
             pending_newlines: 0,
             in_braced_namespace: false,
+            pending_metadata: Vec::new(),
         }
     }
 
@@ -95,17 +98,53 @@ impl<'a> DocumentFormatter<'a> {
             match element {
                 NodeOrToken::Token(token) => match token.kind() {
                     SyntaxKind::Bom => self.output.push_str(token.text()),
-                    SyntaxKind::Newline => self.pending_newlines += 1,
+                    SyntaxKind::Newline => {
+                        self.flush_metadata();
+                        self.pending_newlines += 1;
+                    }
                     SyntaxKind::Comment => {
+                        self.flush_metadata();
                         self.push_item(ItemKind::Comment, token.text().trim_end())
                     }
-                    SyntaxKind::Whitespace | SyntaxKind::Indent | SyntaxKind::Eof => {}
+                    SyntaxKind::Whitespace | SyntaxKind::Indent => {}
+                    SyntaxKind::Eof => self.flush_metadata(),
                     _ => self.push_raw(token.text()),
                 },
-                NodeOrToken::Node(node) => self.format_node(node)?,
+                NodeOrToken::Node(node) if node.kind() == SyntaxKind::MetadataComment => {
+                    self.queue_metadata(node)?;
+                }
+                NodeOrToken::Node(node) => {
+                    self.flush_metadata();
+                    self.format_node(node)?;
+                }
             }
         }
         Ok(())
+    }
+
+    fn queue_metadata(&mut self, node: SyntaxNode) -> Result<(), String> {
+        let comment = MetadataNode::cast(node.clone()).expect("metadata kind must cast");
+        let (field, _) = comment
+            .field()
+            .ok_or_else(|| "invalid metadata field".to_owned())?;
+        let order = match MetadataKind::parse(field.as_str()) {
+            MetadataKind::Help => 0,
+            MetadataKind::Desc => 1,
+            MetadataKind::Pass => 2,
+            MetadataKind::Fail => 3,
+            MetadataKind::Unknown(_) => 4,
+        };
+        let (_, text) = format_top_level_node(node, self.source)?;
+        self.pending_metadata.push((order, text));
+        Ok(())
+    }
+
+    fn flush_metadata(&mut self) {
+        self.pending_metadata.sort_by_key(|(order, _)| *order);
+        let pending = std::mem::take(&mut self.pending_metadata);
+        for (_, text) in pending {
+            self.push_item(ItemKind::Metadata, &text);
+        }
     }
 
     fn format_node(&mut self, node: SyntaxNode) -> Result<(), String> {
@@ -117,7 +156,10 @@ impl<'a> DocumentFormatter<'a> {
     fn push_item(&mut self, kind: ItemKind, text: &str) {
         if matches!(
             kind,
-            ItemKind::LegacyNamespace | ItemKind::NamespaceOpen | ItemKind::NamespaceClose
+            ItemKind::LegacyNamespace
+                | ItemKind::NamespaceOpen
+                | ItemKind::GroupOpen
+                | ItemKind::NamespaceClose
         ) {
             self.in_braced_namespace = false;
         }
@@ -131,8 +173,13 @@ impl<'a> DocumentFormatter<'a> {
             self.previous == Some(ItemKind::Directive) && kind == ItemKind::Directive;
         let namespace_boundary =
             self.previous == Some(ItemKind::NamespaceOpen) || kind == ItemKind::NamespaceClose;
+        let metadata_boundary =
+            self.previous == Some(ItemKind::Metadata) || kind == ItemKind::Metadata;
         if !self.output.is_empty()
-            && ((source_has_blank && !consecutive_directives && !namespace_boundary)
+            && ((source_has_blank
+                && !consecutive_directives
+                && !namespace_boundary
+                && !metadata_boundary)
                 || needs_structural_blank(self.previous, kind))
             && !self.output.ends_with("\n\n")
         {
@@ -146,7 +193,7 @@ impl<'a> DocumentFormatter<'a> {
             self.output.push_str(text);
         }
         self.output.push('\n');
-        if kind == ItemKind::NamespaceOpen {
+        if matches!(kind, ItemKind::NamespaceOpen | ItemKind::GroupOpen) {
             self.in_braced_namespace = true;
         }
         self.previous = Some(kind);
@@ -175,12 +222,17 @@ fn format_top_level_node(node: SyntaxNode, source: &str) -> Result<(ItemKind, St
             let directive = DirectiveNode::cast(node).expect("directive kind must cast");
             Ok((ItemKind::Directive, format_directive(&directive, source)?))
         }
-        SyntaxKind::DocComment => {
-            let comment = DocCommentNode::cast(node).expect("doc comment kind must cast");
-            let text = comment
-                .text()
-                .map_or_else(|| "#".to_owned(), |text| format!("# {text}"));
-            Ok((ItemKind::DocComment, text))
+        SyntaxKind::MetadataComment => {
+            let comment = MetadataNode::cast(node).expect("metadata kind must cast");
+            let (field, value) = comment
+                .field()
+                .ok_or_else(|| "invalid metadata field".to_owned())?;
+            let text = if value.is_empty() {
+                format!("[{field}]")
+            } else {
+                format!("[{field}] {value}")
+            };
+            Ok((ItemKind::Metadata, text))
         }
         SyntaxKind::NamespaceBlock => {
             let namespace = NamespaceNode::cast(node).expect("namespace kind must cast");
@@ -191,7 +243,11 @@ fn format_top_level_node(node: SyntaxNode, source: &str) -> Result<(ItemKind, St
                     .name()
                     .ok_or_else(|| "invalid namespace".to_owned())?;
                 if namespace.has_open_brace() {
-                    Ok((ItemKind::NamespaceOpen, format!("[{name}] {{")))
+                    if namespace.is_group() {
+                        Ok((ItemKind::GroupOpen, format!("group {name} {{")))
+                    } else {
+                        Ok((ItemKind::NamespaceOpen, format!("[{name}] {{")))
+                    }
                 } else {
                     Ok((ItemKind::LegacyNamespace, format!("[{name}]")))
                 }
@@ -210,7 +266,7 @@ fn is_formattable_node(kind: SyntaxKind) -> bool {
     matches!(
         kind,
         SyntaxKind::Directive
-            | SyntaxKind::DocComment
+            | SyntaxKind::MetadataComment
             | SyntaxKind::NamespaceBlock
             | SyntaxKind::TaskDecl
     )
@@ -231,17 +287,22 @@ fn needs_structural_blank(previous: Option<ItemKind>, current: ItemKind) -> bool
     if current == ItemKind::NamespaceClose || previous == ItemKind::NamespaceOpen {
         return false;
     }
-    if previous == ItemKind::DocComment || previous == ItemKind::Comment {
+    if previous == ItemKind::GroupOpen {
+        return true;
+    }
+    if previous == ItemKind::Metadata || previous == ItemKind::Comment {
         return false;
     }
-    if current == ItemKind::DocComment || current == ItemKind::Comment {
-        return !matches!(previous, ItemKind::DocComment | ItemKind::Comment);
+    if current == ItemKind::Metadata || current == ItemKind::Comment {
+        return !matches!(previous, ItemKind::Metadata | ItemKind::Comment);
     }
     if matches!(
         previous,
         ItemKind::LegacyNamespace | ItemKind::NamespaceClose
-    ) || matches!(current, ItemKind::LegacyNamespace | ItemKind::NamespaceOpen)
-    {
+    ) || matches!(
+        current,
+        ItemKind::LegacyNamespace | ItemKind::NamespaceOpen | ItemKind::GroupOpen
+    ) {
         return true;
     }
     if previous == ItemKind::Directive && current == ItemKind::Directive {
@@ -352,8 +413,8 @@ fn format_header(header: &TaskHeaderNode, source: &str) -> Result<String, String
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let guards = header
-        .guards()
+    let conditions = header
+        .conditions()
         .map(|guard| format_guard(guard.text().as_str()))
         .collect::<Vec<_>>();
     let dependencies = header
@@ -367,8 +428,8 @@ fn format_header(header: &TaskHeaderNode, source: &str) -> Result<String, String
     let params_inline = parameters.join(", ");
     let prefix = format!("{name}({params_inline})");
     let mut clauses =
-        Vec::with_capacity(guards.len() + dependencies.len() + usize::from(shell.is_some()));
-    clauses.extend(guards);
+        Vec::with_capacity(conditions.len() + dependencies.len() + usize::from(shell.is_some()));
+    clauses.extend(conditions);
     clauses.extend(dependencies);
     if let Some(shell) = shell {
         clauses.push(shell);

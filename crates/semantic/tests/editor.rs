@@ -70,7 +70,7 @@ fn builds_folding_range_for_command_block() {
 
 #[test]
 fn returns_hover_for_task_at_offset() {
-    let source = "# Start the app.\nserve(port=\"3000\"):\n    echo {{port}}\n";
+    let source = "!version 0.4\n[help] Start the app.\nserve(port=\"3000\"):\n    echo {{port}}\n";
     let compiled = compile_document(source);
     let offset = TextSize::from(source.find("serve").expect("task name should exist") as u32);
 
