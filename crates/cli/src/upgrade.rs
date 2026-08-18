@@ -8,7 +8,8 @@
 //!
 //! Edge Cases:
 //! Installed binaries replace themselves in place; ad hoc binaries copy into the install path.
-//! Package-managed binaries refuse self-updates and defer to the system package manager.
+//! Cargo installs are updated through Cargo so its install records stay correct. System package
+//! installs defer to the package manager.
 
 use crate::error::{OnlyError, Result};
 use self_replace::self_replace;
@@ -16,14 +17,19 @@ use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;
 use std::fs::OpenOptions;
-use std::io::{Read, Write};
+use std::io::{self, BufRead, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 
 const REPO: &str = "KercyDing/only";
 const VERSION_FILE: &str = "VERSION";
 const CHECKSUMS_FILE: &str = "SHA256SUMS";
 const HTTP_TIMEOUT_SECONDS: u64 = 60;
+
+#[cfg(windows)]
+const CARGO_BINARY_NAME: &str = "only.exe";
+#[cfg(not(windows))]
+const CARGO_BINARY_NAME: &str = "only";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct UpgradePlan {
@@ -51,9 +57,100 @@ struct LatestRelease {
 /// Self-update uses the running install path when available and falls back to a normal copy
 /// otherwise.
 pub(crate) fn run_upgrade() -> Result<ExitCode> {
+    if current_exe_is_cargo_install() {
+        return run_cargo_upgrade();
+    }
+
     let plan = build_upgrade_plan()?;
     execute_upgrade(&plan)?;
     Ok(ExitCode::SUCCESS)
+}
+
+fn run_cargo_upgrade() -> Result<ExitCode> {
+    if !io::stdin().is_terminal() {
+        return Err(OnlyError::runtime(
+            "only was installed with Cargo\nhelp: run `cargo install only --force`",
+        ));
+    }
+
+    let mut input = io::stdin().lock();
+    let mut output = io::stdout().lock();
+    if !confirm_cargo_upgrade(&mut input, &mut output)? {
+        println!("Cancelled.");
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    execute_cargo_upgrade()
+}
+
+fn confirm_cargo_upgrade(input: &mut impl BufRead, output: &mut impl Write) -> Result<bool> {
+    loop {
+        write!(
+            output,
+            "This copy was installed with Cargo.\nRun `cargo install only --force`? [Y/n] "
+        )
+        .map_err(|error| OnlyError::runtime(format!("failed to write prompt: {error}")))?;
+        output
+            .flush()
+            .map_err(|error| OnlyError::runtime(format!("failed to show prompt: {error}")))?;
+
+        let mut answer = String::new();
+        let bytes_read = input
+            .read_line(&mut answer)
+            .map_err(|error| OnlyError::runtime(format!("failed to read answer: {error}")))?;
+        if bytes_read == 0 {
+            return Ok(false);
+        }
+
+        match answer.trim().to_ascii_lowercase().as_str() {
+            "" | "y" | "yes" => return Ok(true),
+            "n" | "no" => return Ok(false),
+            _ => writeln!(output, "Enter y or n.")
+                .map_err(|error| OnlyError::runtime(format!("failed to write prompt: {error}")))?,
+        }
+    }
+}
+
+fn current_exe_is_cargo_install() -> bool {
+    let Ok(current_exe) = env::current_exe() else {
+        return false;
+    };
+    let Some(cargo_home) = cargo_home() else {
+        return false;
+    };
+
+    is_cargo_install_path(&current_exe, &cargo_home)
+}
+
+fn cargo_home() -> Option<PathBuf> {
+    env::var_os("CARGO_HOME").map(PathBuf::from).or_else(|| {
+        env::var_os("HOME")
+            .or_else(|| env::var_os("USERPROFILE"))
+            .map(PathBuf::from)
+            .map(|home| home.join(".cargo"))
+    })
+}
+
+fn is_cargo_install_path(executable: &Path, cargo_home: &Path) -> bool {
+    executable.file_name().and_then(|name| name.to_str()) == Some(CARGO_BINARY_NAME)
+        && executable
+            .parent()
+            .is_some_and(|parent| paths_equal(parent, &cargo_home.join("bin")))
+}
+
+fn execute_cargo_upgrade() -> Result<ExitCode> {
+    let status = Command::new("cargo")
+        .args(["install", "only", "--force"])
+        .status()
+        .map_err(|error| OnlyError::runtime(format!("failed to start Cargo: {error}")))?;
+
+    if status.success() {
+        Ok(ExitCode::SUCCESS)
+    } else {
+        Err(OnlyError::runtime(format!(
+            "Cargo update failed with {status}"
+        )))
+    }
 }
 
 fn build_upgrade_plan() -> Result<UpgradePlan> {
@@ -583,10 +680,12 @@ mod tests {
     #[cfg(unix)]
     use super::is_unix_install_path;
     use super::{
-        VersionOrder, compare_versions, encode_hex, is_system_package_install_path, parse_checksum,
+        CARGO_BINARY_NAME, VersionOrder, compare_versions, confirm_cargo_upgrade, encode_hex,
+        is_cargo_install_path, is_system_package_install_path, parse_checksum,
         parse_release_version, release_download_url,
     };
-    use std::path::Path;
+    use std::io::Cursor;
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn parses_release_version() {
@@ -643,5 +742,58 @@ mod tests {
     fn recognizes_package_path() {
         assert!(is_system_package_install_path(Path::new("/usr/bin/only")));
         assert!(!is_system_package_install_path(Path::new("/usr/bin/other")));
+    }
+
+    #[test]
+    fn recognizes_cargo_path() {
+        let cargo_home = PathBuf::from("cargo-home");
+        let executable = cargo_home.join("bin").join(CARGO_BINARY_NAME);
+
+        assert!(is_cargo_install_path(&executable, &cargo_home));
+        assert!(!is_cargo_install_path(
+            &cargo_home.join("other").join(CARGO_BINARY_NAME),
+            &cargo_home
+        ));
+    }
+
+    #[test]
+    fn accepts_cargo_confirmation() {
+        for answer in ["\n", "y\n", "YES\n"] {
+            let mut input = Cursor::new(answer.as_bytes());
+            let mut output = Vec::new();
+
+            assert!(
+                confirm_cargo_upgrade(&mut input, &mut output)
+                    .expect("confirmation should be read")
+            );
+        }
+    }
+
+    #[test]
+    fn declines_cargo_confirmation() {
+        for answer in ["n\n", "No\n"] {
+            let mut input = Cursor::new(answer.as_bytes());
+            let mut output = Vec::new();
+
+            assert!(
+                !confirm_cargo_upgrade(&mut input, &mut output)
+                    .expect("confirmation should be read")
+            );
+        }
+    }
+
+    #[test]
+    fn retries_cargo_confirmation() {
+        let mut input = Cursor::new(b"maybe\n\n");
+        let mut output = Vec::new();
+
+        assert!(
+            confirm_cargo_upgrade(&mut input, &mut output).expect("confirmation should be read")
+        );
+        assert!(
+            String::from_utf8(output)
+                .expect("prompt output should be UTF-8")
+                .contains("Enter y or n.")
+        );
     }
 }
