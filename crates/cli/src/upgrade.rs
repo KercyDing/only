@@ -57,16 +57,28 @@ struct LatestRelease {
 /// Self-update uses the running install path when available and falls back to a normal copy
 /// otherwise.
 pub(crate) fn run_upgrade() -> Result<ExitCode> {
+    let latest_version = fetch_latest_version()?;
+    if compare_versions(env!("CARGO_PKG_VERSION"), &latest_version)? != VersionOrder::Older {
+        println!("Already up to date.");
+        return Ok(ExitCode::SUCCESS);
+    }
+
     if current_exe_is_cargo_install() {
-        return run_cargo_upgrade();
+        return run_cargo_upgrade(&latest_version);
     }
 
     let plan = build_upgrade_plan()?;
-    execute_upgrade(&plan)?;
+    execute_upgrade(&plan, latest_version)?;
     Ok(ExitCode::SUCCESS)
 }
 
-fn run_cargo_upgrade() -> Result<ExitCode> {
+fn run_cargo_upgrade(latest_version: &str) -> Result<ExitCode> {
+    println!(
+        "Update available: {} -> {}",
+        env!("CARGO_PKG_VERSION"),
+        normalize_version(latest_version)
+    );
+
     if !io::stdin().is_terminal() {
         return Err(OnlyError::runtime(
             "only was installed with Cargo\nhelp: run `cargo install only --force`",
@@ -273,7 +285,7 @@ fn staged_path_for(install_path: &Path) -> Result<PathBuf> {
 }
 
 #[cfg(windows)]
-fn execute_upgrade(plan: &UpgradePlan) -> Result<()> {
+fn execute_upgrade(plan: &UpgradePlan, latest_version: String) -> Result<()> {
     let install_dir = plan
         .install_path
         .parent()
@@ -286,11 +298,7 @@ fn execute_upgrade(plan: &UpgradePlan) -> Result<()> {
         )
     })?;
 
-    let release = fetch_latest_release(plan.binary)?;
-    if compare_versions(env!("CARGO_PKG_VERSION"), &release.version)? != VersionOrder::Older {
-        println!("Already up to date.");
-        return Ok(());
-    }
+    let release = fetch_release(plan.binary, latest_version)?;
 
     ensure_directory_writable(install_dir, &plan.install_path)?;
     print_download_summary(plan, &release.download_url);
@@ -323,7 +331,7 @@ fn execute_upgrade(plan: &UpgradePlan) -> Result<()> {
 }
 
 #[cfg(unix)]
-fn execute_upgrade(plan: &UpgradePlan) -> Result<()> {
+fn execute_upgrade(plan: &UpgradePlan, latest_version: String) -> Result<()> {
     let install_dir = plan
         .install_path
         .parent()
@@ -336,11 +344,7 @@ fn execute_upgrade(plan: &UpgradePlan) -> Result<()> {
         )
     })?;
 
-    let release = fetch_latest_release(plan.binary)?;
-    if compare_versions(env!("CARGO_PKG_VERSION"), &release.version)? != VersionOrder::Older {
-        println!("Already up to date.");
-        return Ok(());
-    }
+    let release = fetch_release(plan.binary, latest_version)?;
 
     ensure_directory_writable(install_dir, &plan.install_path)?;
     print_download_summary(plan, &release.download_url);
@@ -381,9 +385,7 @@ fn print_upgrade_done(installed_version: &str) {
     println!("Done.");
 }
 
-fn fetch_latest_release(binary: &str) -> Result<LatestRelease> {
-    let version = fetch_url_text(&latest_download_url(VERSION_FILE))?;
-    let version = parse_release_version(&version)?;
+fn fetch_release(binary: &str, version: String) -> Result<LatestRelease> {
     let checksum_url = release_download_url(&version, CHECKSUMS_FILE);
     let checksums = fetch_url_text(&checksum_url)?;
 
@@ -392,6 +394,11 @@ fn fetch_latest_release(binary: &str) -> Result<LatestRelease> {
         checksum: parse_checksum(&checksums, binary)?,
         version,
     })
+}
+
+fn fetch_latest_version() -> Result<String> {
+    let version = fetch_url_text(&latest_download_url(VERSION_FILE))?;
+    parse_release_version(&version)
 }
 
 fn latest_download_url(asset: &str) -> String {
