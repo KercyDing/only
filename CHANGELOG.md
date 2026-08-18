@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 - 2026-08-18
+
+- Added an interactive Cargo update path that keeps `cargo install --list` in sync.
+
 ## 0.3.0 - 2026-08-17
 
 - Added multiple guards, multiline task headers, file-level `!var` values, and braced namespace scopes.

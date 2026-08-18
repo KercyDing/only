@@ -10,7 +10,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/KercyDing/only"
@@ -18,6 +18,11 @@ documentation = "https://github.com/KercyDing/only"
 readme = "README.md"
 
 [workspace.dependencies]
+only-diagnostic = { version = "0.3.1", path = "crates/diagnostic" }
+only-engine = { version = "0.3.1", path = "crates/engine" }
+only-semantic = { version = "0.3.1", path = "crates/semantic" }
+only-syntax = { version = "0.3.1", path = "crates/syntax" }
+
 anstyle = "1.0"
 clap = { version = "4.6", features = ["color", "std", "string"] }
 deno_task_shell = "0.33"
