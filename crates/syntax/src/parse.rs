@@ -408,7 +408,8 @@ fn parse_task_item(
                     SyntaxKind::Amp => {
                         phase = TaskHeaderPhase::Dependencies {
                             group_depth: 0,
-                            saw_group: false,
+                            call_args: None,
+                            previous: Some(SyntaxKind::Amp),
                         };
                     }
                     SyntaxKind::Whitespace | SyntaxKind::Indent => {}
@@ -459,28 +460,68 @@ fn parse_task_item(
                 },
                 TaskHeaderPhase::Dependencies {
                     group_depth,
-                    saw_group,
+                    call_args,
+                    previous,
                 } => match kind {
+                    SyntaxKind::Whitespace | SyntaxKind::Indent | SyntaxKind::Newline => {}
                     SyntaxKind::LParen => {
-                        if *group_depth > 0 {
+                        if call_args.is_some() {
                             malformed = true;
+                        } else if *previous == Some(SyntaxKind::Ident) {
+                            *call_args = Some(DependencyArgState::FirstOrEnd);
+                        } else {
+                            if *group_depth > 0 {
+                                malformed = true;
+                            }
+                            *group_depth += 1;
                         }
-                        *group_depth += 1;
-                        *saw_group = true;
+                        *previous = Some(kind);
                     }
                     SyntaxKind::RParen => {
-                        if *group_depth == 0 {
-                            malformed = true;
-                        } else {
+                        if let Some(argument_state) = call_args {
+                            if *argument_state == DependencyArgState::Value {
+                                malformed = true;
+                            }
+                            *call_args = None;
+                        } else if *group_depth > 0 {
                             *group_depth -= 1;
+                        } else {
+                            malformed = true;
                         }
+                        *previous = Some(kind);
+                    }
+                    SyntaxKind::String => {
+                        match call_args {
+                            Some(DependencyArgState::FirstOrEnd | DependencyArgState::Value) => {
+                                *call_args = Some(DependencyArgState::CommaOrEnd);
+                            }
+                            _ => malformed = true,
+                        }
+                        *previous = Some(kind);
+                    }
+                    SyntaxKind::Comma => {
+                        match call_args {
+                            Some(DependencyArgState::CommaOrEnd) => {
+                                *call_args = Some(DependencyArgState::Value);
+                            }
+                            Some(_) => malformed = true,
+                            None if *group_depth == 0 => malformed = true,
+                            None => {}
+                        }
+                        *previous = Some(kind);
                     }
                     SyntaxKind::Question | SyntaxKind::At => malformed = true,
-                    SyntaxKind::ShellKw | SyntaxKind::ShellFallbackKw if *group_depth == 0 => {
+                    SyntaxKind::ShellKw | SyntaxKind::ShellFallbackKw
+                        if *group_depth == 0 && call_args.is_none() =>
+                    {
                         phase = TaskHeaderPhase::Shell;
                     }
-                    SyntaxKind::Unknown if kind == SyntaxKind::Unknown => {}
-                    _ => {}
+                    _ => {
+                        if call_args.is_some() {
+                            malformed = true;
+                        }
+                        *previous = Some(kind);
+                    }
                 },
                 TaskHeaderPhase::Shell => {}
             }
@@ -528,10 +569,25 @@ fn parse_task_item(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TaskHeaderPhase {
     BeforeTail,
-    Params { depth: usize },
-    Condition { depth: usize },
-    Dependencies { group_depth: usize, saw_group: bool },
+    Params {
+        depth: usize,
+    },
+    Condition {
+        depth: usize,
+    },
+    Dependencies {
+        group_depth: usize,
+        call_args: Option<DependencyArgState>,
+        previous: Option<SyntaxKind>,
+    },
     Shell,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DependencyArgState {
+    FirstOrEnd,
+    Value,
+    CommaOrEnd,
 }
 
 impl TaskHeaderPhase {
@@ -539,7 +595,11 @@ impl TaskHeaderPhase {
         match self {
             TaskHeaderPhase::BeforeTail | TaskHeaderPhase::Shell => true,
             TaskHeaderPhase::Params { depth } | TaskHeaderPhase::Condition { depth } => depth == 0,
-            TaskHeaderPhase::Dependencies { group_depth, .. } => group_depth == 0,
+            TaskHeaderPhase::Dependencies {
+                group_depth,
+                call_args,
+                ..
+            } => group_depth == 0 && call_args.is_none(),
         }
     }
 }

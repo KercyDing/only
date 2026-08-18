@@ -9,15 +9,22 @@ use std::collections::HashSet;
 const NAMESPACE_HELP_TEMPLATE: &str = "\
 {about-with-newline}
 {usage-heading} {usage}{after-help}
-Options:
-{options}";
+
+Run `only -h` to see global options.";
 
 const TASK_HELP_TEMPLATE: &str = "\
 {about-with-newline}
-{usage-heading}
-  {usage}
+{usage-heading} {usage}
 
-{all-args}";
+Run `only -h` to see global options.";
+
+const TASK_HELP_WITH_ARGS_TEMPLATE: &str = "\
+{about-with-newline}
+{usage-heading} {usage}
+
+{all-args}
+
+Run `only -h` to see global options.";
 
 /// Builds the global CLI skeleton shared by bootstrap and dynamic help.
 ///
@@ -27,75 +34,16 @@ const TASK_HELP_TEMPLATE: &str = "\
 /// Returns:
 /// Base clap command with host-level options.
 pub fn build_global_cli() -> Command {
-    Command::new("only")
+    let command = Command::new("only")
         .bin_name("only")
         .about("A minimalist, deterministic task runner\nRepo: https://github.com/KercyDing/only")
         .version(env!("CARGO_PKG_VERSION"))
         .styles(cli_styles())
         .next_help_heading("Global options")
         .disable_help_subcommand(true)
-        .override_usage("only [OPTIONS] [TASK] [ARGS]...")
-        .arg(
-            Arg::new("onlyfile")
-                .short('f')
-                .long("file")
-                .value_name("PATH")
-                .global(true)
-                .help("Use a specific Onlyfile"),
-        )
-        .arg(
-            Arg::new("print-path")
-                .short('p')
-                .long("path")
-                .action(ArgAction::SetTrue)
-                .global(true)
-                .help("Show the Onlyfile path"),
-        )
-        .arg(
-            Arg::new("set")
-                .short('s')
-                .long("set")
-                .value_name("NAME=VALUE")
-                .action(ArgAction::Append)
-                .global(true)
-                .help("Set a task value"),
-        )
-        .arg(
-            Arg::new("dry-run")
-                .long("dry-run")
-                .action(ArgAction::SetTrue)
-                .global(true)
-                .help("Show the task plan"),
-        )
-        .arg(
-            Arg::new("full")
-                .long("full")
-                .action(ArgAction::SetTrue)
-                .global(true)
-                .help("Show the full dry-run"),
-        )
-        .arg(
-            Arg::new("quiet")
-                .short('q')
-                .long("quiet")
-                .action(ArgAction::SetTrue)
-                .global(true)
-                .help("Hide Only progress"),
-        )
-        .arg(
-            Arg::new("fmt")
-                .long("fmt")
-                .action(ArgAction::SetTrue)
-                .global(true)
-                .help("Format the Onlyfile"),
-        )
-        .arg(
-            Arg::new("format-check")
-                .long("check")
-                .action(ArgAction::SetTrue)
-                .global(true)
-                .help("Check formatting"),
-        )
+        .override_usage("only [TASK] [ARGS]... [OPTIONS]");
+
+    with_global_options(command, false)
         .arg(
             Arg::new("upgrade")
                 .long("upgrade")
@@ -108,6 +56,70 @@ pub fn build_global_cli() -> Command {
                 .action(ArgAction::SetTrue)
                 .help("Same as --upgrade"),
         )
+}
+
+fn with_global_options(mut command: Command, hidden: bool) -> Command {
+    let options = [
+        Arg::new("onlyfile")
+            .short('f')
+            .long("file")
+            .value_name("PATH")
+            .global(true)
+            .hide(hidden)
+            .help("Use a specific Onlyfile"),
+        Arg::new("print-path")
+            .short('p')
+            .long("path")
+            .action(ArgAction::SetTrue)
+            .global(true)
+            .hide(hidden)
+            .help("Show the Onlyfile path"),
+        Arg::new("set")
+            .short('s')
+            .long("set")
+            .value_name("NAME=VALUE")
+            .action(ArgAction::Append)
+            .global(true)
+            .hide(hidden)
+            .help("Set a task value"),
+        Arg::new("dry-run")
+            .long("dry-run")
+            .action(ArgAction::SetTrue)
+            .global(true)
+            .hide(hidden)
+            .help("Show the task plan"),
+        Arg::new("full")
+            .long("full")
+            .action(ArgAction::SetTrue)
+            .global(true)
+            .hide(hidden)
+            .help("Show the full dry-run"),
+        Arg::new("quiet")
+            .short('q')
+            .long("quiet")
+            .action(ArgAction::SetTrue)
+            .global(true)
+            .hide(hidden)
+            .help("Hide Only progress"),
+        Arg::new("fmt")
+            .long("fmt")
+            .action(ArgAction::SetTrue)
+            .global(true)
+            .hide(hidden)
+            .help("Format the Onlyfile"),
+        Arg::new("format-check")
+            .long("check")
+            .action(ArgAction::SetTrue)
+            .global(true)
+            .hide(hidden)
+            .help("Check formatting"),
+    ];
+
+    for option in options {
+        command = command.arg(option);
+    }
+
+    command
 }
 
 /// Builds the full dynamic CLI from a parsed semantic document.
@@ -323,12 +335,19 @@ fn build_namespace_command(
     } else {
         render_listing_section("Tasks", &entries, name_width, TermAnsiColor::BrightCyan)
     };
-    let mut cmd = Command::new(namespace.name.to_string())
-        .bin_name(format!("only {}", namespace.name))
-        .disable_help_subcommand(true)
-        .styles(cli_styles())
-        .help_template(NAMESPACE_HELP_TEMPLATE)
-        .after_help(StyledStr::from(listing));
+    let command = hide_subcommand_help(
+        Command::new(namespace.name.to_string())
+            .bin_name(format!("only {}", namespace.name))
+            .disable_help_subcommand(true)
+            .styles(cli_styles())
+            .override_usage(format!(
+                "only {} [COMMAND] [GLOBAL OPTIONS]",
+                namespace.name
+            ))
+            .help_template(NAMESPACE_HELP_TEMPLATE)
+            .after_help(StyledStr::from(listing)),
+    );
+    let mut cmd = with_global_options(command, true);
 
     let about = metadata_about(
         namespace.metadata.help.as_deref(),
@@ -340,7 +359,7 @@ fn build_namespace_command(
     }
 
     for task in selected_tasks(document, namespace_tasks(document, namespace.name.as_str())) {
-        cmd = cmd.subcommand(build_task_command(task, globals));
+        cmd = cmd.subcommand(build_task_command(task, globals).hide(true));
     }
 
     cmd
@@ -361,11 +380,19 @@ fn build_task_command(task: &TaskAst, globals: &[PlanParam]) -> Command {
         task.metadata.desc.as_deref(),
         globals,
     );
-    let mut cmd = Command::new(task.name.to_string())
-        .styles(cli_styles())
-        .about(about)
-        .help_template(TASK_HELP_TEMPLATE)
-        .hide(task.is_helper());
+    let command = hide_subcommand_help(
+        Command::new(task.name.to_string())
+            .styles(cli_styles())
+            .about(about)
+            .override_usage(task_usage(task))
+            .help_template(if task.params.is_empty() {
+                TASK_HELP_TEMPLATE
+            } else {
+                TASK_HELP_WITH_ARGS_TEMPLATE
+            })
+            .hide(task.is_helper()),
+    );
+    let mut cmd = with_global_options(command, true);
 
     for (index, param) in task.params.iter().enumerate() {
         let arg = if param.is_slice {
@@ -392,6 +419,37 @@ fn build_task_command(task: &TaskAst, globals: &[PlanParam]) -> Command {
     }
 
     cmd
+}
+
+fn hide_subcommand_help(command: Command) -> Command {
+    command.disable_help_flag(true).arg(
+        Arg::new("help")
+            .short('h')
+            .long("help")
+            .action(ArgAction::Help)
+            .hide(true),
+    )
+}
+
+fn task_usage(task: &TaskAst) -> String {
+    let mut path = vec!["only".to_string()];
+    if let Some(namespace) = &task.namespace {
+        path.push(namespace.to_string());
+    }
+    path.push(task.name.to_string());
+
+    for parameter in &task.params {
+        let name = parameter.name.to_uppercase();
+        if parameter.is_slice {
+            path.push(format!("[{name}]..."));
+        } else {
+            path.push(format!("[{name}]"));
+        }
+    }
+
+    path.push("[GLOBAL OPTIONS]".to_string());
+
+    path.join(" ")
 }
 
 fn selected_tasks<'a>(
@@ -598,10 +656,76 @@ workflow():
     }
 
     #[test]
+    fn separates_task_and_global_help() {
+        let document = compile_document(
+            "[help] Install only\n[desc] Install to ~/.local/bin/only.\ninstall():\n    true\n",
+        )
+        .document;
+        let error = build_cli(&document)
+            .try_get_matches_from(["only", "install", "-h"])
+            .expect_err("task help should short-circuit parsing");
+        let help = error.to_string();
+
+        assert!(help.contains("Install only\n\nInstall to ~/.local/bin/only."));
+        assert!(help.contains("only install [GLOBAL OPTIONS]"));
+        assert!(!help.contains("Options:"));
+        assert!(help.contains("Run `only -h` to see global options."));
+        assert!(!help.contains("--file"));
+        assert!(!help.contains("--dry-run"));
+
+        let root_help = render_help(&document).to_string();
+        assert!(root_help.contains("--file"));
+        assert!(root_help.contains("--dry-run"));
+    }
+
+    #[test]
+    fn uses_root_styles_for_task_help_sections() {
+        let document = compile_document("[help] Install only\ninstall():\n    true\n").document;
+        let mut command = build_cli(&document);
+        let task = command
+            .find_subcommand_mut("install")
+            .expect("task should be present");
+        let help = task.render_help().ansi().to_string();
+
+        assert!(help.contains("\u{1b}[1m\u{1b}[92mUsage:"));
+        assert!(!help.contains("Options:"));
+        assert!(help.contains("only install [GLOBAL OPTIONS]"));
+        assert!(!help.contains("--file"));
+    }
+
+    #[test]
+    fn keeps_parameters_in_task_help() {
+        let document =
+            compile_document("[help] Build only\nbuild(profile=\"debug\", args..):\n    true\n")
+                .document;
+        let error = build_cli(&document)
+            .try_get_matches_from(["only", "build", "-h"])
+            .expect_err("task help should short-circuit parsing");
+        let help = error.to_string();
+
+        assert!(help.contains("Usage: only build [PROFILE] [ARGS]... [GLOBAL OPTIONS]"));
+        assert!(help.contains("Arguments:"));
+        assert!(help.contains("[PROFILE]"));
+        assert!(help.contains("[ARGS]..."));
+        assert!(!help.contains("--file"));
+    }
+
+    #[test]
+    fn accepts_global_options_after_task() {
+        let document = compile_document("[help] Check project\ncheck():\n    true\n").document;
+        let matches = build_cli(&document)
+            .try_get_matches_from(["only", "check", "--dry-run"])
+            .expect("global option should parse after task");
+
+        assert!(matches.get_flag("dry-run"));
+        assert_eq!(matches.subcommand_name(), Some("check"));
+    }
+
+    #[test]
     fn renders_bootstrap_help_without_tasks() {
         let help = render_global_help().to_string();
 
-        assert!(help.contains("Usage: only [OPTIONS] [TASK] [ARGS]..."));
+        assert!(help.contains("Usage: only [TASK] [ARGS]... [OPTIONS]"));
         assert!(help.contains("--file"));
         assert!(help.contains("--update"));
         assert!(help.contains("--upgrade"));
@@ -673,7 +797,9 @@ smoke():
         .expect("document should parse");
 
         let help = render_namespace_help(&document, &document.namespaces[0]).to_string();
-        assert!(help.contains("Usage: only dev [COMMAND]"));
+        assert!(help.contains("Usage:"));
+        assert!(help.contains("[GLOBAL OPTIONS]"));
+        assert!(help.contains("dev [COMMAND]"));
         assert!(help.contains("Tasks:"));
         assert!(help.contains("workflow"));
         assert!(help.contains("Default developer workflow."));
@@ -808,7 +934,9 @@ group dev {
         .expect("document should parse");
 
         let help = render_namespace_help(&document, &document.namespaces[0]).to_string();
-        assert!(help.starts_with("Usage: only dev [COMMAND]"));
+        assert!(help.starts_with("Usage:"));
+        assert!(help.contains("[GLOBAL OPTIONS]"));
+        assert!(help.contains("dev [COMMAND]"));
     }
 
     #[test]
@@ -864,9 +992,11 @@ group dev {
 
         let namespace_help = render_namespace_help(&document, &document.namespaces[0]).to_string();
         assert!(namespace_help.contains("Hidden group."));
-        assert!(namespace_help.contains("Usage: only dev"));
+        assert!(namespace_help.contains("Usage:"));
+        assert!(namespace_help.contains("[GLOBAL OPTIONS]"));
+        assert!(namespace_help.contains("dev"));
         assert!(namespace_help.contains("Tasks:"));
-        assert!(namespace_help.contains("Options:"));
+        assert!(!namespace_help.contains("Options:"));
         assert!(!namespace_help.contains("Commands:"));
         assert!(!namespace_help.contains("_hidden"));
     }

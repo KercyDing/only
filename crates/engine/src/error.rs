@@ -1,5 +1,4 @@
 use std::fmt;
-use std::process::ExitCode;
 
 /// Engine-level runtime and host execution errors.
 ///
@@ -15,13 +14,13 @@ pub enum EngineError {
         step: usize,
         total: usize,
         command: String,
-        code: ExitCode,
+        reason: String,
     },
     CommandBlockFailed {
         task: String,
         step: usize,
         total: usize,
-        code: ExitCode,
+        reason: String,
     },
     CommandBlockStartFailed {
         shell: String,
@@ -50,21 +49,21 @@ impl fmt::Display for EngineError {
                 step,
                 total,
                 command: _,
-                code,
+                reason,
             } => write!(
                 f,
                 "task '{task}' failed at step [{step}/{total}] due to {}",
-                exit_code_reason(*code)
+                reason
             ),
             Self::CommandBlockFailed {
                 task,
                 step,
                 total,
-                code,
+                reason,
             } => write!(
                 f,
                 "task '{task}' failed at step [{step}/{total}] due to {}",
-                exit_code_reason(*code)
+                reason
             ),
             Self::CommandBlockStartFailed { shell, source } => {
                 write!(
@@ -86,26 +85,17 @@ impl fmt::Display for EngineError {
     }
 }
 
-fn exit_code_reason(code: ExitCode) -> String {
-    let rendered = format!("{code:?}");
-    rendered
-        .strip_prefix("ExitCode(")
-        .and_then(|value| value.strip_suffix(')'))
-        .unwrap_or(&rendered)
-        .to_string()
-}
-
 pub(crate) fn command_block_failed(
     task: &str,
     step_index: usize,
     step_total: usize,
-    code: ExitCode,
+    reason: &str,
 ) -> EngineError {
     EngineError::CommandBlockFailed {
         task: task.to_string(),
         step: step_index,
         total: step_total,
-        code,
+        reason: reason.to_string(),
     }
 }
 
@@ -145,13 +135,13 @@ pub(crate) fn command_failed(
     step_index: usize,
     step_total: usize,
     command: &str,
-    code: ExitCode,
+    reason: &str,
 ) -> EngineError {
     EngineError::CommandFailed {
         task: task.to_string(),
         step: step_index,
         total: step_total,
         command: command.to_string(),
-        code,
+        reason: reason.to_string(),
     }
 }

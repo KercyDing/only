@@ -207,3 +207,21 @@ fn formatting_rejects_invalid_source() {
     assert!(format_source("build(): cargo build\n").is_err());
     assert!(format_source("build():").is_err());
 }
+
+#[test]
+fn formats_dependency_arguments() {
+    let source = concat!(
+        "build(profile, mode):\n    true\n",
+        "test(profile):\n    true\n",
+        "ci() & ( build ( \"dev\" ,\"fast\" ) , test( \"ci\" ) ):\n    true\n",
+    );
+
+    assert_eq!(
+        format_source(source).expect("source should format"),
+        concat!(
+            "build(profile, mode):\n    true\n\n",
+            "test(profile):\n    true\n\n",
+            "ci() & (build(\"dev\", \"fast\"), test(\"ci\")):\n    true\n",
+        )
+    );
+}

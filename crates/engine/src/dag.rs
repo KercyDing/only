@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use only_semantic::{DependencyAst, TaskAst};
 
 use crate::planner::PlanError;
-use crate::resolve::{TaskIndex, bind_parameters, select_task_variant};
+use crate::resolve::{TaskIndex, bind_parameters, merge_parameter_inputs, select_task_variant};
 
 pub(crate) type BoundTask<'a> = (usize, &'a TaskAst, HashMap<String, String>);
 
@@ -22,9 +22,10 @@ pub(crate) fn expand_execution_order<'a>(
 ) -> Result<Vec<BoundTask<'a>>, PlanError> {
     let mut graph = ExecutionGraph::default();
     let mut visiting = Vec::new();
+    let root_bindings = bind_parameters(root, Some(root_bindings), globals)?;
     collect_task(
         root,
-        Some(root_bindings),
+        root_bindings,
         tasks,
         globals,
         &mut visiting,
@@ -35,7 +36,7 @@ pub(crate) fn expand_execution_order<'a>(
 
 fn collect_task<'a>(
     task: &'a TaskAst,
-    root_bindings: Option<&HashMap<String, String>>,
+    bindings: HashMap<String, String>,
     tasks: &TaskIndex<'a>,
     globals: &HashMap<String, String>,
     visiting: &mut Vec<String>,
@@ -46,12 +47,14 @@ fn collect_task<'a>(
         visiting.push(qualified_name);
         return Err(PlanError::CyclicDependency(visiting.join(" -> ")));
     }
-    if graph.nodes.contains_key(&qualified_name) {
+    if let Some((_, existing_bindings)) = graph.nodes.get(&qualified_name) {
+        if existing_bindings != &bindings {
+            return Err(PlanError::ConflictingDependencyArguments(qualified_name));
+        }
         return Ok(());
     }
 
     visiting.push(qualified_name.clone());
-    let bindings = bind_parameters(task, root_bindings, globals)?;
     graph.nodes.insert(qualified_name.clone(), (task, bindings));
     graph.registration_order.push(qualified_name.clone());
 
@@ -66,7 +69,15 @@ fn collect_task<'a>(
                 .and_then(|variants| select_task_variant(variants))
             {
                 let dependency_name = dependency_task.qualified_name().to_string();
-                collect_task(dependency_task, None, tasks, globals, visiting, graph)?;
+                let dependency_bindings = bind_dependency(dependency, dependency_task, globals)?;
+                collect_task(
+                    dependency_task,
+                    dependency_bindings,
+                    tasks,
+                    globals,
+                    visiting,
+                    graph,
+                )?;
                 graph
                     .edges
                     .entry(dependency_name.clone())
@@ -91,6 +102,28 @@ fn collect_task<'a>(
 
     visiting.pop();
     Ok(())
+}
+
+fn bind_dependency(
+    dependency: &DependencyAst,
+    task: &TaskAst,
+    globals: &HashMap<String, String>,
+) -> Result<HashMap<String, String>, PlanError> {
+    let positional_args = dependency
+        .arguments
+        .iter()
+        .map(|argument| argument.value.as_str())
+        .collect();
+    let inputs = merge_parameter_inputs(positional_args, Vec::new(), task, globals)?;
+    bind_parameters(task, Some(&inputs), globals).map_err(|error| match error {
+        PlanError::MissingRequiredParameter(parameter) => {
+            PlanError::DependencyMissingRequiredParameter {
+                dependency: dependency.name.to_string(),
+                parameter,
+            }
+        }
+        other => other,
+    })
 }
 
 fn group_dependencies(task: &TaskAst) -> Vec<Vec<&DependencyAst>> {

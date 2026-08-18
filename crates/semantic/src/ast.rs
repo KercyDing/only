@@ -135,7 +135,15 @@ pub struct ShellAst {
 pub struct DependencyAst {
     pub name: SmolStr,
     pub range: TextRange,
+    pub arguments: Vec<DependencyArgumentAst>,
+    pub invocation_range: TextRange,
     pub stage: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DependencyArgumentAst {
+    pub value: SmolStr,
+    pub range: TextRange,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

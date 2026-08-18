@@ -26,6 +26,19 @@ fn lowers_task_header_and_commands_into_ast() {
 }
 
 #[test]
+fn lowers_dependency_arguments() {
+    let compiled = compile_document(concat!(
+        "build(profile):\n    true\n",
+        "ci() & build(\"dev\"):\n    true\n",
+    ));
+    let dependency = &compiled.document.tasks[1].dependencies[0];
+
+    assert_eq!(dependency.name, "build");
+    assert_eq!(dependency.arguments.len(), 1);
+    assert_eq!(dependency.arguments[0].value, "dev");
+}
+
+#[test]
 fn lowers_slice_parameter_suffix() {
     let compiled = compile_document("run(args..):\n    echo {{args}}\n");
     let task = &compiled.document.tasks[0];
@@ -141,20 +154,43 @@ fn normalizes_help_fields_and_keeps_block_comments_in_commands() {
 }
 
 #[test]
-fn inherits_variant_docs() {
+fn inherits_variant_metadata() {
     let compiled = compile_document(
-        "!version 0.4\n[help] Run tests\n[desc] Use the preferred runner.\ntest() ? @os(\"not-a-real-os\"):\n    true\n\n[desc] Use Cargo.\ntest():\n    true\n",
+        "!version 0.4\n[help] Run tests\n[desc] Use the preferred runner.\n[desc] Keep output ordered.\n[pass] Tests passed.\n[pass] Reports are ready.\n[fail] Tests failed.\ntest() ? @os(\"not-a-real-os\"):\n    true\n\n[desc] Use Cargo.\n[desc] Run every target.\n[pass] Cargo tests passed.\ntest() ? @arch(\"not-a-real-arch\"):\n    true\n\n[fail] Fallback failed.\ntest():\n    true\n",
     );
-    let fallback = &compiled.document.tasks[1];
+    let cargo_variant = &compiled.document.tasks[1];
+    let fallback = &compiled.document.tasks[2];
 
     assert!(
         compiled.diagnostics.is_empty(),
         "{:?}",
         compiled.diagnostics
     );
+    assert_eq!(cargo_variant.metadata.help.as_deref(), Some("Run tests"));
+    assert_eq!(
+        cargo_variant.metadata.desc.as_deref(),
+        Some("Use Cargo.\nRun every target.")
+    );
+    assert_eq!(
+        cargo_variant.metadata.pass.as_deref(),
+        Some("Cargo tests passed.")
+    );
+    assert_eq!(
+        cargo_variant.metadata.fail.as_deref(),
+        Some("Tests failed.")
+    );
+
     assert_eq!(fallback.metadata.help.as_deref(), Some("Run tests"));
     assert_eq!(fallback.doc.as_deref(), Some("Run tests"));
-    assert_eq!(fallback.metadata.desc.as_deref(), Some("Use Cargo."));
+    assert_eq!(
+        fallback.metadata.desc.as_deref(),
+        Some("Use the preferred runner.\nKeep output ordered.")
+    );
+    assert_eq!(
+        fallback.metadata.pass.as_deref(),
+        Some("Tests passed.\nReports are ready.")
+    );
+    assert_eq!(fallback.metadata.fail.as_deref(), Some("Fallback failed."));
 }
 
 #[test]

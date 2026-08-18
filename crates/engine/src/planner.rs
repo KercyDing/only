@@ -69,6 +69,11 @@ pub enum PlanError {
     HelperTask(String),
     TaskUnavailable(String),
     MissingRequiredParameter(String),
+    DependencyMissingRequiredParameter {
+        dependency: String,
+        parameter: String,
+    },
+    ConflictingDependencyArguments(String),
     UnknownParameter {
         task: String,
         name: String,
@@ -95,6 +100,17 @@ impl fmt::Display for PlanError {
             Self::MissingRequiredParameter(name) => {
                 write!(f, "parameter '{{{{{name}}}}}' is required")
             }
+            Self::DependencyMissingRequiredParameter {
+                dependency,
+                parameter,
+            } => write!(
+                f,
+                "dependency `{dependency}` requires parameter `{parameter}`\nprovide it with `{dependency}(\"value\")`"
+            ),
+            Self::ConflictingDependencyArguments(dependency) => write!(
+                f,
+                "dependency `{dependency}` is called with different arguments"
+            ),
             Self::UnknownParameter { task, name } => {
                 write!(f, "task '{task}' has no parameter named '{name}'")
             }

@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
-use std::process::ExitCode;
 use std::rc::Rc;
 use std::sync::mpsc::Sender;
 
@@ -10,7 +9,7 @@ use only_semantic::{ShellKind, ShellOperator, ShellSelection};
 use crate::EngineError;
 use crate::path_lookup::command_exists_in_path;
 use crate::process::{
-    OutputChunk, build_command_env, join_output_reader, run_with_system_shell,
+    CommandStatus, OutputChunk, build_command_env, join_output_reader, run_with_system_shell,
     run_with_system_shell_inherit, spawn_output_reader,
 };
 
@@ -19,7 +18,7 @@ pub(crate) fn run_command(
     working_dir: &Path,
     shell: &ShellSelection,
     output: Sender<OutputChunk>,
-) -> Result<ExitCode, EngineError> {
+) -> Result<CommandStatus, EngineError> {
     let resolved_shell = resolve_shell(shell)?;
     match resolved_shell {
         ShellKind::Deno => run_with_deno_task_shell(command, working_dir, output),
@@ -41,7 +40,7 @@ pub(crate) fn run_command_inherit(
     command: &str,
     working_dir: &Path,
     shell: &ShellSelection,
-) -> Result<ExitCode, EngineError> {
+) -> Result<CommandStatus, EngineError> {
     let resolved_shell = resolve_shell(shell)?;
     match resolved_shell {
         ShellKind::Deno => run_with_deno_task_shell_inherit(command, working_dir),
@@ -106,7 +105,7 @@ fn run_with_deno_task_shell(
     command: &str,
     working_dir: &Path,
     output: Sender<OutputChunk>,
-) -> Result<ExitCode, EngineError> {
+) -> Result<CommandStatus, EngineError> {
     let parsed = deno_task_shell::parser::parse(command).map_err(|error| {
         EngineError::Runtime(format!("failed to parse command `{command}`: {error}"))
     })?;
@@ -147,13 +146,13 @@ fn run_with_deno_task_shell(
     join_output_reader(stdout_handle)?;
     join_output_reader(stderr_handle)?;
 
-    Ok(ExitCode::from(status as u8))
+    Ok(CommandStatus::from_code(status as i32))
 }
 
 fn run_with_deno_task_shell_inherit(
     command: &str,
     working_dir: &Path,
-) -> Result<ExitCode, EngineError> {
+) -> Result<CommandStatus, EngineError> {
     let parsed = deno_task_shell::parser::parse(command).map_err(|error| {
         EngineError::Runtime(format!("failed to parse command `{command}`: {error}"))
     })?;
@@ -180,7 +179,7 @@ fn run_with_deno_task_shell_inherit(
         ),
     );
 
-    Ok(ExitCode::from(status as u8))
+    Ok(CommandStatus::from_code(status as i32))
 }
 
 struct ShellPipeReaderAdapter(deno_task_shell::ShellPipeReader);

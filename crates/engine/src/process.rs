@@ -2,11 +2,34 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
-use std::process::{Command, ExitCode, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc::Sender;
 use std::thread;
 
 use crate::EngineError;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum CommandStatus {
+    Success,
+    Failed(String),
+}
+
+impl CommandStatus {
+    pub(crate) fn from_code(code: i32) -> Self {
+        if code == 0 {
+            Self::Success
+        } else {
+            Self::Failed(platform_exit_reason(code))
+        }
+    }
+
+    pub(crate) fn failure_reason(&self) -> Option<&str> {
+        match self {
+            Self::Success => None,
+            Self::Failed(reason) => Some(reason),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OutputStream {
@@ -26,7 +49,7 @@ pub(crate) fn run_with_system_shell(
     command: &str,
     working_dir: &Path,
     output: Sender<OutputChunk>,
-) -> Result<ExitCode, EngineError> {
+) -> Result<CommandStatus, EngineError> {
     let mut process = Command::new(program);
     process
         .current_dir(working_dir)
@@ -59,7 +82,7 @@ pub(crate) fn run_with_system_shell(
     join_output_reader(stdout_handle)?;
     join_output_reader(stderr_handle)?;
 
-    Ok(exit_code_from_status(status))
+    Ok(command_status(status))
 }
 
 pub(crate) fn run_with_system_shell_inherit(
@@ -67,7 +90,7 @@ pub(crate) fn run_with_system_shell_inherit(
     arg: &str,
     command: &str,
     working_dir: &Path,
-) -> Result<ExitCode, EngineError> {
+) -> Result<CommandStatus, EngineError> {
     let mut process = Command::new(program);
     process
         .current_dir(working_dir)
@@ -84,7 +107,7 @@ pub(crate) fn run_with_system_shell_inherit(
         source,
     })?;
 
-    Ok(exit_code_from_status(status))
+    Ok(command_status(status))
 }
 
 pub(crate) fn build_command_env() -> HashMap<OsString, OsString> {
@@ -139,18 +162,51 @@ pub(crate) fn join_output_reader(
     }
 }
 
-fn exit_code_from_status(status: std::process::ExitStatus) -> ExitCode {
+fn command_status(status: ExitStatus) -> CommandStatus {
     if let Some(code) = status.code() {
-        return ExitCode::from(code as u8);
+        return CommandStatus::from_code(code);
     }
 
     #[cfg(unix)]
     {
         use std::os::unix::process::ExitStatusExt;
         if let Some(signal) = status.signal() {
-            return ExitCode::from((128 + signal) as u8);
+            return CommandStatus::Failed(format!("unix_signal({signal})"));
         }
     }
 
-    ExitCode::from(1)
+    CommandStatus::Failed("unknown_exit_status".to_string())
+}
+
+fn platform_exit_reason(code: i32) -> String {
+    if cfg!(windows) {
+        format!("windows_exit_code({code})")
+    } else if cfg!(unix) {
+        format!("unix_exit_code({code})")
+    } else {
+        format!("exit_code({code})")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CommandStatus;
+
+    #[test]
+    fn formats_exit_status_cleanly() {
+        let status = CommandStatus::from_code(1);
+        let reason = status
+            .failure_reason()
+            .expect("a non-zero status should have a failure reason");
+        let expected = if cfg!(windows) {
+            "windows_exit_code(1)"
+        } else if cfg!(unix) {
+            "unix_exit_code(1)"
+        } else {
+            "exit_code(1)"
+        };
+
+        assert_eq!(reason, expected);
+        assert!(!reason.contains("ExitCode("));
+    }
 }

@@ -135,7 +135,16 @@ pub struct TaskCommandBlockNode {
 pub struct TaskDependencyRef {
     pub name: SmolStr,
     pub range: TextRange,
+    pub arguments: Vec<TaskDependencyArgRef>,
+    pub invocation_range: TextRange,
     pub stage: usize,
+}
+
+/// One positional string argument in a dependency invocation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskDependencyArgRef {
+    pub value: SmolStr,
+    pub range: TextRange,
 }
 
 /// One parameter declaration parsed from a task header.
@@ -780,37 +789,6 @@ fn text_range(start: usize, end: usize) -> TextRange {
     TextRange::new(TextSize::from(start as u32), TextSize::from(end as u32))
 }
 
-#[derive(Debug, Default)]
-struct PendingRef {
-    name: String,
-    start: Option<TextSize>,
-    end: Option<TextSize>,
-}
-
-impl PendingRef {
-    fn flush(&mut self, refs: &mut Vec<TaskDependencyRef>, stage: usize) {
-        if let (Some(start), Some(end)) = (self.start, self.end) {
-            let name = self.name.trim();
-            if !name.is_empty() {
-                refs.push(TaskDependencyRef {
-                    name: SmolStr::new(name),
-                    range: TextRange::new(start, end),
-                    stage,
-                });
-            }
-        }
-        self.name.clear();
-        self.start = None;
-        self.end = None;
-    }
-
-    fn extend(&mut self, token: &crate::cst::SyntaxToken) {
-        self.start.get_or_insert(token.text_range().start());
-        self.end = Some(token.text_range().end());
-        self.name.push_str(token.text());
-    }
-}
-
 impl TaskHeaderNode {
     pub fn cast(syntax: SyntaxNode) -> Option<Self> {
         (syntax.kind() == SyntaxKind::TaskHeader).then_some(Self { syntax })
@@ -1136,20 +1114,91 @@ fn parse_guard_ref(clause: ConditionClauseNode) -> Option<TaskGuardRef> {
 }
 
 fn parse_dependency_clause(node: &SyntaxNode, stage: usize, refs: &mut Vec<TaskDependencyRef>) {
-    let mut pending = PendingRef::default();
-    for token in node_tokens(node) {
-        match token.kind() {
-            SyntaxKind::Amp
-            | SyntaxKind::LParen
-            | SyntaxKind::Whitespace
-            | SyntaxKind::Indent
-            | SyntaxKind::Newline => {}
-            SyntaxKind::RParen => pending.flush(refs, stage),
-            SyntaxKind::Comma => pending.flush(refs, stage),
-            _ => pending.extend(&token),
+    let mut tokens = node_tokens(node)
+        .filter(|token| {
+            !matches!(
+                token.kind(),
+                SyntaxKind::Whitespace | SyntaxKind::Indent | SyntaxKind::Newline
+            )
+        })
+        .collect::<Vec<_>>();
+    if tokens
+        .first()
+        .is_some_and(|token| token.kind() == SyntaxKind::Amp)
+    {
+        tokens.remove(0);
+    }
+    if tokens
+        .first()
+        .is_some_and(|token| token.kind() == SyntaxKind::LParen)
+        && tokens
+            .last()
+            .is_some_and(|token| token.kind() == SyntaxKind::RParen)
+    {
+        tokens.remove(0);
+        tokens.pop();
+    }
+
+    let mut invocation_start = 0usize;
+    let mut depth = 0usize;
+    for index in 0..=tokens.len() {
+        let at_separator =
+            index == tokens.len() || (tokens[index].kind() == SyntaxKind::Comma && depth == 0);
+        if at_separator {
+            if let Some(reference) =
+                parse_dependency_invocation(&tokens[invocation_start..index], stage)
+            {
+                refs.push(reference);
+            }
+            invocation_start = index + 1;
+            continue;
+        }
+
+        match tokens[index].kind() {
+            SyntaxKind::LParen => depth += 1,
+            SyntaxKind::RParen => depth = depth.saturating_sub(1),
+            _ => {}
         }
     }
-    pending.flush(refs, stage);
+}
+
+fn parse_dependency_invocation(
+    tokens: &[crate::cst::SyntaxToken],
+    stage: usize,
+) -> Option<TaskDependencyRef> {
+    let first = tokens.first()?;
+    let invocation_end = tokens.last()?.text_range().end();
+    let argument_start = tokens
+        .iter()
+        .position(|token| token.kind() == SyntaxKind::LParen)
+        .unwrap_or(tokens.len());
+    let name_tokens = &tokens[..argument_start];
+    let name_start = name_tokens.first()?.text_range().start();
+    let name_end = name_tokens.last()?.text_range().end();
+    let name = name_tokens
+        .iter()
+        .map(|token| token.text())
+        .collect::<String>();
+    let arguments = tokens
+        .iter()
+        .skip(argument_start.saturating_add(1))
+        .filter(|token| token.kind() == SyntaxKind::String)
+        .filter_map(|token| {
+            let value = token.text().strip_prefix('"')?.strip_suffix('"')?;
+            Some(TaskDependencyArgRef {
+                value: SmolStr::new(value),
+                range: token.text_range(),
+            })
+        })
+        .collect();
+
+    Some(TaskDependencyRef {
+        name: SmolStr::new(name),
+        range: TextRange::new(name_start, name_end),
+        arguments,
+        invocation_range: TextRange::new(first.text_range().start(), invocation_end),
+        stage,
+    })
 }
 
 fn node_tokens(node: &SyntaxNode) -> impl Iterator<Item = crate::cst::SyntaxToken> + '_ {

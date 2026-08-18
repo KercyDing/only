@@ -16,8 +16,8 @@ mod version;
 pub use ast_view::{
     ConditionClauseNode, DependencyClauseNode, DirectiveNode, DocumentNode, HeaderTerminatorNode,
     MetadataNode, NamespaceNode, ParameterListNode, ParameterNode, ShellClauseNode,
-    TaskCommandBlockNode, TaskCommandNode, TaskDependencyRef, TaskGuardRef, TaskHeaderInfo,
-    TaskHeaderNode, TaskNode, TaskParamRef, TaskStepNode,
+    TaskCommandBlockNode, TaskCommandNode, TaskDependencyArgRef, TaskDependencyRef, TaskGuardRef,
+    TaskHeaderInfo, TaskHeaderNode, TaskNode, TaskParamRef, TaskStepNode,
 };
 pub use builtin::{
     DirectiveKind, GROUP_KEYWORD, GuardKind, MetadataKind, ShellKind, ShellOperator,

@@ -155,6 +155,33 @@ fn exposes_dependency_ranges_for_hover_and_diagnostics() {
 }
 
 #[test]
+fn exposes_dependency_arguments_and_ranges() {
+    let source = "ci() & build(\"dev\", \"fast\"):\n    true\n";
+    let syntax = snapshot(source);
+    let task = syntax.document().tasks().next().expect("task should exist");
+    let dependency = task
+        .header_info()
+        .dependency_refs
+        .into_iter()
+        .next()
+        .expect("dependency should exist");
+
+    assert_eq!(dependency.name.as_str(), "build");
+    assert_eq!(dependency.arguments.len(), 2);
+    assert_eq!(dependency.arguments[0].value.as_str(), "dev");
+    assert_eq!(dependency.arguments[1].value.as_str(), "fast");
+    assert_eq!(
+        &source[usize::from(dependency.range.start())..usize::from(dependency.range.end())],
+        "build"
+    );
+    assert_eq!(
+        &source[usize::from(dependency.invocation_range.start())
+            ..usize::from(dependency.invocation_range.end())],
+        "build(\"dev\", \"fast\")"
+    );
+}
+
+#[test]
 fn exposes_parameter_name_ranges_for_hover() {
     let source = "build(tag=\"v1\", args.., shell):\n    echo ok\n";
     let syntax = snapshot(source);

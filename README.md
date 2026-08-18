@@ -62,7 +62,7 @@ only ci
 Or inspect the execution plan first:
 
 ```shell
-only --dry-run ci
+only ci --dry-run
 ```
 
 ```text

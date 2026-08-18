@@ -1,29 +1,14 @@
 !version 0.4
 !var cargo_flags = "--all-targets"
 
-[help] Development builds
-group dev {
-
-    [help] Build for development
-    [desc] Build with {{cargo_flags}}.
-    [pass] Build complete.
-    [fail] Build failed.
-    build():
-        cargo build {{cargo_flags}}
-}
-
-[help] Release builds
-group rel {
-
-    [help] Build for release
-    [pass] Build complete.
-    [fail] Build failed.
-    build():
-        cargo build --release
-}
+[help] Build only-cli
+[pass] Build complete.
+[fail] Build failed.
+build(profile = "debug"):
+    cargo build -p only --profile {{profile}}
 
 [help] Run CI
-[desc] Format, check, lint, and test.
+[desc] Format, check, lint, test, and build.
 [pass] CI passed.
 [fail] CI failed.
 ci()
@@ -31,6 +16,7 @@ ci()
     & check
     & clippy
     & test
+    & build("release")
 :
 
 [help] Format code
@@ -42,8 +28,8 @@ fmt():
 [help] Check code
 [pass] Check passed.
 [fail] Check failed.
-check(level = "dev"):
-    cargo check --profile {{level}} {{cargo_flags}}
+check():
+    cargo check {{cargo_flags}}
 
 [help] Lint code
 [pass] Clippy passed.
@@ -56,13 +42,11 @@ clippy():
 [pass] Tests passed.
 [fail] Tests failed.
 test() ? @has("cargo-nextest"):
-    cargo nextest run {{cargo_flags}}
+    cargo nextest run --no-fail-fast {{cargo_flags}}
 
 [desc] Fall back to cargo test.
-[pass] Tests passed.
-[fail] Tests failed.
 test():
-    cargo test {{cargo_flags}}
+    cargo test --no-fail-fast {{cargo_flags}}
 
 [help] Clean builds
 [desc] Remove Cargo build artifacts.
@@ -77,7 +61,7 @@ clean():
 [fail] Installation failed.
 install()
     ? @os("windows")
-    & rel.build
+    & build("release")
     shell~=pwsh
 :
     | # Resolve paths and processes.
@@ -98,8 +82,7 @@ install()
 
 [desc] Install to ~/.local/bin/only.
 [pass] Installed to ~/.local/bin/only.
-[fail] Installation failed.
-install() & rel.build:
+install() & build("release"):
     | # Resolve paths.
     | install_dir="$HOME/.local/bin"
     | staged_path="$install_dir/.only-install"

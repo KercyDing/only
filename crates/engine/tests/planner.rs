@@ -91,6 +91,30 @@ fn carries_result_messages_with_global_interpolation() {
 }
 
 #[test]
+fn inherits_variant_result_messages() {
+    let unavailable_os = if std::env::consts::OS == "windows" {
+        "linux"
+    } else {
+        "windows"
+    };
+    let compiled = compile_document(&format!(
+        "!version 0.4\n[pass] Tests passed.\n[fail] Tests failed.\ntest() ? @os(\"{unavailable_os}\"):\n    true\n\ntest():\n    true\n"
+    ));
+    let plan = try_build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "test",
+            args: vec![],
+            overrides: vec![],
+        },
+    )
+    .expect("fallback variant should inherit result messages");
+
+    assert_eq!(plan.nodes[0].pass.as_deref(), Some("Tests passed."));
+    assert_eq!(plan.nodes[0].fail.as_deref(), Some("Tests failed."));
+}
+
+#[test]
 fn overrides_global_value_for_whole_dag() {
     let compiled = compile_document(concat!(
         "!version 0.3\n",
@@ -468,6 +492,89 @@ fn allows_helper_task_as_dependency() {
     assert_eq!(plan.nodes.len(), 2);
     assert_eq!(plan.nodes[0].name, "_prepare");
     assert_eq!(plan.nodes[1].name, "ci");
+}
+
+#[test]
+fn binds_dependency_arguments() {
+    let compiled = compile_document(concat!(
+        "build(profile):\n    echo {{profile}}\n",
+        "ci() & build(\"dev\"):\n    true\n",
+    ));
+    let plan = try_build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "ci",
+            args: vec![],
+            overrides: vec![],
+        },
+    )
+    .expect("dependency argument should bind");
+
+    assert_eq!(plan.nodes[0].name, "build");
+    assert_eq!(plan.nodes[0].params[0].value.as_deref(), Some("dev"));
+}
+
+#[test]
+fn uses_dependency_parameter_defaults() {
+    let compiled = compile_document(concat!(
+        "build(profile=\"dev\"):\n    echo {{profile}}\n",
+        "ci() & build:\n    true\n",
+    ));
+    let plan = try_build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "ci",
+            args: vec![],
+            overrides: vec![],
+        },
+    )
+    .expect("dependency default should bind");
+
+    assert_eq!(plan.nodes[0].params[0].value.as_deref(), Some("dev"));
+}
+
+#[test]
+fn reports_missing_dependency_parameter() {
+    let compiled = compile_document(concat!(
+        "build(profile):\n    echo {{profile}}\n",
+        "ci() & build:\n    true\n",
+    ));
+    let error = try_build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "ci",
+            args: vec![],
+            overrides: vec![],
+        },
+    )
+    .expect_err("required dependency parameter should fail planning");
+
+    assert_eq!(
+        error.to_string(),
+        "dependency `build` requires parameter `profile`\nprovide it with `build(\"value\")`"
+    );
+}
+
+#[test]
+fn rejects_conflicting_dependency_arguments() {
+    let compiled = compile_document(concat!(
+        "build(profile):\n    echo {{profile}}\n",
+        "ci() & (build(\"dev\"), build(\"release\")):\n    true\n",
+    ));
+    let error = try_build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "ci",
+            args: vec![],
+            overrides: vec![],
+        },
+    )
+    .expect_err("different bindings must not be deduplicated");
+
+    assert_eq!(
+        error.to_string(),
+        "dependency `build` is called with different arguments"
+    );
 }
 
 #[test]

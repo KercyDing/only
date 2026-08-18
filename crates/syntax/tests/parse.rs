@@ -325,6 +325,34 @@ fn reports_nested_parallel_dependency_groups_as_malformed() {
 }
 
 #[test]
+fn parses_dependency_arguments() {
+    let parsed = parse("build(profile):\n    echo {{profile}}\nci() & build(\"dev\"):\n    true\n");
+
+    assert!(parsed.diagnostics().is_empty());
+}
+
+#[test]
+fn parses_arguments_in_parallel_dependencies() {
+    let parsed = parse(concat!(
+        "build(profile):\n    echo {{profile}}\n",
+        "test(profile):\n    echo {{profile}}\n",
+        "ci() & (build(\"dev\"), test(\"ci\")):\n    true\n",
+    ));
+
+    assert!(parsed.diagnostics().is_empty());
+}
+
+#[test]
+fn rejects_non_string_dependency_arguments() {
+    let parsed = parse("build(profile):\n    true\nci() & build(dev):\n    true\n");
+
+    assert!(parsed
+        .diagnostics()
+        .iter()
+        .any(|diagnostic| diagnostic.code == DiagnosticCode::new("parse.malformed-task-header")));
+}
+
+#[test]
 fn rejects_old_fallback_shell_operator() {
     let parsed = parse("build() shell?=bash:\n    true\n");
 

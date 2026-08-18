@@ -11,8 +11,8 @@ use text_size::TextRange;
 use crate::interpolation::scan_interpolations;
 use crate::names::resolve_dependency_names;
 use crate::{
-    CommandAst, CommandBlockAst, DependencyAst, DirectiveAst, DocumentAst, GuardAst, NamespaceAst,
-    ParamAst, ShellAst, TaskAst, TaskMetadataAst, TaskStepAst,
+    CommandAst, CommandBlockAst, DependencyArgumentAst, DependencyAst, DirectiveAst, DocumentAst,
+    GuardAst, NamespaceAst, ParamAst, ShellAst, TaskAst, TaskMetadataAst, TaskStepAst,
 };
 
 pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagnostic>) {
@@ -131,7 +131,7 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
         }
     }
 
-    inherit_variant_docs(&mut tasks);
+    inherit_variant_metadata(&mut tasks);
     resolve_dependency_names(&mut tasks);
 
     (
@@ -145,22 +145,28 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
     )
 }
 
-fn inherit_variant_docs(tasks: &mut [TaskAst]) {
+fn inherit_variant_metadata(tasks: &mut [TaskAst]) {
     let mut base_metadata = HashMap::new();
 
     for task in tasks {
         let base = base_metadata
             .entry(task.qualified_name())
             .or_insert_with(|| task.metadata.clone());
-
-        if task.metadata.help.is_none() {
-            task.metadata.help = base.help.clone();
-        }
-        if task.metadata.desc.is_none() {
-            task.metadata.desc = base.desc.clone();
-        }
+        task.metadata = inherit_and_override_metadata(base, &task.metadata);
         task.doc = task.metadata.help.clone();
     }
+}
+
+fn inherit_and_override_metadata(
+    inherited: &TaskMetadataAst,
+    overrides: &TaskMetadataAst,
+) -> TaskMetadataAst {
+    let mut metadata = overrides.clone();
+    metadata.help = overrides.help.clone().or_else(|| inherited.help.clone());
+    metadata.desc = overrides.desc.clone().or_else(|| inherited.desc.clone());
+    metadata.pass = overrides.pass.clone().or_else(|| inherited.pass.clone());
+    metadata.fail = overrides.fail.clone().or_else(|| inherited.fail.clone());
+    metadata
 }
 
 fn discard_detached_metadata(
@@ -417,6 +423,15 @@ fn lower_task(
         .map(|dependency| DependencyAst {
             name: dependency.name,
             range: dependency.range,
+            arguments: dependency
+                .arguments
+                .into_iter()
+                .map(|argument| DependencyArgumentAst {
+                    value: argument.value,
+                    range: argument.range,
+                })
+                .collect(),
+            invocation_range: dependency.invocation_range,
             stage: dependency.stage,
         })
         .collect();

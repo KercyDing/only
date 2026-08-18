@@ -237,6 +237,28 @@ fn returns_dependency_hover_for_serial_chain_entries() {
 }
 
 #[test]
+fn returns_dependency_hover_for_invocation() {
+    let source = concat!(
+        "[help] Build the project.\n",
+        "build(profile):\n    true\n",
+        "ci() & build(\"dev\"):\n    true\n",
+    );
+    let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
+    let dependency = source.rfind("build").expect("dependency should exist");
+
+    let info =
+        hover(&snapshot, TextSize::from(dependency as u32)).expect("dependency hover should exist");
+
+    assert_eq!(info.kind, LspHoverKind::Dependency);
+    assert_eq!(info.signature, "build(profile)");
+    assert_eq!(info.docs.as_deref(), Some("Build the project."));
+    assert_eq!(
+        &source[usize::from(info.range.start())..usize::from(info.range.end())],
+        "build"
+    );
+}
+
+#[test]
 fn describes_parallel_dependency_group() {
     let source = concat!(
         "check():\n    true\n",
@@ -335,6 +357,7 @@ fn returns_task_and_parameter_hover() {
 
     assert_eq!(task_hover.kind, LspHoverKind::Task);
     assert_eq!(task_hover.signature, "build(name=\"dev\", args..)");
+    assert_eq!(task_hover.docs.as_deref(), Some("Default to `dev`."));
     assert_eq!(task_hover.range.start(), TextSize::from(0));
     assert_eq!(task_hover.range.end(), TextSize::from(5));
     assert_eq!(param_hover.kind, LspHoverKind::Parameter);
@@ -353,4 +376,22 @@ fn returns_task_and_parameter_hover() {
             .is_some_and(|docs| docs.contains("remaining positional arguments"))
     );
     assert!(hover(&snapshot, default_offset).is_none());
+}
+
+#[test]
+fn shows_defaults_before_task_help() {
+    let source = concat!(
+        "[help] Build only-cli\n",
+        "build(profile=\"debug\"):\n",
+        "    cargo build\n",
+    );
+    let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
+    let offset = TextSize::from(source.find("build").expect("task should exist") as u32);
+
+    let info = hover(&snapshot, offset).expect("task hover should exist");
+
+    assert_eq!(
+        info.docs.as_deref(),
+        Some("Default to `debug`.\n\nBuild only-cli")
+    );
 }

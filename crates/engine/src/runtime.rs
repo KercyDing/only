@@ -240,8 +240,8 @@ fn run_node(
         };
 
         let shell = select_shell(node, default_shell);
-        let code = match run_command(&rendered, working_dir, &shell, output_tx.clone()) {
-            Ok(code) => code,
+        let status = match run_command(&rendered, working_dir, &shell, output_tx.clone()) {
+            Ok(status) => status,
             Err(error) => {
                 task_error = Some(if step.is_block() {
                     command_block_start_failed(shell.kind.as_str(), error)
@@ -252,11 +252,11 @@ fn run_node(
             }
         };
 
-        if code != ExitCode::SUCCESS {
+        if let Some(reason) = status.failure_reason() {
             task_error = Some(if step.is_block() {
-                command_block_failed(&node.name, index + 1, total_steps, code)
+                command_block_failed(&node.name, index + 1, total_steps, reason)
             } else {
-                command_failed(&node.name, index + 1, total_steps, &rendered, code)
+                command_failed(&node.name, index + 1, total_steps, &rendered, reason)
             });
             break;
         }
@@ -316,7 +316,7 @@ fn run_node_inherit(
         for (index, step) in node.steps.iter().enumerate() {
             let rendered = interpolate(step.source(), &node.params)?;
             let shell = select_shell(node, default_shell);
-            let code = run_command_inherit(&rendered, working_dir, &shell).map_err(|error| {
+            let status = run_command_inherit(&rendered, working_dir, &shell).map_err(|error| {
                 if step.is_block() {
                     command_block_start_failed(shell.kind.as_str(), error)
                 } else {
@@ -324,11 +324,11 @@ fn run_node_inherit(
                 }
             })?;
 
-            if code != ExitCode::SUCCESS {
+            if let Some(reason) = status.failure_reason() {
                 return Err(if step.is_block() {
-                    command_block_failed(&node.name, index + 1, total_steps, code)
+                    command_block_failed(&node.name, index + 1, total_steps, reason)
                 } else {
-                    command_failed(&node.name, index + 1, total_steps, &rendered, code)
+                    command_failed(&node.name, index + 1, total_steps, &rendered, reason)
                 });
             }
         }

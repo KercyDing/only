@@ -1,13 +1,14 @@
 # Usage
 
-`only` is a cross-platform task runner driven by an `Onlyfile`.
+`only` reads tasks from an `Onlyfile` and runs them on macOS, Linux, and Windows.
 
-This guide teaches the language step by step. You can start with a single task, then add parameters, dependencies, parallel work, guards, shells, and groups as your project grows.
+This guide shows you the language step by step. You can start with one task, then add parameters, dependencies, parallel work, guards, shells, and groups as your project grows.
 
 For a complete workflow, see the [example Onlyfile](../examples/Onlyfile).
 
 ## Contents
 
+- [Language version](#language-version)
 - [1. Create your first Onlyfile](#1-create-your-first-onlyfile)
 - [2. Document your tasks](#2-document-your-tasks)
 - [3. Add parameters](#3-add-parameters)
@@ -19,7 +20,7 @@ For a complete workflow, see the [example Onlyfile](../examples/Onlyfile).
 - [5. Run independent tasks in parallel](#5-run-independent-tasks-in-parallel)
   - [Inspect the execution plan](#inspect-the-execution-plan)
 - [6. Hide internal helper tasks](#6-hide-internal-helper-tasks)
-- [7. Select implementations with guards](#7-select-implementations-with-guards)
+- [7. Select task versions with guards](#7-select-task-versions-with-guards)
 - [8. Choose a shell when needed](#8-choose-a-shell-when-needed)
   - [Run several lines in one shell](#run-several-lines-in-one-shell)
   - [Set a shell for the whole file](#set-a-shell-for-the-whole-file)
@@ -31,13 +32,27 @@ For a complete workflow, see the [example Onlyfile](../examples/Onlyfile).
 
 ---
 
+## Language version
+
+Use this line to tell `only` the oldest language version your file needs:
+
+```Onlyfile
+!version MAJOR.MINOR
+```
+
+For example, `!version 0.1` has a major number and a minor number.
+
+This line is optional. Without it, `only` reads the file without checking its language version first.
+
+When you use `!version`, place it before all other declarations. Blank lines and comments may come before it.
+
+---
+
 ## 1. Create your first Onlyfile
 
 Create a file named `Onlyfile` in your project root:
 
 ```Onlyfile
-!version 0.3
-
 hello():
     echo "hello from only"
 ```
@@ -65,30 +80,8 @@ only -p
 You can also select a file yourself:
 
 ```bash
-only -f ./examples/Onlyfile --dry-run ci
+only ci -f ./examples/Onlyfile --dry-run
 ```
-
-### About `!version`
-
-`!version` tells `only` the minimum language version your file needs.
-
-```Onlyfile
-!version 0.2
-```
-
-The format is always:
-
-```text
-MAJOR.MINOR
-```
-
-For example, `!version 0.3` requires language capability `0.3` or newer within the same major version.
-
-The declaration is optional. Without it, `only` skips the version gate and reports syntax errors directly.
-
-If you use it, `!version` must be the first declaration in the file. Blank lines and comments may appear before it.
-
----
 
 ## 2. Document your tasks
 
@@ -100,23 +93,28 @@ check():
     cargo check
 ```
 
-Use `[help]` to describe the next task:
+Use `[help]` to give the next task or group a short description:
 
 ```Onlyfile
-[help] Check the project.
+[help] Check the project
+[desc] Check all build targets.
+[pass] Check passed.
+[fail] Check failed.
 check():
     cargo check
 ```
 
-Task documentation appears in `only` and `only --help`.
+`[help]` appears in the task list and help page. Add one or more `[desc]` lines when you need more detail. A `[desc]` needs a `[help]` before it.
 
-This lets the `Onlyfile` describe its own commands without separate metadata.
+`[pass]` is printed after the task succeeds. `[fail]` is printed after it fails. You can use either one without `[help]`.
+
+Keep these lines directly above the task. A blank line separates them from the task.
 
 ---
 
 ## 3. Add parameters
 
-Add parameters inside the task signature:
+Add parameters inside the parentheses after a task name:
 
 ```Onlyfile
 build(profile="dev"):
@@ -135,7 +133,7 @@ Or pass another value:
 only build release
 ```
 
-`{{profile}}` inserts the bound parameter value into the command.
+`{{profile}}` inserts the chosen value into the command.
 
 A parameter with a default is optional.
 
@@ -164,7 +162,7 @@ only greet
 
 ### Slice parameters
 
-Use `..` to capture all remaining positional arguments:
+Use `..` to collect all remaining values:
 
 ```Onlyfile
 run(args..):
@@ -208,16 +206,16 @@ serve(port="3000", host="127.0.0.1"):
 Override only the host:
 
 ```bash
-only -s host=0.0.0.0 serve
+only serve -s host=0.0.0.0
 ```
 
 Override more than one value:
 
 ```bash
-only -s host=0.0.0.0 -s port=8080 serve
+only serve -s host=0.0.0.0 -s port=8080
 ```
 
-`-s` is a global option, so place it before the task path.
+Place `-s` after the task arguments.
 
 Parameter values are chosen in this order:
 
@@ -273,9 +271,18 @@ test
  ci
 ```
 
-Each `&` creates another dependency stage.
+Each `&` adds another step.
 
-Dependencies are tasks, not copied command text. If several tasks depend on the same task, `only` resolves that shared dependency once in the execution graph.
+Dependencies are tasks, not copies of their commands. If several tasks need the same dependency, `only` runs it once.
+
+You can pass values to a dependency:
+
+```Onlyfile
+package() & build("release"):
+    echo "Package complete"
+```
+
+A dependency without values uses its defaults. If it has a required parameter, pass the value as shown above.
 
 ---
 
@@ -323,16 +330,16 @@ You do not need to guess how a workflow will run.
 Use dry-run:
 
 ```bash
-only --dry-run ci
+only ci --dry-run
 ```
 
 To include rendered commands:
 
 ```bash
-only --dry-run --full ci
+only ci --dry-run --full
 ```
 
-For larger workflows, dry-run shows the stages after dependency and guard resolution.
+For larger workflows, dry-run shows the final order after `only` chooses the matching task variants.
 
 ---
 
@@ -352,17 +359,17 @@ Helpers:
 
 - can be used as dependencies;
 - do not appear in normal task listings;
-- cannot be invoked directly.
+- cannot be run directly.
 
-This is useful for setup steps and internal workflow details.
+Use helpers for setup steps that users do not need to run by hand.
 
 ---
 
-## 7. Select implementations with guards
+## 7. Select task versions with guards
 
-A task can have more than one implementation.
+A task can have more than one way to run.
 
-Use a guard to select the implementation that matches the current environment:
+Use `?` with a guard to choose the first version that matches your system:
 
 ```Onlyfile
 test() ? @has("cargo-nextest"):
@@ -372,7 +379,7 @@ test():
     cargo test
 ```
 
-If `cargo-nextest` exists on `PATH`, the first variant is used.
+If `cargo-nextest` is available as a command, the first variant is used.
 
 Otherwise, the unguarded task is the fallback.
 
@@ -386,7 +393,7 @@ package():
     echo "Package for Unix"
 ```
 
-Available probes include:
+Available checks include:
 
 | Probe | Matches when |
 | --- | --- |
@@ -396,7 +403,7 @@ Available probes include:
 | `@arch("x86_64")` | the current architecture is x86-64 |
 | `@arch("aarch64")` | the current architecture is AArch64 |
 | `@env("CI")` | the environment variable exists |
-| `@has("cargo")` | the command exists on `PATH` |
+| `@has("cargo")` | `cargo` is available as a command |
 
 Variant selection follows three rules:
 
@@ -404,9 +411,9 @@ Variant selection follows three rules:
 2. if no guard matches, the unguarded variant is used;
 3. if nothing matches and there is no fallback, the task is unavailable.
 
-Later variants inherit missing `[help]` and `[desc]` fields from the first variant. A field written on the selected variant overrides the inherited value.
+The first variant provides the default `[help]`, `[desc]`, `[pass]`, and `[fail]` text. Later variants keep any fields they leave out. When a later variant writes a field, it replaces the whole field.
 
-Guards let you choose an implementation without moving platform or tool detection into shell scripts.
+Guards let you choose a task version without putting system checks in shell scripts.
 
 ---
 
@@ -421,7 +428,7 @@ check():
     cargo check
 ```
 
-Choose a host shell only when your command needs it.
+Choose a specific shell only when your command needs one.
 
 Require Bash:
 
@@ -430,7 +437,7 @@ build() shell=bash:
     ./scripts/build.sh
 ```
 
-Use `shell~=` when a compatible fallback is acceptable:
+Use `shell~=` when `only` may use a backup shell:
 
 ```Onlyfile
 build() shell~=bash:
@@ -463,7 +470,7 @@ Supported shells are:
 
 ### Run several lines in one shell
 
-Normal command lines are separate execution units.
+Each normal command line starts a new shell.
 
 Use `|` when several lines need to share the same shell process:
 
@@ -509,7 +516,7 @@ Available file-level directives are:
 
 | Directive | Purpose |
 | --- | --- |
-| `!version MAJOR.MINOR` | declare the minimum language capability |
+| `!version MAJOR.MINOR` | tell `only` the oldest language version your file needs |
 | `!shell NAME` | set the default shell |
 
 ---
@@ -560,7 +567,7 @@ ci() & (front.test, back.test):
     echo "CI complete"
 ```
 
-This lets you keep short task names inside each project area without losing a clear global structure.
+This lets you keep short task names while still showing which part of the project they belong to.
 
 ---
 
@@ -571,8 +578,6 @@ You can combine tasks, parameters, guards, groups, and parallel dependencies wit
 Here is a small frontend + Rust example:
 
 ```Onlyfile
-!version 0.4
-
 build(profile="dev"):
     cargo build --profile {{profile}}
 
@@ -608,12 +613,12 @@ only ci
 Inspect the workflow before running it:
 
 ```bash
-only --dry-run --full ci
+only ci --dry-run --full
 ```
 
 The important idea is simple:
 
-> You describe the dependency relationships. `only` derives the execution stages.
+> You say which tasks must run first. `only` works out the order.
 
 ---
 
@@ -630,7 +635,7 @@ only -p
 Or select one explicitly:
 
 ```bash
-only -f ./Onlyfile ci
+only ci -f ./Onlyfile
 ```
 
 ---
@@ -640,14 +645,14 @@ only -f ./Onlyfile ci
 Check whether:
 
 - the task starts with `_`;
-- the task belongs to a namespace;
-- the namespace contains only hidden helper tasks;
+- the task belongs to a group;
+- the group contains only hidden helper tasks;
 - the `Onlyfile` contains an error.
 
-For a namespaced task, use:
+For a grouped task, use:
 
 ```bash
-only <namespace> <task>
+only <group> <task>
 ```
 
 ---
@@ -663,7 +668,7 @@ Make sure:
 For example:
 
 ```bash
-only -s port=8080 serve
+only serve -s port=8080
 ```
 
 ---
@@ -690,7 +695,7 @@ sets `port`.
 To change only `host`, use:
 
 ```bash
-only -s host=0.0.0.0 serve
+only serve -s host=0.0.0.0
 ```
 
 ---
@@ -715,7 +720,7 @@ test():
 
 Prefer the built-in shell when possible.
 
-If you need a host shell, you can:
+If you need a specific shell, you can:
 
 - install the shell;
 - choose another supported shell;
@@ -752,11 +757,11 @@ Check that:
 
 # Diagnostics
 
-`only` validates an `Onlyfile` before executing commands.
+`only` checks an `Onlyfile` before it runs any commands.
 
-The LSP uses stable diagnostic codes so editor integrations do not depend on exact message text.
+If you use the Only extension, you can see the same problems in your editor.
 
-The CLI keeps errors shorter and does not normally show these internal codes.
+The table below explains the diagnostic codes shown by the editor.
 
 | Code | Meaning | What to do |
 | --- | --- | --- |
@@ -770,7 +775,7 @@ The CLI keeps errors shorter and does not normally show these internal codes.
 | `semantic.slice-parameter-position` | a slice parameter is not last | move `name..` to the end |
 | `semantic.slice-parameter-default` | a slice has a default value | remove the default |
 | `version.invalid-format` | version is not `MAJOR.MINOR` | use two numeric components |
-| `version.pre-0.1-unsupported` | the declaration uses `0.0` | omit it or use `0.1` or newer |
+| `version.pre-0.1-unsupported` | the declaration is below the first supported version | use a supported version or omit the line |
 | `version.range-overflow` | a version value cannot be represented | use a smaller valid version |
 | `version.duplicate` | the file has more than one `!version` | keep one declaration |
 | `version.not-first-declaration` | `!version` appears too late | move it to the file header |
@@ -781,12 +786,12 @@ Common runtime errors include:
 
 | Message | Meaning |
 | --- | --- |
-| `task '<name>' is not defined` | the task does not exist |
-| `helper task '<name>' cannot be invoked directly` | helper tasks are dependency-only |
-| `task '<name>' is not available for this environment` | no variant matched |
-| `missing required parameter '{{name}}'` | a required value was not supplied |
-| `unknown parameter '<name>' for task '<task>'` | `-s` refers to an unknown parameter |
-| `cyclic dependency detected: ...` | the dependency graph contains a cycle |
+| `task '<name>' does not exist` | the task does not exist |
+| `helper task '<name>' cannot be run directly` | run a public task that uses this helper |
+| `task '<name>' is not available on this system` | no variant matched |
+| `parameter '{{name}}' is required` | pass the missing value |
+| `task '<task>' has no parameter named '<name>'` | check the name used with `-s` |
+| `dependency loop: ...` | tasks depend on each other in a loop |
 | `unsupported shell '<name>'` | the shell name is not supported |
 | `<shell> not found...` | the selected shell is not available on `PATH` |
 
@@ -800,15 +805,18 @@ Common runtime errors include:
 | --- | --- |
 | `only` | list available tasks |
 | `only <task>` | run a root task |
-| `only <namespace> <task>` | run a namespaced task |
+| `only <group> <task>` | run a grouped task |
 | `only --help` | show help |
 | `only <task> --help` | show task help and parameters |
 | `only -p` / `only --path` | print the discovered `Onlyfile` path |
-| `only -f <path>` / `only --file <path>` | use a specific file |
-| `only -s name=value <task>` | override a parameter |
-| `only --dry-run <task>` | show the execution plan |
-| `only --dry-run --full <task>` | show the plan and rendered commands |
-| `only -q <task>` / `only --quiet <task>` | hide progress lines but keep command output |
+| `only <task> -f <path>` / `only <task> --file <path>` | use a specific file |
+| `only <task> -s name=value` | override a parameter |
+| `only <task> --dry-run` | show the execution plan |
+| `only <task> --dry-run --full` | show the plan and rendered commands |
+| `only <task> -q` / `only <task> --quiet` | hide progress lines but keep command output |
+| `only --fmt` | format the `Onlyfile` |
+| `only --check` | check `Onlyfile` formatting |
+| `only --upgrade` | update `only` |
 
 ## Syntax
 
@@ -816,7 +824,7 @@ Common runtime errors include:
 | --- | --- |
 | `// text` | ordinary comment |
 | `# text` | ordinary comment |
-| `!version A.B` | require language capability A.B or newer within (A+1).0 |
+| `!version MAJOR.MINOR` | tell `only` the oldest language version your file needs |
 | `!shell bash` | set the file-level shell |
 | `task():` | define a task |
 | `task(name):` | required parameter |

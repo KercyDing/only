@@ -476,16 +476,50 @@ fn format_dependency(raw: &str) -> String {
         .strip_prefix('(')
         .and_then(|text| text.strip_suffix(')'))
     {
-        let members = group
-            .split(',')
-            .map(str::trim)
+        let members = split_top_level(group, ',')
+            .into_iter()
+            .map(normalize_delimiters)
             .filter(|member| !member.is_empty())
             .collect::<Vec<_>>()
             .join(", ");
         format!("& ({members})")
     } else {
-        format!("& {}", collapse_whitespace(dependency))
+        format!("& {}", normalize_delimiters(dependency))
     }
+}
+
+fn split_top_level(input: &str, separator: char) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0usize;
+    let mut quoted = false;
+    let mut escaped = false;
+
+    for (index, character) in input.char_indices() {
+        if quoted {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                quoted = false;
+            }
+            continue;
+        }
+
+        match character {
+            '"' => quoted = true,
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            current if current == separator && depth == 0 => {
+                parts.push(input[start..index].trim());
+                start = index + character.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(input[start..].trim());
+    parts
 }
 
 fn format_shell(raw: &str) -> String {
@@ -598,6 +632,12 @@ fn normalize_delimiters(input: &str) -> String {
             }
             output.push(character);
             pending_space = false;
+        } else if character == ',' {
+            while output.ends_with(' ') {
+                output.pop();
+            }
+            output.push(',');
+            pending_space = true;
         } else {
             if pending_space && !output.is_empty() && !output.ends_with('(') {
                 output.push(' ');

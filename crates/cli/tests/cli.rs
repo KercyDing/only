@@ -536,6 +536,31 @@ fn rejects_missing_required_parameter() {
 }
 
 #[test]
+fn binds_dependency_arguments() {
+    let plan = compile_plan(
+        "build(profile):\n    echo {{profile}}\nci() & build(\"dev\"):\n    true\n",
+        &cli(&["ci"]),
+    );
+
+    assert_eq!(plan.nodes[0].name, "build");
+    assert_eq!(plan.nodes[0].params[0].value.as_deref(), Some("dev"));
+}
+
+#[test]
+fn rejects_missing_dependency_parameter() {
+    let error = compile_for_cli_input(
+        "build(profile):\n    echo {{profile}}\nci() & build:\n    true\n",
+        &cli(&["ci"]),
+    )
+    .expect_err("missing dependency parameter should fail planning");
+
+    assert_eq!(
+        error.to_string(),
+        "dependency `build` requires parameter `profile`\nprovide it with `build(\"value\")`"
+    );
+}
+
+#[test]
 fn rejects_unknown_parameter_override() {
     let input = CliInput {
         onlyfile_path: None,
@@ -897,7 +922,7 @@ demo():
     let failure_stderr = strip_ansi(
         &String::from_utf8(failure.stderr).expect("failure stderr should be valid utf-8"),
     );
-    let error = "Error: task 'demo' failed at step [1/1] due to unix_exit_status(1)";
+    let error = "Error: task 'demo' failed at step [1/1] due to unix_exit_code(1)";
     let error_index = failure_stderr
         .find(error)
         .expect("runtime error should be printed");
@@ -1371,8 +1396,10 @@ fn helper_task_help_is_available_via_cli_binary() {
     let plain_stderr = strip_ansi(&stderr);
 
     assert_eq!(output.status.code(), Some(0), "stderr was: {stderr}");
-    assert!(plain_stdout.contains("Usage:\n  only _prepare [OPTIONS] [target]"));
+    assert!(plain_stdout.contains("Usage: only _prepare [TARGET] [GLOBAL OPTIONS]"));
     assert!(plain_stdout.contains("[target]  Required parameter"));
+    assert!(plain_stdout.contains("Run `only -h` to see global options."));
+    assert!(!plain_stdout.contains("--file"));
     assert!(plain_stderr.is_empty(), "stderr was: {plain_stderr}");
 }
 

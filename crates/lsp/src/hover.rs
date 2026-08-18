@@ -436,7 +436,7 @@ fn dependency_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<Lsp
                 kind: LspHoverKind::Dependency,
                 name: target.name.to_string(),
                 signature: target.signature().to_string(),
-                docs: target.doc.clone().map(|docs| docs.to_string()),
+                docs: task_docs(target),
                 range: reference.range,
                 container_name: target.namespace.clone().map(|name| name.to_string()),
             });
@@ -462,13 +462,31 @@ fn task_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover>
             kind: LspHoverKind::Task,
             name: task.name.to_string(),
             signature: task.signature().to_string(),
-            docs: task.doc.clone().map(|docs| docs.to_string()),
+            docs: task_docs(task),
             range,
             container_name: task.namespace.clone().map(|name| name.to_string()),
         });
     }
 
     None
+}
+
+fn task_docs(task: &only_semantic::TaskAst) -> Option<String> {
+    let defaults = task
+        .params
+        .iter()
+        .filter_map(|parameter| parameter.default_value.as_deref())
+        .map(|default| format!("`{default}`"))
+        .collect::<Vec<_>>();
+    let default_hint =
+        (!defaults.is_empty()).then(|| format!("Default to {}.", defaults.join(", ")));
+
+    match (default_hint, &task.doc) {
+        (Some(hint), Some(docs)) => Some(format!("{hint}\n\n{docs}")),
+        (Some(hint), None) => Some(hint),
+        (None, Some(docs)) => Some(docs.to_string()),
+        (None, None) => None,
+    }
 }
 
 fn namespace_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {

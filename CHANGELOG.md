@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.0 - 2026-08-18
+
+- Added structured `[help]`, `[desc]`, `[pass]`, and `[fail]` metadata for tasks and groups.
+- Added task success and failure messages, including file-level `!var` interpolation and guarded-variant inheritance.
+- Replaced bracketed namespace groups with explicit `group name { ... }` declarations.
+- Made `#` a normal source comment; it no longer supplies task help.
+- Added metadata support across formatting, CLI help, diagnostics, completion, semantic tokens, and hover.
+
 ## 0.3.0 - 2026-08-17
 
 - Added multiple guards, multiline task headers, file-level `!var` values, and braced namespace scopes.
