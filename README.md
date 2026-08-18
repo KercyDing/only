@@ -17,31 +17,32 @@ Keep project workflows in one readable `Onlyfile`.
 ## Example
 
 ```Onlyfile
-!version 0.3
+!version 0.4
 !var cargo_flags = "--workspace"
 
-# Build the Rust app
+[help] Build the Rust app
 build(profile = "dev"):
     cargo build {{cargo_flags}} --profile {{profile}}
 
-# Run tests in parallel
+[help] Run tests in parallel
 ci() & (back.test, front.test):
     echo "CI complete!"
 
-# Backend
-[back] {
-    # Test the backend.
-    // Prefer nextest when available.
+[help] Backend tasks
+group back {
+    [help] Test the backend.
+    # Prefer nextest when available.
     test() ? @has("cargo-nextest"):
         cargo nextest run
 
+    [help] Test the backend.
     test():
         cargo test
 }
 
-# Frontend
-[front] {
-    # Test the frontend.
+[help] Frontend tasks
+group front {
+    [help] Test the frontend.
     test():
         pnpm test
 }
@@ -81,7 +82,7 @@ Dependencies, parallel execution, parameters, and environment-specific task vari
 
 ## Features
 
-- **Structured tasks** — parameters, dependencies, namespaces, and private helpers.
+- **Structured tasks** — parameters, dependencies, groups, and private helpers.
 - **Predictable execution** — ordered stages, parallel groups, and deduplicated dependencies.
 - **Environment-aware variants** — guards for the OS, architecture, environment, and installed commands.
 - **Cross-platform commands** — a built-in shell, command blocks, and optional host shells.
@@ -96,7 +97,7 @@ All three support dependencies and cross-platform workflows. The main difference
 | --- | --- | --- |
 | [`just`](https://github.com/casey/just) | Make-inspired recipes in a `justfile` | mature, shell-oriented command recipes |
 | [`Task`](https://taskfile.dev/) | declarative YAML in `Taskfile.yml` | broad task configuration without a custom syntax |
-| `only` | function-style tasks in an `Onlyfile` | explicit stages, guarded variants, and namespaces in compact syntax |
+| `only` | function-style tasks in an `Onlyfile` | explicit stages, guarded variants, and groups in compact syntax |
 
 ## Install
 

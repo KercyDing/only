@@ -2,7 +2,7 @@
 
 `only` is a cross-platform task runner driven by an `Onlyfile`.
 
-This guide teaches the language step by step. You can start with a single task, then add parameters, dependencies, parallel work, guards, shells, and namespaces as your project grows.
+This guide teaches the language step by step. You can start with a single task, then add parameters, dependencies, parallel work, guards, shells, and groups as your project grows.
 
 For a complete workflow, see the [example Onlyfile](../examples/Onlyfile).
 
@@ -23,7 +23,7 @@ For a complete workflow, see the [example Onlyfile](../examples/Onlyfile).
 - [8. Choose a shell when needed](#8-choose-a-shell-when-needed)
   - [Run several lines in one shell](#run-several-lines-in-one-shell)
   - [Set a shell for the whole file](#set-a-shell-for-the-whole-file)
-- [9. Organize larger projects with namespaces](#9-organize-larger-projects-with-namespaces)
+- [9. Organize larger projects with groups](#9-organize-larger-projects-with-groups)
 - [10. Put the pieces together](#10-put-the-pieces-together)
 - [Troubleshooting](#troubleshooting)
 - [Diagnostics](#diagnostics)
@@ -84,26 +84,26 @@ MAJOR.MINOR
 
 For example, `!version 0.3` requires language capability `0.3` or newer within the same major version.
 
-The declaration is optional. Older Onlyfiles without `!version` remain valid.
+The declaration is optional. Without it, `only` skips the version gate and reports syntax errors directly.
 
-If you use it, `!version` must be the first declaration in the file. Blank lines and `//` comments may appear before it.
+If you use it, `!version` must be the first declaration in the file. Blank lines and comments may appear before it.
 
 ---
 
 ## 2. Document your tasks
 
-Use `//` for normal comments:
+Use `#` for normal comments:
 
 ```Onlyfile
-// This is only a source comment.
+# This is only a source comment.
 check():
     cargo check
 ```
 
-Use `#` to document the next task:
+Use `[help]` to describe the next task:
 
 ```Onlyfile
-# Check the project.
+[help] Check the project.
 check():
     cargo check
 ```
@@ -404,6 +404,8 @@ Variant selection follows three rules:
 2. if no guard matches, the unguarded variant is used;
 3. if nothing matches and there is no fallback, the task is unavailable.
 
+Later variants inherit missing `[help]` and `[desc]` fields from the first variant. A field written on the selected variant overrides the inherited value.
+
 Guards let you choose an implementation without moving platform or tool detection into shell scripts.
 
 ---
@@ -512,12 +514,12 @@ Available file-level directives are:
 
 ---
 
-## 9. Organize larger projects with namespaces
+## 9. Organize larger projects with groups
 
-Use namespaces when several parts of your project have similar tasks.
+Use groups when several parts of your project have similar tasks.
 
 ```Onlyfile
-[front] {
+group front {
     check():
         pnpm lint
 
@@ -525,7 +527,7 @@ Use namespaces when several parts of your project have similar tasks.
         pnpm test
 }
 
-[back] {
+group back {
     check():
         cargo check
 
@@ -534,7 +536,7 @@ Use namespaces when several parts of your project have similar tasks.
 }
 ```
 
-Run a namespaced task by placing the namespace before the task:
+Run a grouped task by placing the group before the task:
 
 ```bash
 only front check
@@ -543,13 +545,13 @@ only back check
 only back test
 ```
 
-Run only the namespace name to see its tasks:
+Run only the group name to see its tasks:
 
 ```bash
 only front
 ```
 
-You can also refer to namespaced tasks from dependencies:
+You can also refer to grouped tasks from dependencies:
 
 ```Onlyfile
 ci() & (front.test, back.test):
@@ -562,12 +564,12 @@ This lets you keep short task names inside each project area without losing a cl
 
 ## 10. Put the pieces together
 
-You can combine tasks, parameters, guards, namespaces, and parallel dependencies without turning the file into a large script.
+You can combine tasks, parameters, guards, groups, and parallel dependencies without turning the file into a large script.
 
 Here is a small frontend + Rust example:
 
 ```Onlyfile
-!version 0.3
+!version 0.4
 
 build(profile="dev"):
     cargo build --profile {{profile}}
@@ -575,7 +577,7 @@ build(profile="dev"):
 ci() & (back.test, front.test):
     echo "CI complete"
 
-[back] {
+group back {
     test() ? @has("cargo-nextest"):
         cargo nextest run
 
@@ -583,7 +585,7 @@ ci() & (back.test, front.test):
         cargo test
 }
 
-[front] {
+group front {
     test():
         pnpm test
 }
@@ -809,7 +811,7 @@ Common runtime errors include:
 | Syntax | Meaning |
 | --- | --- |
 | `// text` | ordinary comment |
-| `# text` | document the next task or namespace |
+| `# text` | ordinary comment |
 | `!version A.B` | require language capability A.B or newer within (A+1).0 |
 | `!shell bash` | set the file-level shell |
 | `task():` | define a task |
@@ -824,4 +826,4 @@ Common runtime errors include:
 | `task() shell=bash:` | require an exact shell |
 | `task() shell~=bash:` | prefer a shell with fallback |
 | `\| command` | continue a command block in one shell process |
-| `[namespace] { ... }` | group tasks in a namespace |
+| `group name { ... }` | group related tasks |

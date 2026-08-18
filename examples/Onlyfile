@@ -1,18 +1,18 @@
-!version 0.3
+!version 0.4
 !var cargo_flags = "--all-targets"
 !var pnpm_dir = "web"
 !var dist_dir = "dist"
 
-// Example workflow for a Rust backend and web frontend.
-# Run all checks.
+# Example workflow for a Rust backend and web frontend.
+[help] Run all checks.
 ci() & (front.ci, back.ci):
     echo "CI complete"
 
-# Package a verified release.
+[help] Package a verified release.
 release() & ci & package:
     echo "Release ready in {{dist_dir}}"
 
-# Package Windows artifacts.
+[help] Package Windows artifacts.
 package()
     ? @os("windows")
     & (front.build, back.build)
@@ -23,15 +23,17 @@ package()
     | Compress-Archive -Path target/release/app.exe, {{pnpm_dir}}/dist -DestinationPath $archive -Force
     | Write-Output "Created $archive"
 
-// macOS/Linux fallback.
+# macOS/Linux fallback.
+[help] Package Unix artifacts.
 package() & (front.build, back.build):
     | archive="{{dist_dir}}/app.tar.gz"
     | mkdir -p {{dist_dir}}
     | tar -czf "$archive" target/release/app {{pnpm_dir}}/dist
     | echo "Created $archive"
 
-# Frontend tasks.
-[front] {
+[help] Frontend tasks.
+group front {
+
     _prepare() ? @has("pnpm"):
         pnpm --dir {{pnpm_dir}} install --frozen-lockfile
 
@@ -39,53 +41,55 @@ package() & (front.build, back.build):
         echo "pnpm is required"
         exit 1
 
-    # Start the dev server.
+    [help] Start the dev server.
     dev(port = "5173") & _prepare:
         pnpm --dir {{pnpm_dir}} dev -- --port {{port}}
 
-    # Check the frontend.
+    [help] Check the frontend.
     check() & _prepare:
         pnpm --dir {{pnpm_dir}} lint
 
-    # Test the frontend.
+    [help] Test the frontend.
     test() & _prepare:
         pnpm --dir {{pnpm_dir}} test
 
-    # Build the frontend.
+    [help] Build the frontend.
     build() & _prepare:
         pnpm --dir {{pnpm_dir}} build
 
-    # Run frontend checks.
+    [help] Run frontend checks.
     ci() & (check, test):
         echo "Frontend CI complete"
 }
 
-# Backend tasks.
-[back] {
-    # Format the Rust workspace.
+[help] Backend tasks.
+group back {
+
+    [help] Format the Rust workspace.
     fmt():
         cargo fmt --all -- --check
 
-    # Run Cargo check.
+    [help] Run Cargo check.
     check():
         cargo check {{cargo_flags}}
 
-    # Run Clippy.
+    [help] Run Clippy.
     clippy():
         cargo clippy {{cargo_flags}} -- -D warnings
 
-    # Run CI tests with nextest when available.
+    [help] Run CI tests with nextest when available.
     test() ? @env("CI") ? @has("cargo-nextest"):
         cargo nextest run {{cargo_flags}} --no-fail-fast
 
+    [help] Run CI tests.
     test():
         cargo test {{cargo_flags}}
 
-    # Build the release binary.
+    [help] Build the release binary.
     build():
         cargo build --release
 
-    # Run all backend checks.
+    [help] Run all backend checks.
     ci()
         & fmt
         & check
