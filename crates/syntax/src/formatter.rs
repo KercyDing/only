@@ -270,7 +270,7 @@ fn needs_structural_blank(previous: Option<ItemKind>, current: ItemKind) -> bool
         return false;
     }
     if previous == ItemKind::GroupOpen {
-        return false;
+        return true;
     }
     if previous == ItemKind::Metadata || previous == ItemKind::Comment {
         return false;

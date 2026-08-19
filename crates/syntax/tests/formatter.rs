@@ -67,6 +67,7 @@ fn formats_multiline_header_inside_group() {
             "!version 0.4\n",
             "\n",
             "group back {\n",
+            "\n",
             "    ci()\n",
             "        & fmt\n",
             "        & check\n",
@@ -101,6 +102,7 @@ fn preserves_comments_and_group_boundaries() {
             "\n",
             "# Build tools.\n",
             "group tools {\n",
+            "\n",
             "    // Keep this comment.\n",
             "    build():\n",
             "        cargo build  \n",
@@ -140,6 +142,7 @@ fn keeps_group_metadata_attached_after_blank_lines() {
             "[help] Development builds\n",
             "[desc] Build in development mode.\n",
             "group dev {\n",
+            "\n",
             "    build():\n",
             "        cargo build\n",
             "}\n",
@@ -163,7 +166,7 @@ fn formats_group_indentation() {
 
     assert_eq!(
         format_source(source).expect("valid source should format"),
-        "!version 0.4\n\ngroup dev {\n    run():\n        true\n}\n"
+        "!version 0.4\n\ngroup dev {\n\n    run():\n        true\n}\n"
     );
 }
 
