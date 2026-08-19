@@ -1,7 +1,10 @@
 use anstyle::{AnsiColor as TermAnsiColor, Style as TermStyle};
 use std::collections::VecDeque;
-use std::io::{self, Write};
+use std::fs::{File, OpenOptions, remove_file};
+use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::thread;
 
@@ -77,7 +80,9 @@ pub fn run_plan_with_options(
         .collect::<VecDeque<_>>();
     let limit = options.max_parallelism.unwrap_or(usize::MAX).max(1);
     let (event_tx, event_rx) = mpsc::channel::<ExecutionEvent>();
-    let mut buffers = vec![Vec::<OutputChunk>::new(); total_tasks];
+    let mut buffers = (0..total_tasks)
+        .map(|_| TaskOutputBuffer::default())
+        .collect::<Vec<_>>();
     let mut progress_printed = vec![false; total_tasks];
     let mut finished = vec![false; total_tasks];
     let mut results = (0..total_tasks)
@@ -156,7 +161,7 @@ pub fn run_plan_with_options(
                         )?;
                         print_output_chunk(&chunk)?;
                     } else {
-                        buffers[task_index].push(chunk);
+                        buffers[task_index].push(chunk)?;
                     }
                 }
                 ExecutionEvent::Finished {
@@ -190,7 +195,7 @@ pub fn run_plan_with_options(
                     &mut progress_printed,
                     options.quiet,
                 )?;
-                flush_task_buffer(&mut buffers[current_index])?;
+                buffers[current_index].flush()?;
                 let mut task_error = task_errors[current_index].take();
                 match results[current_index].take() {
                     Some(TaskResult::Pass(message)) if !options.quiet => {
@@ -440,11 +445,129 @@ fn print_task_message(message: &str) -> Result<(), EngineError> {
     write_output(rendered.as_bytes(), io::stderr())
 }
 
-fn flush_task_buffer(buffer: &mut Vec<OutputChunk>) -> Result<(), EngineError> {
-    for chunk in buffer.drain(..) {
-        print_output_chunk(&chunk)?;
+const OUTPUT_MEMORY_LIMIT: usize = 1024 * 1024;
+static NEXT_BUFFER_ID: AtomicU64 = AtomicU64::new(0);
+
+#[derive(Default)]
+struct TaskOutputBuffer {
+    chunks: Vec<OutputChunk>,
+    memory_bytes: usize,
+    spill: Option<SpillFile>,
+}
+
+impl TaskOutputBuffer {
+    fn push(&mut self, chunk: OutputChunk) -> Result<(), EngineError> {
+        if let Some(spill) = &mut self.spill {
+            return spill.write_chunk(&chunk);
+        }
+
+        if self.memory_bytes + chunk.bytes.len() <= OUTPUT_MEMORY_LIMIT {
+            self.memory_bytes += chunk.bytes.len();
+            self.chunks.push(chunk);
+            return Ok(());
+        }
+
+        let mut spill = SpillFile::create()?;
+        for buffered in self.chunks.drain(..) {
+            spill.write_chunk(&buffered)?;
+        }
+        self.memory_bytes = 0;
+        spill.write_chunk(&chunk)?;
+        self.spill = Some(spill);
+        Ok(())
     }
-    Ok(())
+
+    fn flush(&mut self) -> Result<(), EngineError> {
+        if let Some(spill) = self.spill.take() {
+            spill.replay()?;
+        } else {
+            for chunk in self.chunks.drain(..) {
+                print_output_chunk(&chunk)?;
+            }
+        }
+        self.memory_bytes = 0;
+        Ok(())
+    }
+}
+
+struct SpillFile {
+    file: File,
+    path: PathBuf,
+}
+
+impl SpillFile {
+    fn create() -> Result<Self, EngineError> {
+        let id = NEXT_BUFFER_ID.fetch_add(1, Ordering::Relaxed);
+        let path =
+            std::env::temp_dir().join(format!("only-output-{}-{id}.tmp", std::process::id()));
+        let file = OpenOptions::new()
+            .create_new(true)
+            .read(true)
+            .write(true)
+            .open(&path)
+            .map_err(|error| {
+                EngineError::Runtime(format!("failed to create output buffer: {error}"))
+            })?;
+        Ok(Self { file, path })
+    }
+
+    fn write_chunk(&mut self, chunk: &OutputChunk) -> Result<(), EngineError> {
+        self.file
+            .seek(SeekFrom::End(0))
+            .and_then(|_| {
+                self.file.write_all(&[match chunk.stream {
+                    OutputStream::Stdout => 0,
+                    OutputStream::Stderr => 1,
+                }])
+            })
+            .and_then(|_| {
+                self.file
+                    .write_all(&(chunk.bytes.len() as u64).to_le_bytes())
+            })
+            .and_then(|_| self.file.write_all(&chunk.bytes))
+            .map_err(|error| EngineError::Runtime(format!("failed to buffer task output: {error}")))
+    }
+
+    fn replay(mut self) -> Result<(), EngineError> {
+        self.file.seek(SeekFrom::Start(0)).map_err(|error| {
+            EngineError::Runtime(format!("failed to rewind output buffer: {error}"))
+        })?;
+        loop {
+            let mut stream = [0u8; 1];
+            match self.file.read_exact(&mut stream) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => break,
+                Err(error) => {
+                    return Err(EngineError::Runtime(format!(
+                        "failed to read output buffer: {error}"
+                    )));
+                }
+            }
+            let mut length = [0u8; 8];
+            self.file.read_exact(&mut length).map_err(|error| {
+                EngineError::Runtime(format!("failed to read output buffer: {error}"))
+            })?;
+            let mut bytes = vec![0u8; u64::from_le_bytes(length) as usize];
+            self.file.read_exact(&mut bytes).map_err(|error| {
+                EngineError::Runtime(format!("failed to read output buffer: {error}"))
+            })?;
+            print_output_chunk(&OutputChunk {
+                stream: if stream[0] == 0 {
+                    OutputStream::Stdout
+                } else {
+                    OutputStream::Stderr
+                },
+                bytes,
+            })?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for SpillFile {
+    fn drop(&mut self) {
+        let _ = remove_file(&self.path);
+    }
 }
 
 fn print_output_chunk(chunk: &OutputChunk) -> Result<(), EngineError> {
