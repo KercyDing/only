@@ -437,7 +437,7 @@ fn print_task_message(message: &str) -> Result<(), EngineError> {
         .fg_color(Some(TermAnsiColor::BrightGreen.into()))
         .bold();
     let rendered = format!("{}{}{}\n", style.render(), message, style.render_reset());
-    write_output(&rendered, io::stderr())
+    write_output(rendered.as_bytes(), io::stderr())
 }
 
 fn flush_task_buffer(buffer: &mut Vec<OutputChunk>) -> Result<(), EngineError> {
@@ -449,13 +449,14 @@ fn flush_task_buffer(buffer: &mut Vec<OutputChunk>) -> Result<(), EngineError> {
 
 fn print_output_chunk(chunk: &OutputChunk) -> Result<(), EngineError> {
     match chunk.stream {
-        OutputStream::Stdout => write_output(&chunk.text, io::stdout()),
-        OutputStream::Stderr => write_output(&chunk.text, io::stderr()),
+        OutputStream::Stdout => write_output(&chunk.bytes, io::stdout()),
+        OutputStream::Stderr => write_output(&chunk.bytes, io::stderr()),
     }
 }
 
-fn write_output(content: &str, mut writer: impl Write) -> Result<(), EngineError> {
-    write!(writer, "{content}")
+fn write_output(content: &[u8], mut writer: impl Write) -> Result<(), EngineError> {
+    writer
+        .write_all(content)
         .map_err(|error| EngineError::Runtime(format!("failed to write task output: {error}")))?;
 
     writer

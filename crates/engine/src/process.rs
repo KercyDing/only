@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::io::{BufRead, BufReader, Read};
+use std::io::Read;
 use std::path::Path;
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc::Sender;
@@ -40,7 +40,7 @@ pub(crate) enum OutputStream {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OutputChunk {
     pub stream: OutputStream,
-    pub text: String,
+    pub bytes: Vec<u8>,
 }
 
 pub(crate) fn run_with_system_shell(
@@ -56,6 +56,7 @@ pub(crate) fn run_with_system_shell(
         .arg(arg)
         .arg(command)
         .envs(build_command_env())
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
@@ -119,7 +120,7 @@ pub(crate) fn build_command_env() -> HashMap<OsString, OsString> {
 }
 
 pub(crate) fn spawn_output_reader<R>(
-    reader: R,
+    mut reader: R,
     stream: OutputStream,
     output: Sender<OutputChunk>,
 ) -> thread::JoinHandle<Result<(), EngineError>>
@@ -127,12 +128,10 @@ where
     R: Read + Send + 'static,
 {
     thread::spawn(move || {
-        let mut reader = BufReader::new(reader);
-        let mut buffer = Vec::new();
+        let mut buffer = [0u8; 8192];
 
         loop {
-            buffer.clear();
-            let bytes_read = reader.read_until(b'\n', &mut buffer).map_err(|error| {
+            let bytes_read = reader.read(&mut buffer).map_err(|error| {
                 EngineError::Runtime(format!("failed to read task output: {error}"))
             })?;
             if bytes_read == 0 {
@@ -142,7 +141,7 @@ where
             output
                 .send(OutputChunk {
                     stream,
-                    text: String::from_utf8_lossy(&buffer).into_owned(),
+                    bytes: buffer[..bytes_read].to_vec(),
                 })
                 .map_err(|_| EngineError::Runtime("failed to forward task output".to_string()))?;
         }

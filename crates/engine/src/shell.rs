@@ -138,7 +138,7 @@ fn run_with_deno_task_shell(
         deno_task_shell::execute_with_pipes(
             parsed,
             state,
-            deno_task_shell::ShellPipeReader::stdin(),
+            closed_stdin(),
             stdout_writer,
             stderr_writer,
         ),
@@ -182,6 +182,13 @@ fn run_with_deno_task_shell_inherit(
 }
 
 struct ShellPipeReaderAdapter(deno_task_shell::ShellPipeReader);
+
+fn closed_stdin() -> deno_task_shell::ShellPipeReader {
+    let path = if cfg!(windows) { "NUL" } else { "/dev/null" };
+    deno_task_shell::ShellPipeReader::from_std(
+        std::fs::File::open(path).expect("the platform null device should be available"),
+    )
+}
 
 impl Read for ShellPipeReaderAdapter {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
