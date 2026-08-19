@@ -78,6 +78,7 @@ pub fn run_plan_with_options(
     let limit = options.max_parallelism.unwrap_or(usize::MAX).max(1);
     let (event_tx, event_rx) = mpsc::channel::<ExecutionEvent>();
     let mut buffers = vec![Vec::<OutputChunk>::new(); total_tasks];
+    let mut progress_printed = vec![false; total_tasks];
     let mut finished = vec![false; total_tasks];
     let mut results = (0..total_tasks)
         .map(|_| None)
@@ -97,27 +98,28 @@ pub fn run_plan_with_options(
                 let Some(index) = ready.pop_front() else {
                     break;
                 };
-                if !options.quiet {
-                    eprintln!(
-                        "{}",
-                        render_task_progress(index + 1, total_tasks, &plan.nodes[index].name)
-                    );
-                }
                 let node = plan.nodes[index].clone();
                 let working_dir = plan.working_dir.clone();
                 let shell = plan.shell.clone();
                 let event_tx = event_tx.clone();
                 let direct = active_count == 0 && (limit == 1 || ready.is_empty());
                 handles.push(scope.spawn(move || {
+                    event_tx
+                        .send(ExecutionEvent::Started { task_index: index })
+                        .map_err(|_| {
+                            EngineError::Runtime("failed to start task presentation".to_string())
+                        })?;
                     if direct {
-                        let error =
-                            run_node_inherit(&node, &working_dir, shell.as_ref(), options.quiet)
-                                .err();
+                        let (error, result) =
+                            match run_node_inherit(&node, &working_dir, shell.as_ref()) {
+                                Ok(result) => result,
+                                Err(error) => (Some(error), None),
+                            };
                         event_tx
                             .send(ExecutionEvent::Finished {
                                 task_index: index,
                                 error,
-                                result: None,
+                                result,
                             })
                             .map_err(|_| {
                                 EngineError::Runtime("failed to finalize task output".to_string())
@@ -132,8 +134,26 @@ pub fn run_plan_with_options(
                 EngineError::Runtime("execution event channel closed unexpectedly".to_string())
             })?;
             match event {
+                ExecutionEvent::Started { task_index } => {
+                    if task_index == current_index {
+                        print_task_progress(
+                            task_index,
+                            total_tasks,
+                            plan,
+                            &mut progress_printed,
+                            options.quiet,
+                        )?;
+                    }
+                }
                 ExecutionEvent::Output { task_index, chunk } => {
                     if task_index == current_index {
+                        print_task_progress(
+                            task_index,
+                            total_tasks,
+                            plan,
+                            &mut progress_printed,
+                            options.quiet,
+                        )?;
                         print_output_chunk(&chunk)?;
                     } else {
                         buffers[task_index].push(chunk);
@@ -163,6 +183,13 @@ pub fn run_plan_with_options(
             }
 
             while current_index < total_tasks && finished[current_index] {
+                print_task_progress(
+                    current_index,
+                    total_tasks,
+                    plan,
+                    &mut progress_printed,
+                    options.quiet,
+                )?;
                 flush_task_buffer(&mut buffers[current_index])?;
                 let mut task_error = task_errors[current_index].take();
                 match results[current_index].take() {
@@ -299,8 +326,7 @@ fn run_node_inherit(
     node: &ExecutionNode,
     working_dir: &std::path::Path,
     default_shell: Option<&ShellKind>,
-    quiet: bool,
-) -> Result<(), EngineError> {
+) -> Result<(Option<EngineError>, Option<TaskResult>), EngineError> {
     let total_steps = node.steps.len();
     let execution = (|| {
         for (index, step) in node.steps.iter().enumerate() {
@@ -326,19 +352,11 @@ fn run_node_inherit(
     })();
 
     match execution {
-        Ok(()) => {
-            if !quiet && let Some(message) = task_result_message(node, true)? {
-                print_task_message(&message)?;
-            }
-            Ok(())
-        }
-        Err(error) => {
-            if let Some(message) = task_result_message(node, false)? {
-                Err(task_failure(error, message))
-            } else {
-                Err(error)
-            }
-        }
+        Ok(()) => Ok((None, task_result_message(node, true)?.map(TaskResult::Pass))),
+        Err(error) => Ok((
+            Some(error),
+            task_result_message(node, false)?.map(TaskResult::Fail),
+        )),
     }
 }
 
@@ -364,6 +382,9 @@ fn select_shell(node: &ExecutionNode, default_shell: Option<&ShellKind>) -> Shel
 
 #[derive(Debug)]
 enum ExecutionEvent {
+    Started {
+        task_index: usize,
+    },
     Output {
         task_index: usize,
         chunk: OutputChunk,
@@ -373,6 +394,25 @@ enum ExecutionEvent {
         error: Option<EngineError>,
         result: Option<TaskResult>,
     },
+}
+
+fn print_task_progress(
+    task_index: usize,
+    total_tasks: usize,
+    plan: &ExecutionPlan,
+    progress_printed: &mut [bool],
+    quiet: bool,
+) -> Result<(), EngineError> {
+    if quiet || progress_printed[task_index] {
+        return Ok(());
+    }
+
+    eprintln!(
+        "{}",
+        render_task_progress(task_index + 1, total_tasks, &plan.nodes[task_index].name)
+    );
+    progress_printed[task_index] = true;
+    Ok(())
 }
 
 #[derive(Debug)]

@@ -203,9 +203,9 @@ fn render_dry_run(plan: &ExecutionPlan, variant: &TaskAst, full: bool) -> Result
     let stages = plan_stages(plan);
     let mut index = 0usize;
     while index < stages.len() {
-        let (stage, stage_nodes) = stages[index];
+        let (stage, stage_nodes) = &stages[index];
         let stage_last = index + 1 == stages.len();
-        let stage_label = render_stage_label(stage, stage_nodes.len());
+        let stage_label = render_stage_label(*stage, stage_nodes.len());
         push_tree_line(&mut output, "", stage_last, &stage_label);
         let stage_prefix = if stage_last { "   " } else { "│  " };
 
@@ -282,19 +282,18 @@ fn render_dry_run(plan: &ExecutionPlan, variant: &TaskAst, full: bool) -> Result
     Ok(output.trim_end().to_string())
 }
 
-fn plan_stages(plan: &ExecutionPlan) -> Vec<(usize, &[only_engine::ExecutionNode])> {
-    let mut stages = Vec::new();
-    let mut index = 0usize;
+fn plan_stages(plan: &ExecutionPlan) -> Vec<(usize, Vec<&only_engine::ExecutionNode>)> {
+    let mut stages: Vec<(usize, Vec<&only_engine::ExecutionNode>)> = Vec::new();
 
-    while index < plan.nodes.len() {
-        let stage = plan.nodes[index].stage;
-        let stage_start = index;
-        while index < plan.nodes.len() && plan.nodes[index].stage == stage {
-            index += 1;
+    for node in &plan.nodes {
+        let stage_index = node.stage;
+        if let Some((_, nodes)) = stages.iter_mut().find(|(stage, _)| *stage == stage_index) {
+            nodes.push(node);
+        } else {
+            stages.push((stage_index, vec![node]));
         }
-        stages.push((stage, &plan.nodes[stage_start..index]));
     }
-
+    stages.sort_unstable_by_key(|(stage, _)| *stage);
     stages
 }
 

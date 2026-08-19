@@ -971,6 +971,8 @@ ci() & (fmt, test):
 
     let stdout = String::from_utf8(output.stdout).expect("stdout should be valid utf-8");
     let plain_stdout = strip_ansi(&stdout);
+    let stderr = String::from_utf8(output.stderr).expect("stderr should be valid utf-8");
+    let plain_stderr = strip_ansi(&stderr);
     assert_eq!(
         output.status.code(),
         Some(0),
@@ -987,6 +989,15 @@ ci() & (fmt, test):
                 .find("test start")
                 .expect("test output should exist")
     );
+    let progress = ["[1/3] fmt", "[2/3] test", "[3/3] ci"];
+    let mut previous = 0;
+    for label in progress {
+        let position = plain_stderr
+            .find(label)
+            .unwrap_or_else(|| panic!("missing progress label {label}: {plain_stderr}"));
+        assert!(position >= previous);
+        previous = position;
+    }
 }
 
 #[test]

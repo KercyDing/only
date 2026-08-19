@@ -16,6 +16,7 @@ pub(crate) struct ExpandedExecution<'a> {
 struct ExecutionGraph<'a> {
     nodes: HashMap<String, (&'a TaskAst, HashMap<String, String>)>,
     registration_order: Vec<String>,
+    dependencies: HashMap<String, Vec<String>>,
     edges: HashMap<String, HashSet<String>>,
 }
 
@@ -36,7 +37,7 @@ pub(crate) fn expand_execution_order<'a>(
         &mut visiting,
         &mut graph,
     )?;
-    build_staged_order(graph)
+    build_execution_order(graph, &root.qualified_name())
 }
 
 fn collect_task<'a>(
@@ -88,6 +89,13 @@ fn collect_task<'a>(
                     .entry(dependency_name.clone())
                     .or_default()
                     .insert(qualified_name.clone());
+                let dependencies = graph
+                    .dependencies
+                    .entry(qualified_name.clone())
+                    .or_default();
+                if !dependencies.contains(&dependency_name) {
+                    dependencies.push(dependency_name.clone());
+                }
                 current_group.push(dependency_name);
             }
         }
@@ -149,7 +157,10 @@ fn group_dependencies(task: &TaskAst) -> Vec<Vec<&DependencyAst>> {
     groups
 }
 
-fn build_staged_order<'a>(graph: ExecutionGraph<'a>) -> Result<ExpandedExecution<'a>, PlanError> {
+fn build_execution_order<'a>(
+    graph: ExecutionGraph<'a>,
+    root_name: &str,
+) -> Result<ExpandedExecution<'a>, PlanError> {
     let mut indegree = graph
         .registration_order
         .iter()
@@ -166,7 +177,7 @@ fn build_staged_order<'a>(graph: ExecutionGraph<'a>) -> Result<ExpandedExecution
     }
 
     let mut scheduled = HashSet::new();
-    let mut ordered = Vec::new();
+    let mut stages = HashMap::new();
     let mut stage = 0usize;
 
     while scheduled.len() < graph.registration_order.len() {
@@ -196,32 +207,67 @@ fn build_staged_order<'a>(graph: ExecutionGraph<'a>) -> Result<ExpandedExecution
         }
 
         for name in ready {
-            let (task, bindings) = graph
-                .nodes
-                .get(&name)
-                .expect("registered node should exist in graph");
-            ordered.push((stage, *task, bindings.clone()));
+            stages.insert(name, stage);
         }
 
         stage += 1;
     }
 
-    let indices = ordered
+    let presentation_order = expand_presentation_order(root_name, &graph.dependencies);
+    let indices = presentation_order
         .iter()
         .enumerate()
-        .map(|(index, (_, task, _))| (task.qualified_name().to_string(), index))
+        .map(|(index, name)| (name.clone(), index))
         .collect::<HashMap<_, _>>();
-    let mut successors = vec![Vec::new(); ordered.len()];
-    for (name, dependents) in graph.edges {
-        let source = indices[&name];
+    let mut successors = vec![Vec::new(); presentation_order.len()];
+    for (name, dependents) in &graph.edges {
+        let source = indices[name];
         for dependent in dependents {
-            successors[source].push(indices[&dependent]);
+            successors[source].push(indices[dependent]);
         }
         successors[source].sort_unstable();
     }
 
     Ok(ExpandedExecution {
-        ordered,
+        ordered: presentation_order
+            .into_iter()
+            .map(|name| {
+                let (task, bindings) = graph
+                    .nodes
+                    .get(&name)
+                    .expect("presentation node should exist in graph");
+                let stage = stages[&name];
+                (stage, *task, bindings.clone())
+            })
+            .collect(),
         successors,
     })
+}
+
+fn expand_presentation_order(
+    root_name: &str,
+    dependencies: &HashMap<String, Vec<String>>,
+) -> Vec<String> {
+    let mut visited = HashSet::new();
+    let mut order = Vec::new();
+    visit_dependencies(root_name, dependencies, &mut visited, &mut order);
+    order
+}
+
+fn visit_dependencies(
+    task_name: &str,
+    dependencies: &HashMap<String, Vec<String>>,
+    visited: &mut HashSet<String>,
+    order: &mut Vec<String>,
+) {
+    if !visited.insert(task_name.to_string()) {
+        return;
+    }
+
+    if let Some(task_dependencies) = dependencies.get(task_name) {
+        for dependency in task_dependencies {
+            visit_dependencies(dependency, dependencies, visited, order);
+        }
+    }
+    order.push(task_name.to_string());
 }

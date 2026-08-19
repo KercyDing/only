@@ -168,6 +168,71 @@ fn assigns_parallel_dependency_groups_to_shared_stage() {
 }
 
 #[test]
+fn preserves_dependency_declaration_order() {
+    let compiled = compile_document(
+        "group front {\n\
+         a():\n             true\n\
+         b() & a:\n             true\n\
+         c() & b:\n             true\n\
+         run() & c:\n             true\n\
+         }\n\
+         group back {\n\
+         a():\n             true\n\
+         run() & a:\n             true\n\
+         }\n\
+         ci() & (front.run, back.run):\n             true\n",
+    );
+    let plan = build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "ci",
+            args: vec![],
+            overrides: vec![],
+        },
+    );
+
+    let names = plan
+        .nodes
+        .iter()
+        .map(|node| node.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        names,
+        [
+            "front.a",
+            "front.b",
+            "front.c",
+            "front.run",
+            "back.a",
+            "back.run",
+            "ci",
+        ]
+    );
+}
+
+#[test]
+fn lists_shared_dependency_once() {
+    let compiled = compile_document(
+        "prepare():\n    true\nfront() & prepare:\n    true\nback() & prepare:\n    true\nci() & (front, back):\n    true\n",
+    );
+    let plan = build_execution_plan(
+        &compiled.document,
+        Invocation::Task {
+            target: "ci",
+            args: vec![],
+            overrides: vec![],
+        },
+    );
+
+    let names = plan
+        .nodes
+        .iter()
+        .map(|node| node.name.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["prepare", "front", "back", "ci"]);
+}
+
+#[test]
 fn carries_shell_and_default_params_into_plan() {
     let compiled = compile_document(
         "!version 0.4\n!shell bash\n\
