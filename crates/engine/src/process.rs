@@ -49,6 +49,7 @@ pub(crate) struct OutputChunk {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TerminalBackend {
     Pipe,
+    MergedPipe,
     Pty,
 }
 
@@ -62,6 +63,20 @@ pub(crate) struct TerminalContext {
 impl TerminalContext {
     pub(crate) fn is_cancelled(&self) -> bool {
         self.cancelled.load(Ordering::SeqCst)
+    }
+
+    pub(crate) fn for_captured_output(&self) -> Self {
+        Self {
+            // A PTY control stream is only meaningful while it is attached to
+            // its terminal. Replaying it later can erase or omit earlier logs.
+            // Merge both streams so their write order survives capture too.
+            backend: match self.backend {
+                TerminalBackend::Pty => TerminalBackend::MergedPipe,
+                TerminalBackend::Pipe | TerminalBackend::MergedPipe => self.backend,
+            },
+            size: self.size,
+            cancelled: self.cancelled.clone(),
+        }
     }
 
     #[cfg(test)]
@@ -183,10 +198,27 @@ fn run_with_system_shell_pipe(
         .current_dir(working_dir)
         .arg(arg)
         .arg(command)
-        .envs(build_command_env())
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
+        .envs(build_command_env(terminal))
+        .stdin(Stdio::null());
+    let merged_reader = if terminal.backend == TerminalBackend::MergedPipe {
+        let (reader, writer) = std::io::pipe().map_err(|source| EngineError::Io {
+            message: "failed to create shell output pipe",
+            path: program.to_string(),
+            source,
+        })?;
+        let stderr_writer = writer.try_clone().map_err(|source| EngineError::Io {
+            message: "failed to clone shell output pipe",
+            path: program.to_string(),
+            source,
+        })?;
+        process
+            .stdout(Stdio::from(writer))
+            .stderr(Stdio::from(stderr_writer));
+        Some(reader)
+    } else {
+        process.stdout(Stdio::piped()).stderr(Stdio::piped());
+        None
+    };
     configure_process_group(&mut process);
 
     let mut child = process.spawn().map_err(|source| EngineError::Io {
@@ -194,20 +226,27 @@ fn run_with_system_shell_pipe(
         path: program.to_string(),
         source,
     })?;
+    drop(process);
     let process_tree = ProcessTree::attach_pipe(&mut child, program)?;
 
-    let stdout = child.stdout.take().ok_or_else(|| {
-        EngineError::Runtime(format!("failed to capture stdout for shell '{program}'"))
-    })?;
-    let stderr = child.stderr.take().ok_or_else(|| {
-        EngineError::Runtime(format!("failed to capture stderr for shell '{program}'"))
-    })?;
-
-    let stdout_handle = spawn_output_reader(stdout, OutputStream::Stdout, output.clone());
-    let stderr_handle = spawn_output_reader(stderr, OutputStream::Stderr, output);
+    let output_handles = if let Some(reader) = merged_reader {
+        vec![spawn_output_reader(reader, OutputStream::Stdout, output)]
+    } else {
+        let stdout = child.stdout.take().ok_or_else(|| {
+            EngineError::Runtime(format!("failed to capture stdout for shell '{program}'"))
+        })?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            EngineError::Runtime(format!("failed to capture stderr for shell '{program}'"))
+        })?;
+        vec![
+            spawn_output_reader(stdout, OutputStream::Stdout, output.clone()),
+            spawn_output_reader(stderr, OutputStream::Stderr, output),
+        ]
+    };
     let status = wait_for_pipe_child(&mut child, &process_tree, program, &terminal.cancelled)?;
-    join_output_reader(stdout_handle)?;
-    join_output_reader(stderr_handle)?;
+    for handle in output_handles {
+        join_output_reader(handle)?;
+    }
 
     Ok(command_status(status))
 }
@@ -241,7 +280,7 @@ fn run_with_system_shell_pty(
     builder.arg(arg);
     builder.arg(command);
     builder.cwd(working_dir);
-    for (name, value) in build_command_env() {
+    for (name, value) in build_command_env(terminal) {
         builder.env(name, value);
     }
     let mut child = match pair.slave.spawn_command(builder) {
@@ -496,14 +535,14 @@ pub(crate) fn run_with_system_shell_inherit(
     arg: &str,
     command: &str,
     working_dir: &Path,
-    _terminal: &TerminalContext,
+    terminal: &TerminalContext,
 ) -> Result<CommandStatus, EngineError> {
     let mut process = Command::new(program);
     process
         .current_dir(working_dir)
         .arg(arg)
         .arg(command)
-        .envs(build_command_env())
+        .envs(build_command_env(terminal))
         .stdin(Stdio::inherit())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
@@ -517,7 +556,7 @@ pub(crate) fn run_with_system_shell_inherit(
     #[cfg(windows)]
     let status = {
         let process_tree = ProcessTree::attach_pipe(&mut child, program)?;
-        wait_for_pipe_child(&mut child, &process_tree, program, &_terminal.cancelled)?
+        wait_for_pipe_child(&mut child, &process_tree, program, &terminal.cancelled)?
     };
     #[cfg(not(windows))]
     let status = child.wait().map_err(|source| EngineError::Io {
@@ -529,12 +568,30 @@ pub(crate) fn run_with_system_shell_inherit(
     Ok(command_status(status))
 }
 
-pub(crate) fn build_command_env() -> HashMap<OsString, OsString> {
+pub(crate) fn build_command_env(terminal: &TerminalContext) -> HashMap<OsString, OsString> {
     let mut env_vars = std::env::vars_os().collect::<HashMap<_, _>>();
     env_vars
         .entry(OsString::from("INIT_CWD"))
         .or_insert_with(|| std::env::current_dir().unwrap_or_default().into_os_string());
+    if terminal.backend == TerminalBackend::MergedPipe {
+        enable_color(&mut env_vars);
+    }
     env_vars
+}
+
+fn enable_color(env_vars: &mut HashMap<OsString, OsString>) {
+    if env_vars.contains_key(std::ffi::OsStr::new("NO_COLOR")) {
+        return;
+    }
+    for (name, value) in [
+        ("CARGO_TERM_COLOR", "always"),
+        ("CLICOLOR_FORCE", "1"),
+        ("FORCE_COLOR", "1"),
+    ] {
+        env_vars
+            .entry(OsString::from(name))
+            .or_insert_with(|| OsString::from(value));
+    }
 }
 
 pub(crate) fn spawn_output_reader<R>(
@@ -607,13 +664,15 @@ fn platform_exit_reason(code: i32) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+    use std::ffi::OsString;
     use std::io::IsTerminal;
     #[cfg(unix)]
     use std::sync::mpsc;
     #[cfg(unix)]
     use std::time::{Duration, Instant};
 
-    use super::{CommandStatus, TerminalBackend, terminal_context};
+    use super::{CommandStatus, TerminalBackend, enable_color, terminal_context};
     #[cfg(unix)]
     use super::{OutputStream, TerminalContext, run_with_system_shell};
 
@@ -807,5 +866,68 @@ mod tests {
         }
 
         assert_eq!(terminal_context().backend, TerminalBackend::Pipe);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn captured_output_uses_merged_pipe() {
+        let terminal = TerminalContext::pty();
+        let captured = terminal.for_captured_output();
+
+        assert_eq!(captured.backend, TerminalBackend::MergedPipe);
+        terminal.cancel();
+        assert!(captured.is_cancelled());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn merged_pipe_preserves_order() {
+        let (output_tx, output_rx) = mpsc::channel();
+        let terminal = TerminalContext::pty().for_captured_output();
+        let status = run_with_system_shell(
+            "sh",
+            "-c",
+            "printf first; printf second >&2; printf third",
+            std::path::Path::new("."),
+            output_tx,
+            &terminal,
+        )
+        .expect("merged pipe command should run");
+        let output = output_rx
+            .into_iter()
+            .flat_map(|chunk| chunk.bytes)
+            .collect::<Vec<_>>();
+
+        assert_eq!(status, CommandStatus::Success);
+        assert_eq!(output, b"firstsecondthird");
+    }
+
+    #[test]
+    fn merged_pipe_enables_color() {
+        let mut env_vars = HashMap::new();
+        enable_color(&mut env_vars);
+
+        assert_eq!(
+            env_vars.get(std::ffi::OsStr::new("CARGO_TERM_COLOR")),
+            Some(&OsString::from("always"))
+        );
+        assert_eq!(
+            env_vars.get(std::ffi::OsStr::new("CLICOLOR_FORCE")),
+            Some(&OsString::from("1"))
+        );
+        assert_eq!(
+            env_vars.get(std::ffi::OsStr::new("FORCE_COLOR")),
+            Some(&OsString::from("1"))
+        );
+    }
+
+    #[test]
+    fn no_color_disables_forced_color() {
+        let mut env_vars = HashMap::from([(OsString::from("NO_COLOR"), OsString::new())]);
+        enable_color(&mut env_vars);
+
+        assert!(!env_vars.contains_key(std::ffi::OsStr::new("CARGO_TERM_COLOR")));
+        assert!(!env_vars.contains_key(std::ffi::OsStr::new("CLICOLOR_FORCE")));
+        assert!(!env_vars.contains_key(std::ffi::OsStr::new("FORCE_COLOR")));
     }
 }

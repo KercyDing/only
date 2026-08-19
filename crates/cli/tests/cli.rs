@@ -1001,6 +1001,48 @@ ci() & (fmt, test):
 }
 
 #[test]
+fn buffered_prefix_precedes_streamed_output() {
+    let _cwd_lock = cwd_lock();
+    let temp_dir = TempDir::new("grouped-parallel-prefix-order");
+    fs::write(
+        temp_dir.path().join("Onlyfile"),
+        r#"first():
+    sleep 0.15
+    echo "first end"
+
+second():
+    echo "second start"
+    sleep 0.30
+    echo "second end"
+
+ci() & (first, second)
+"#,
+    )
+    .expect("Onlyfile should be written");
+
+    let output = Command::new(cli_binary_path())
+        .arg("ci")
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("CLI process should run");
+    let stdout = String::from_utf8(output.stdout).expect("stdout should be valid UTF-8");
+    let plain_stdout = strip_ansi(&stdout);
+    let first_end = plain_stdout
+        .find("first end")
+        .expect("first task output should exist");
+    let second_start = plain_stdout
+        .find("second start")
+        .expect("second task prefix should exist");
+    let second_end = plain_stdout
+        .find("second end")
+        .expect("second task suffix should exist");
+
+    assert_eq!(output.status.code(), Some(0));
+    assert!(first_end < second_start);
+    assert!(second_start < second_end);
+}
+
+#[test]
 fn grouped_parallel_output_streams_before_stage_completion() {
     let _cwd_lock = cwd_lock();
     let temp_dir = TempDir::new("grouped-parallel-streaming");

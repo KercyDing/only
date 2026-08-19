@@ -143,7 +143,7 @@ fn run_with_deno_task_shell_pipe(
     let parsed = deno_task_shell::parser::parse(command).map_err(|error| {
         EngineError::Runtime(format!("failed to parse command `{command}`: {error}"))
     })?;
-    let env_vars = build_command_env();
+    let env_vars = build_command_env(terminal);
     let kill_signal = deno_task_shell::KillSignal::default();
     let state = deno_task_shell::ShellState::new(
         env_vars,
@@ -152,17 +152,28 @@ fn run_with_deno_task_shell_pipe(
         kill_signal.clone(),
     );
     let (stdout_reader, stdout_writer) = deno_task_shell::pipe();
-    let (stderr_reader, stderr_writer) = deno_task_shell::pipe();
-    let stdout_handle = spawn_output_reader(
-        ShellPipeReaderAdapter(stdout_reader),
-        crate::process::OutputStream::Stdout,
-        output.clone(),
-    );
-    let stderr_handle = spawn_output_reader(
-        ShellPipeReaderAdapter(stderr_reader),
-        crate::process::OutputStream::Stderr,
-        output,
-    );
+    let (stderr_writer, output_handles) =
+        if terminal.backend == crate::process::TerminalBackend::MergedPipe {
+            let handle = spawn_output_reader(
+                ShellPipeReaderAdapter(stdout_reader),
+                crate::process::OutputStream::Stdout,
+                output,
+            );
+            (stdout_writer.clone(), vec![handle])
+        } else {
+            let (stderr_reader, stderr_writer) = deno_task_shell::pipe();
+            let stdout_handle = spawn_output_reader(
+                ShellPipeReaderAdapter(stdout_reader),
+                crate::process::OutputStream::Stdout,
+                output.clone(),
+            );
+            let stderr_handle = spawn_output_reader(
+                ShellPipeReaderAdapter(stderr_reader),
+                crate::process::OutputStream::Stderr,
+                output,
+            );
+            (stderr_writer, vec![stdout_handle, stderr_handle])
+        };
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -187,8 +198,9 @@ fn run_with_deno_task_shell_pipe(
             }
         }
     });
-    join_output_reader(stdout_handle)?;
-    join_output_reader(stderr_handle)?;
+    for handle in output_handles {
+        join_output_reader(handle)?;
+    }
 
     Ok(CommandStatus::from_code(status))
 }
@@ -230,7 +242,7 @@ fn run_with_deno_task_shell_pty(
 
     let kill_signal = deno_task_shell::KillSignal::default();
     let state = deno_task_shell::ShellState::new(
-        build_command_env(),
+        build_command_env(terminal),
         working_dir.to_path_buf(),
         HashMap::<String, Rc<dyn deno_task_shell::ShellCommand>>::new(),
         kill_signal.clone(),
@@ -277,7 +289,7 @@ fn run_with_deno_task_shell_inherit(
     })?;
     let kill_signal = deno_task_shell::KillSignal::default();
     let state = deno_task_shell::ShellState::new(
-        build_command_env(),
+        build_command_env(terminal),
         working_dir.to_path_buf(),
         HashMap::<String, Rc<dyn deno_task_shell::ShellCommand>>::new(),
         kill_signal.clone(),
@@ -384,5 +396,55 @@ mod tests {
 
         assert_eq!(status, crate::process::CommandStatus::Success);
         assert_eq!(output, b"tty");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deno_merged_pipe_preserves_order() {
+        let (output_tx, output_rx) = mpsc::channel();
+        let working_dir = std::env::current_dir().expect("current directory should be available");
+        let terminal = TerminalContext::pty().for_captured_output();
+        let status = super::run_with_deno_task_shell(
+            "printf first; printf second >&2; printf third",
+            &working_dir,
+            output_tx,
+            &terminal,
+        )
+        .expect("Deno merged pipe command should run");
+        let output = output_rx
+            .into_iter()
+            .flat_map(|chunk| chunk.bytes)
+            .collect::<Vec<_>>();
+
+        assert_eq!(status, crate::process::CommandStatus::Success);
+        assert_eq!(output, b"firstsecondthird");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deno_merged_pipe_preserves_large_output() {
+        let (output_tx, output_rx) = mpsc::channel();
+        let working_dir = std::env::current_dir().expect("current directory should be available");
+        let terminal = TerminalContext::pty().for_captured_output();
+        let status = super::run_with_deno_task_shell(
+            "sh -c 'i=1; while test $i -le 2000; do printf \"line-%04d\\n\" $i >&2; i=$((i + 1)); done'",
+            &working_dir,
+            output_tx,
+            &terminal,
+        )
+        .expect("Deno merged pipe command should run");
+        let output = String::from_utf8(
+            output_rx
+                .into_iter()
+                .flat_map(|chunk| chunk.bytes)
+                .collect::<Vec<_>>(),
+        )
+        .expect("command output should be UTF-8");
+        let expected = (1..=2000)
+            .map(|index| format!("line-{index:04}\n"))
+            .collect::<String>();
+
+        assert_eq!(status, crate::process::CommandStatus::Success);
+        assert_eq!(output, expected);
     }
 }

@@ -228,6 +228,17 @@ pub fn run_plan_with_options(
                 task_errors[current_index] = task_error;
                 current_index += 1;
             }
+
+            if current_index < total_tasks && !buffers[current_index].is_empty() {
+                print_task_progress(
+                    current_index,
+                    total_tasks,
+                    plan,
+                    &mut progress_printed,
+                    options.quiet,
+                )?;
+                buffers[current_index].flush()?;
+            }
         }
         drop(event_tx);
         for handle in handles {
@@ -252,6 +263,7 @@ fn run_node(
     terminal: TerminalContext,
     event_tx: mpsc::Sender<ExecutionEvent>,
 ) -> Result<(), EngineError> {
+    let terminal = terminal.for_captured_output();
     let (output_tx, output_rx) = mpsc::channel::<OutputChunk>();
     let forwarder = thread::spawn({
         let event_tx = event_tx.clone();
@@ -477,6 +489,10 @@ struct TaskOutputBuffer {
 }
 
 impl TaskOutputBuffer {
+    fn is_empty(&self) -> bool {
+        self.chunks.is_empty() && self.spill.is_none()
+    }
+
     fn push(&mut self, chunk: OutputChunk) -> Result<(), EngineError> {
         if let Some(spill) = &mut self.spill {
             return spill.write_chunk(&chunk);
