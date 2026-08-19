@@ -7,7 +7,7 @@ use text_size::TextSize;
 #[test]
 fn builds_document_symbols_for_namespaces_and_tasks() {
     let compiled = compile_document(
-        "# Developer commands.\n[dev]\n# Start the app.\nserve(port=\"3000\"):\n    echo {{port}}\n",
+        "# Developer commands.\ngroup dev {\n# Start the app.\nserve(port=\"3000\"):\n    echo {{port}}\n}\n",
     );
 
     let symbols = document_symbols(&compiled);
@@ -23,8 +23,8 @@ fn builds_document_symbols_for_namespaces_and_tasks() {
 #[test]
 fn builds_folding_ranges_for_namespace_and_task_blocks() {
     let source = concat!(
-        "!version 0.3\n",
-        "[dev] {\n",
+        "!version 0.4\n",
+        "group dev {\n",
         "    serve():\n",
         "        echo one\n",
         "        echo two\n",
@@ -45,7 +45,7 @@ fn builds_folding_ranges_for_namespace_and_task_blocks() {
 
     assert_eq!(
         usize::from(namespace.range.start()),
-        source.find("[dev]").expect("namespace should exist")
+        source.find("group dev").expect("namespace should exist")
     );
     assert_eq!(usize::from(namespace.range.end()), close_end);
     assert!(
@@ -58,7 +58,7 @@ fn builds_folding_ranges_for_namespace_and_task_blocks() {
 #[test]
 fn builds_folding_range_for_command_block() {
     let compiled = compile_document(
-        "!version 0.2\ntask():\n    | if true; then\n    |     echo ok\n    | fi\n",
+        "!version 0.4\ntask():\n    | if true; then\n    |     echo ok\n    | fi\n",
     );
 
     assert!(

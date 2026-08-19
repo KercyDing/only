@@ -65,8 +65,6 @@ enum ItemKind {
     Directive,
     Comment,
     Metadata,
-    LegacyNamespace,
-    NamespaceOpen,
     GroupOpen,
     NamespaceClose,
     Task,
@@ -154,13 +152,7 @@ impl<'a> DocumentFormatter<'a> {
     }
 
     fn push_item(&mut self, kind: ItemKind, text: &str) {
-        if matches!(
-            kind,
-            ItemKind::LegacyNamespace
-                | ItemKind::NamespaceOpen
-                | ItemKind::GroupOpen
-                | ItemKind::NamespaceClose
-        ) {
+        if matches!(kind, ItemKind::GroupOpen | ItemKind::NamespaceClose) {
             self.in_braced_namespace = false;
         }
         if !self.output.is_empty() && !self.output.ends_with('\n') {
@@ -172,7 +164,7 @@ impl<'a> DocumentFormatter<'a> {
         let consecutive_directives =
             self.previous == Some(ItemKind::Directive) && kind == ItemKind::Directive;
         let namespace_boundary =
-            self.previous == Some(ItemKind::NamespaceOpen) || kind == ItemKind::NamespaceClose;
+            self.previous == Some(ItemKind::GroupOpen) || kind == ItemKind::NamespaceClose;
         let metadata_boundary =
             self.previous == Some(ItemKind::Metadata) || kind == ItemKind::Metadata;
         if !self.output.is_empty()
@@ -193,7 +185,7 @@ impl<'a> DocumentFormatter<'a> {
             self.output.push_str(text);
         }
         self.output.push('\n');
-        if matches!(kind, ItemKind::NamespaceOpen | ItemKind::GroupOpen) {
+        if kind == ItemKind::GroupOpen {
             self.in_braced_namespace = true;
         }
         self.previous = Some(kind);
@@ -242,15 +234,7 @@ fn format_top_level_node(node: SyntaxNode, source: &str) -> Result<(ItemKind, St
                 let name = namespace
                     .name()
                     .ok_or_else(|| "invalid namespace".to_owned())?;
-                if namespace.has_open_brace() {
-                    if namespace.is_group() {
-                        Ok((ItemKind::GroupOpen, format!("group {name} {{")))
-                    } else {
-                        Ok((ItemKind::NamespaceOpen, format!("[{name}] {{")))
-                    }
-                } else {
-                    Ok((ItemKind::LegacyNamespace, format!("[{name}]")))
-                }
+                Ok((ItemKind::GroupOpen, format!("group {name} {{")))
             }
         }
         SyntaxKind::TaskDecl => {
@@ -284,11 +268,11 @@ fn needs_structural_blank(previous: Option<ItemKind>, current: ItemKind) -> bool
     let Some(previous) = previous else {
         return false;
     };
-    if current == ItemKind::NamespaceClose || previous == ItemKind::NamespaceOpen {
+    if current == ItemKind::NamespaceClose {
         return false;
     }
     if previous == ItemKind::GroupOpen {
-        return true;
+        return false;
     }
     if previous == ItemKind::Metadata || previous == ItemKind::Comment {
         return false;
@@ -296,13 +280,7 @@ fn needs_structural_blank(previous: Option<ItemKind>, current: ItemKind) -> bool
     if current == ItemKind::Metadata || current == ItemKind::Comment {
         return !matches!(previous, ItemKind::Metadata | ItemKind::Comment);
     }
-    if matches!(
-        previous,
-        ItemKind::LegacyNamespace | ItemKind::NamespaceClose
-    ) || matches!(
-        current,
-        ItemKind::LegacyNamespace | ItemKind::NamespaceOpen | ItemKind::GroupOpen
-    ) {
+    if matches!(previous, ItemKind::NamespaceClose) || matches!(current, ItemKind::GroupOpen) {
         return true;
     }
     if previous == ItemKind::Directive && current == ItemKind::Directive {

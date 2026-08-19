@@ -35,7 +35,7 @@ fn reports_duplicate_directives() {
 
 #[test]
 fn reports_duplicate_global_variables() {
-    let compiled = compile_document("!version 0.3\n!var mode = \"one\"\n!var mode = \"two\"\n");
+    let compiled = compile_document("!version 0.4\n!var mode = \"one\"\n!var mode = \"two\"\n");
 
     assert!(
         compiled
@@ -47,7 +47,7 @@ fn reports_duplicate_global_variables() {
 
 #[test]
 fn reports_close_without_namespace() {
-    let compiled = compile_document("!version 0.3\n}\n");
+    let compiled = compile_document("!version 0.4\n}\n");
 
     assert!(
         compiled
@@ -58,69 +58,9 @@ fn reports_close_without_namespace() {
 }
 
 #[test]
-fn requires_namespace_close_in_version_0_3() {
-    let compiled = compile_document("!version 0.3\n[front] {\nrun():\n    true\n");
-
-    assert!(
-        compiled
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code.as_str() == "namespace.missing-close")
-    );
-}
-
-#[test]
-fn requires_namespace_open_brace_in_version_0_3() {
-    let compiled = compile_document("!version 0.3\n[front]\nrun():\n    true\n");
-
-    assert!(
-        compiled
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code.as_str() == "namespace.missing-open-brace")
-    );
-}
-
-#[test]
-fn rejects_implicit_namespace_switch() {
-    let compiled = compile_document(
-        "!version 0.3\n[front] {\ncheck():\n    true\n[back] {\ncheck():\n    true\n}\n",
-    );
-    let missing_close = compiled
-        .diagnostics
-        .iter()
-        .filter(|diagnostic| diagnostic.code.as_str() == "namespace.missing-close")
-        .collect::<Vec<_>>();
-
-    assert_eq!(missing_close.len(), 1);
-    assert!(missing_close[0].message.contains("'front'"));
-}
-
-#[test]
-fn keeps_legacy_namespaces_compatible_before_version_0_3() {
-    let compiled = compile_document("[front]\nrun():\n    true\n");
-
-    assert!(compiled.diagnostics.is_empty());
-}
-
-#[test]
-fn fallback_shell_requires_version_0_3() {
-    let unversioned = compile_document("build() shell~=bash:\n    true\n");
-    let versioned = compile_document("!version 0.3\nbuild() shell~=bash:\n    true\n");
-
-    assert!(
-        unversioned
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code.as_str() == "semantic.engineering-version")
-    );
-    assert!(versioned.diagnostics.is_empty());
-}
-
-#[test]
 fn suggests_required_shell() {
     for shell in ["sh", "deno", "powershell"] {
-        let source = format!("!version 0.3\nbuild() shell~={shell}:\n    true\n");
+        let source = format!("!version 0.4\nbuild() shell~={shell}:\n    true\n");
         let compiled = compile_document(&source);
         let diagnostic = compiled
             .diagnostics
@@ -137,7 +77,7 @@ fn suggests_required_shell() {
 
 #[test]
 fn rejects_unknown_shell() {
-    let compiled = compile_document("!version 0.3\nbuild() shell~=pw:\n    true\n");
+    let compiled = compile_document("!version 0.4\nbuild() shell~=pw:\n    true\n");
 
     let diagnostic = compiled
         .diagnostics
@@ -146,7 +86,7 @@ fn rejects_unknown_shell() {
         .expect("unknown shell should be rejected");
     assert!(diagnostic.message.contains("shell 'pw' is not supported"));
     assert!(diagnostic.message.contains("'pwsh'"));
-    let start = "!version 0.3\nbuild() ".len();
+    let start = "!version 0.4\nbuild() ".len();
     assert_eq!(
         usize::from(diagnostic.primary_range.start()),
         start,
@@ -223,18 +163,6 @@ fn reports_slice_parameter_default_value() {
 }
 
 #[test]
-fn metadata_needs_version_0_4() {
-    let compiled = compile_document("[pass] Done\nbuild():\n    true\n");
-
-    assert!(
-        compiled
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code.as_str() == "semantic.result-metadata-version")
-    );
-}
-
-#[test]
 fn metadata_interpolation_only_uses_global_variables() {
     let compiled = compile_document(
         "!version 0.4\n!var output = \"dist\"\n[pass] wrote {{output}}\n[fail] {{name}} failed\nbuild(name):\n    true\n",
@@ -299,16 +227,4 @@ fn blank_line_detaches_metadata() {
     let compiled = compile_document("!version 0.4\n[help] Detached\n\nbuild():\n    true\n");
 
     assert!(compiled.document.tasks[0].metadata.help.is_none());
-}
-
-#[test]
-fn group_requires_version_0_4() {
-    let compiled = compile_document("!version 0.3\ngroup dev {\n    build():\n        true\n}\n");
-
-    assert!(
-        compiled
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code.as_str() == "semantic.group-version")
-    );
 }

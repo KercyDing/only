@@ -2,7 +2,8 @@ use only_syntax::{DiagnosticCode, ParseResultExt, SyntaxKind, parse};
 
 #[test]
 fn parses_document_with_directive_task_and_namespace() {
-    let parsed = parse("!shell deno\nbuild():\n    echo hi\n[dev]\nserve():\n    cargo run\n");
+    let parsed =
+        parse("!shell deno\nbuild():\n    echo hi\ngroup dev {\nserve():\n    cargo run\n}\n");
     let kinds: Vec<_> = parsed.root_children().map(|node| node.kind()).collect();
 
     assert!(kinds.contains(&SyntaxKind::Directive));
@@ -14,8 +15,8 @@ fn parses_document_with_directive_task_and_namespace() {
 #[test]
 fn multiline_task_header_inside_namespace() {
     let parsed = parse(concat!(
-        "!version 0.3\n",
-        "[back] {\n",
+        "!version 0.4\n",
+        "group back {\n",
         "    ci()\n",
         "        & fmt\n",
         "        & check\n",
@@ -89,7 +90,7 @@ fn recovers_after_broken_task_header() {
 
 #[test]
 fn recovers_after_unexpected_top_level_token() {
-    let parsed = parse("@\n[dev]\nserve():\n    cargo run\n");
+    let parsed = parse("@\ngroup dev {\nserve():\n    cargo run\n}\n");
     let kinds: Vec<_> = parsed.root_children().map(|node| node.kind()).collect();
 
     assert!(kinds.contains(&SyntaxKind::Error));
@@ -114,8 +115,9 @@ fn keeps_parsing_after_comments_and_blank_lines() {
 
 #[test]
 fn parses_task_metadata_without_namespace_conflicts() {
-    let parsed =
-        parse("[help] Build the project\n[unknown] ignored text\nbuild():\n    true\n[dev] {\n}\n");
+    let parsed = parse(
+        "[help] Build the project\n[unknown] ignored text\nbuild():\n    true\ngroup dev {\n}\n",
+    );
     let kinds = parsed
         .root_children()
         .map(|node| node.kind())
@@ -145,42 +147,9 @@ fn top_level_comment_ends_previous_task_body() {
 }
 
 #[test]
-fn reports_malformed_namespace_header_and_recovers() {
-    let parsed = parse("[dev\nserve():\n    cargo run\n");
-    let task_count = parsed
-        .root_children()
-        .filter(|node| node.kind() == SyntaxKind::TaskDecl)
-        .count();
-
-    assert_eq!(task_count, 1);
-    assert!(
-        parsed
-            .diagnostics()
-            .iter()
-            .any(|diag| diag.code == DiagnosticCode::new("parse.malformed-namespace-header"))
-    );
-}
-
-#[test]
-fn reports_inline_comment_in_namespace_header() {
-    let parsed = parse("[dev] // comment\nserve():\n    cargo run\n");
-    let task_count = parsed
-        .root_children()
-        .filter(|node| node.kind() == SyntaxKind::TaskDecl)
-        .count();
-
-    assert_eq!(task_count, 1);
-    assert!(
-        parsed
-            .diagnostics()
-            .iter()
-            .any(|diag| diag.code == DiagnosticCode::new("parse.malformed-namespace-header"))
-    );
-}
-
-#[test]
 fn treats_indented_namespace_braces_as_structure() {
-    let parsed = parse("!version 0.3\n    [dev] {\nrun():\n    true\n    }\nroot():\n    true\n");
+    let parsed =
+        parse("!version 0.4\n    group dev {\nrun():\n    true\n    }\nroot():\n    true\n");
     let namespaces = parsed
         .root_children()
         .filter(|node| node.kind() == SyntaxKind::NamespaceBlock)
@@ -379,16 +348,6 @@ fn parses_arguments_in_parallel_dependencies() {
 #[test]
 fn rejects_non_string_dependency_arguments() {
     let parsed = parse("build(profile):\n    true\nci() & build(dev):\n    true\n");
-
-    assert!(parsed
-        .diagnostics()
-        .iter()
-        .any(|diagnostic| diagnostic.code == DiagnosticCode::new("parse.malformed-task-header")));
-}
-
-#[test]
-fn rejects_old_fallback_shell_operator() {
-    let parsed = parse("build() shell?=bash:\n    true\n");
 
     assert!(parsed
         .diagnostics()

@@ -16,7 +16,7 @@ fn skips_helper_task_when_picking_default_in_memory_target() {
 
 #[test]
 fn compiles_namespaced_first_task_into_plan() {
-    let compiled = compile_for_cli("[dev]\nserve():\n    echo ok\n");
+    let compiled = compile_for_cli("group dev {\nserve():\n    echo ok\n}\n");
     assert!(compiled.diagnostics.is_empty());
     assert_eq!(compiled.plan.nodes[0].name, "dev.serve");
 }
@@ -37,7 +37,7 @@ fn compiles_selected_namespaced_task_with_positional_arg() {
         task_path: vec!["dev".into(), "serve".into(), "true".into()],
         parameter_overrides: vec![],
     };
-    let compiled = compile_for_cli_input("[dev]\nserve(flag):\n    {{flag}}\n", &cli)
+    let compiled = compile_for_cli_input("group dev {\nserve(flag):\n    {{flag}}\n}\n", &cli)
         .expect("semantic CLI compile should succeed");
 
     assert!(compiled.diagnostics.is_empty());
@@ -116,7 +116,7 @@ fn rejects_namespace_without_task_target_for_semantic_cli_compile() {
         task_path: vec!["dev".into()],
         parameter_overrides: vec![],
     };
-    let error = compile_for_cli_input("[dev]\nserve():\n    echo ok\n", &cli)
+    let error = compile_for_cli_input("group dev {\nserve():\n    echo ok\n}\n", &cli)
         .expect_err("namespace target should fail");
 
     assert_eq!(error.to_string(), "choose a task in namespace 'dev'");

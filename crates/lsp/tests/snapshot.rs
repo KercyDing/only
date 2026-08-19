@@ -81,7 +81,7 @@ fn returns_directive_hover_for_keyword_only() {
 
 #[test]
 fn describes_global_variable() {
-    let source = "!version 0.3\n!var profile = \"release\"\n";
+    let source = "!version 0.4\n!var profile = \"release\"\n";
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
     let offset = TextSize::from(source.find("var").expect("directive should exist") as u32);
 
@@ -132,7 +132,7 @@ fn describes_condition_operator() {
 
 #[test]
 fn returns_shell_operator_hover() {
-    let source = "!version 0.3\nbuild() shell~=pwsh:\n    echo ok\n";
+    let source = "!version 0.4\nbuild() shell~=pwsh:\n    echo ok\n";
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
     let operator_offset =
         TextSize::from(source.find("shell~=").expect("shell operator should exist") as u32);
@@ -167,7 +167,7 @@ fn describes_required_shell() {
 
 #[test]
 fn describes_invalid_fallback() {
-    let source = "!version 0.3\nbuild() shell~=sh:\n    echo ok\n";
+    let source = "!version 0.4\nbuild() shell~=sh:\n    echo ok\n";
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
     let offset = TextSize::from(source.find("shell~=").expect("operator should exist") as u32);
 
@@ -191,11 +191,35 @@ fn returns_interpolation_hover() {
 
     assert_eq!(hover.kind, LspHoverKind::Interpolation);
     assert_eq!(hover.signature, "{{name}}");
+    assert_eq!(
+        hover.docs.as_deref(),
+        Some("Replaces this variable at runtime.\n\nDefault: `dev`")
+    );
+}
+
+#[test]
+fn shows_global_interpolation_default() {
+    let source =
+        "!var cargo_flags = \"--all-targets\"\nbuild():\n    cargo check {{cargo_flags}}\n";
+    let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
+    let offset = TextSize::from(
+        source
+            .find("{{cargo_flags}}")
+            .expect("interpolation should exist") as u32,
+    );
+
+    let hover = hover(&snapshot, offset).expect("hover should exist");
+
+    assert_eq!(hover.kind, LspHoverKind::Interpolation);
+    assert_eq!(
+        hover.docs.as_deref(),
+        Some("Replaces this variable at runtime.\n\nDefault: `--all-targets`")
+    );
 }
 
 #[test]
 fn returns_command_block_hover_with_shell() {
-    let source = "!version 0.2\n!shell bash\nbuild():\n    | echo ok\n    | echo done\n";
+    let source = "!version 0.4\n!shell bash\nbuild():\n    | echo ok\n    | echo done\n";
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
     let offset = TextSize::from(source.find("| echo ok").expect("block should exist") as u32);
 
@@ -295,7 +319,7 @@ fn describes_parallel_dependency_group() {
 fn resolves_local_namespace_dependency_hover() {
     let source = concat!(
         "!version 0.4\n",
-        "[dev] {\n",
+        "group dev {\n",
         "[help] Build assets.\n",
         "build():\n",
         "    cargo build\n",

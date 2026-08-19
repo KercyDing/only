@@ -27,7 +27,6 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
     let mut saw_declaration = false;
     let mut saw_version = false;
     let mut left_directive_region = false;
-    let mut uses_braced_namespaces = false;
 
     for node in document.syntax().children() {
         if let Some(directive) = DirectiveNode::cast(node.clone()) {
@@ -72,7 +71,6 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
 
         if let Some(namespace) = NamespaceNode::cast(node.clone()) {
             left_directive_region = true;
-            uses_braced_namespaces |= namespace.is_close() || namespace.has_open_brace();
             if namespace.is_close() {
                 match current_namespace.as_deref() {
                     None => diagnostics.push(semantic_error(
@@ -139,7 +137,6 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
             directives,
             namespaces,
             tasks,
-            uses_braced_namespaces,
         },
         diagnostics,
     )
@@ -375,8 +372,6 @@ fn lower_namespace(
         metadata,
         range,
         close_range: None,
-        is_braced: node.has_open_brace(),
-        is_group: node.is_group(),
     })
 }
 

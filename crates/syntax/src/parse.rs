@@ -242,15 +242,7 @@ fn parse_namespace_item(input: &mut &[SyntaxKind]) -> ModalResult<ParsedTopLevel
         });
     }
 
-    token_kind(input, SyntaxKind::LBracket)?;
-    let has_open_brace = line_contains_kind(input, SyntaxKind::LBrace);
-    let malformed = legacy_namespace_is_malformed(input);
-    consume_line(input);
-    Ok(ParsedTopLevelItem::Namespace {
-        malformed,
-        is_close: false,
-        has_open_brace,
-    })
+    Err(ErrMode::Backtrack(ContextError::new()))
 }
 
 fn group_open_is_malformed(input: &[SyntaxKind]) -> bool {
@@ -273,42 +265,6 @@ fn group_open_is_malformed(input: &[SyntaxKind]) -> bool {
     index += 1;
     while line.get(index) == Some(&SyntaxKind::Whitespace) {
         index += 1;
-    }
-    if line.get(index) != Some(&SyntaxKind::LBrace) {
-        return true;
-    }
-    index += 1;
-    while line.get(index) == Some(&SyntaxKind::Whitespace) {
-        index += 1;
-    }
-    index != line.len()
-}
-
-fn legacy_namespace_is_malformed(input: &[SyntaxKind]) -> bool {
-    let line = input
-        .iter()
-        .copied()
-        .take_while(|kind| !matches!(kind, SyntaxKind::Newline | SyntaxKind::Eof))
-        .collect::<Vec<_>>();
-    let mut index = 0;
-    while line.get(index) == Some(&SyntaxKind::Whitespace) {
-        index += 1;
-    }
-    if line.get(index) == Some(&SyntaxKind::Ident) {
-        index += 1;
-    }
-    while line.get(index) == Some(&SyntaxKind::Whitespace) {
-        index += 1;
-    }
-    if line.get(index) != Some(&SyntaxKind::RBracket) {
-        return true;
-    }
-    index += 1;
-    while line.get(index) == Some(&SyntaxKind::Whitespace) {
-        index += 1;
-    }
-    if index == line.len() {
-        return false;
     }
     if line.get(index) != Some(&SyntaxKind::LBrace) {
         return true;

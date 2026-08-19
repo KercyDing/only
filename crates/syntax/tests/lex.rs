@@ -71,7 +71,7 @@ fn lexes_fallback_shell_operator() {
 
 #[test]
 fn lexes_namespace_braces() {
-    let tokens = lex("[dev] {\n}\n");
+    let tokens = lex("group dev {\n}\n");
     let kinds = tokens.iter().map(|token| token.kind).collect::<Vec<_>>();
 
     assert!(kinds.contains(&SyntaxKind::LBrace));

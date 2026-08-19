@@ -59,7 +59,7 @@ fn runs_plan_with_explicit_sh_shell() {
 #[test]
 fn keeps_state_inside_command_block() {
     let compiled = compile_document(
-        "!version 0.2\n!shell sh\nstate(value=\"inside\"):\n    | value={{value}}\n    | test \"$value\" = inside\n    test -z \"$value\"\n",
+        "!version 0.4\n!shell sh\nstate(value=\"inside\"):\n    | value={{value}}\n    | test \"$value\" = inside\n    test -z \"$value\"\n",
     );
     let plan = build_execution_plan(
         &compiled.document,
@@ -77,7 +77,7 @@ fn keeps_state_inside_command_block() {
 #[cfg(unix)]
 #[test]
 fn uses_shell_exit_status_for_whole_block() {
-    let compiled = compile_document("!version 0.2\n!shell sh\nstate():\n    | false\n    | true\n");
+    let compiled = compile_document("!version 0.4\n!shell sh\nstate():\n    | false\n    | true\n");
     let plan = build_execution_plan(
         &compiled.document,
         Invocation::Task {
@@ -94,7 +94,7 @@ fn uses_shell_exit_status_for_whole_block() {
 #[cfg(unix)]
 #[test]
 fn reports_command_block_failure() {
-    let compiled = compile_document("!version 0.2\n!shell sh\nfail():\n    | exit 7\n    true\n");
+    let compiled = compile_document("!version 0.4\n!shell sh\nfail():\n    | exit 7\n    true\n");
     let plan = build_execution_plan(
         &compiled.document,
         Invocation::Task {
@@ -115,7 +115,7 @@ fn reports_command_block_failure() {
 #[test]
 fn runs_bash_control_structure() {
     let compiled = compile_document(
-        "!version 0.2\ncount() shell=bash:\n    | total=0\n    | for value in 1 2 3; do\n    |     total=$((total + value))\n    | done\n    | test \"$total\" = 6\n",
+        "!version 0.4\ncount() shell=bash:\n    | total=0\n    | for value in 1 2 3; do\n    |     total=$((total + value))\n    | done\n    | test \"$total\" = 6\n",
     );
     let plan = build_execution_plan(
         &compiled.document,
@@ -134,7 +134,7 @@ fn runs_bash_control_structure() {
 #[test]
 fn handles_signal_exit_from_block() {
     let compiled =
-        compile_document("!version 0.2\nsignal() shell=sh:\n    | kill -INT $$\n    true\n");
+        compile_document("!version 0.4\nsignal() shell=sh:\n    | kill -INT $$\n    true\n");
     let plan = build_execution_plan(
         &compiled.document,
         Invocation::Task {
@@ -155,7 +155,7 @@ fn handles_signal_exit_from_block() {
 #[test]
 fn runs_blocks_in_parallel_stage() {
     let compiled = compile_document(
-        "!version 0.2\na() shell=sh:\n    | value=a\n    | test \"$value\" = a\nb() shell=sh:\n    | value=b\n    | test \"$value\" = b\nci() & (a, b):\n    true\n",
+        "!version 0.4\na() shell=sh:\n    | value=a\n    | test \"$value\" = a\nb() shell=sh:\n    | value=b\n    | test \"$value\" = b\nci() & (a, b):\n    true\n",
     );
     let plan = build_execution_plan(
         &compiled.document,
@@ -173,7 +173,7 @@ fn runs_blocks_in_parallel_stage() {
 #[test]
 fn reports_block_shell_start_failure() {
     let compiled =
-        compile_document("!version 0.2\nfail() shell=missing-shell:\n    | echo never\n");
+        compile_document("!version 0.4\nfail() shell=missing-shell:\n    | echo never\n");
     let plan = build_execution_plan(
         &compiled.document,
         Invocation::Task {
@@ -193,7 +193,7 @@ fn reports_block_shell_start_failure() {
 #[test]
 fn keeps_powershell_state_inside_block() {
     let compiled = compile_document(
-        "!version 0.2\nstate() shell=powershell:\n    | $value = \"inside\"\n    | if ($value -ne \"inside\") { exit 1 }\n    | exit 0\n    if ($null -ne $value) { exit 1 }\n",
+        "!version 0.4\nstate() shell=powershell:\n    | $value = \"inside\"\n    | if ($value -ne \"inside\") { exit 1 }\n    | exit 0\n    if ($null -ne $value) { exit 1 }\n",
     );
     let plan = build_execution_plan(
         &compiled.document,

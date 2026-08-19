@@ -71,7 +71,7 @@ fn keeps_even_backslashes_before_real_interpolation() {
 
 #[test]
 fn lowers_command_block_with_ranges_and_interpolation() {
-    let source = "!version 0.2\ngreet(name):\n    | if [ -n \"{{name}}\" ]; then\n    |     echo \"{{name}}\"\n    | fi\n";
+    let source = "!version 0.4\ngreet(name):\n    | if [ -n \"{{name}}\" ]; then\n    |     echo \"{{name}}\"\n    | fi\n";
     let compiled = compile_document(source);
     let task = &compiled.document.tasks[0];
 
@@ -90,25 +90,9 @@ fn lowers_command_block_with_ranges_and_interpolation() {
 }
 
 #[test]
-fn command_blocks_require_version_0_2() {
-    for source in [
-        "task():\n    | echo ok\n",
-        "!version 0.1\ntask():\n    | echo ok\n",
-    ] {
-        let compiled = compile_document(source);
-        assert!(
-            compiled
-                .diagnostics
-                .iter()
-                .any(|diagnostic| { diagnostic.code.as_str() == "semantic.command-block-version" })
-        );
-    }
-}
-
-#[test]
 fn lowers_multiple_guards_in_order() {
     let compiled =
-        compile_document("!version 0.3\ntest() ? @has(\"cargo\") ? @env(\"CI\"):\n    true\n");
+        compile_document("!version 0.4\ntest() ? @has(\"cargo\") ? @env(\"CI\"):\n    true\n");
     let guards = &compiled.document.tasks[0].guards;
 
     assert_eq!(guards.len(), 2);
@@ -120,7 +104,7 @@ fn lowers_multiple_guards_in_order() {
 #[test]
 fn lowers_multiline_parameter_list() {
     let compiled = compile_document(
-        "!version 0.3\ndeploy(\n    env = \"production\",\n    region = \"global,primary\",\n):\n    true\n",
+        "!version 0.4\ndeploy(\n    env = \"production\",\n    region = \"global,primary\",\n):\n    true\n",
     );
     let params = &compiled.document.tasks[0].params;
 

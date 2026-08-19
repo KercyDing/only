@@ -3,7 +3,7 @@ use text_size::{TextRange, TextSize};
 
 #[test]
 fn formatting_is_idempotent() {
-    let source = "!version   0.3\n\n\n!var target=\"release\"\n\nbuild(\n\tprofile = \"release\",\n)\n    ?   @has( \"cargo\" )\n    & ( check,test )\n:\n\t|echo one\n\t|\n\t|  echo two\n";
+    let source = "!version   0.4\n\n\n!var target=\"release\"\n\nbuild(\n\tprofile = \"release\",\n)\n    ?   @has( \"cargo\" )\n    & ( check,test )\n:\n\t|echo one\n\t|\n\t|  echo two\n";
     let formatted = format_source(source).expect("valid source should format");
 
     assert_eq!(
@@ -12,7 +12,7 @@ fn formatting_is_idempotent() {
     );
     assert_eq!(
         formatted,
-        "!version 0.3\n!var target = \"release\"\n\nbuild(profile = \"release\") ? @has(\"cargo\") & (check, test):\n    | echo one\n    |\n    |  echo two\n"
+        "!version 0.4\n!var target = \"release\"\n\nbuild(profile = \"release\") ? @has(\"cargo\") & (check, test):\n    | echo one\n    |\n    |  echo two\n"
     );
 }
 
@@ -53,8 +53,8 @@ fn wraps_headers_with_three_clauses() {
 #[test]
 fn formats_multiline_header_inside_namespace() {
     let source = concat!(
-        "!version 0.3\n",
-        "[back] {\n",
+        "!version 0.4\n",
+        "group back {\n",
         "    ci() & fmt & check & clippy & test:\n",
         "        echo done\n",
         "}\n",
@@ -64,9 +64,9 @@ fn formats_multiline_header_inside_namespace() {
     assert_eq!(
         formatted,
         concat!(
-            "!version 0.3\n",
+            "!version 0.4\n",
             "\n",
-            "[back] {\n",
+            "group back {\n",
             "    ci()\n",
             "        & fmt\n",
             "        & check\n",
@@ -83,9 +83,9 @@ fn formats_multiline_header_inside_namespace() {
 #[test]
 fn preserves_comments_and_namespace_boundaries() {
     let source = concat!(
-        "!version 0.3\n",
+        "!version 0.4\n",
         "# Build tools.\n",
-        "[ tools ] {\n",
+        "group tools {\n",
         "// Keep this comment.  \n",
         "build():\n",
         "    cargo build  \n",
@@ -97,10 +97,10 @@ fn preserves_comments_and_namespace_boundaries() {
     assert_eq!(
         format_source(source).expect("valid source should format"),
         concat!(
-            "!version 0.3\n",
+            "!version 0.4\n",
             "\n",
             "# Build tools.\n",
-            "[tools] {\n",
+            "group tools {\n",
             "    // Keep this comment.\n",
             "    build():\n",
             "        cargo build  \n",
@@ -140,7 +140,6 @@ fn keeps_group_metadata_attached_after_blank_lines() {
             "[help] Development builds\n",
             "[desc] Build in development mode.\n",
             "group dev {\n",
-            "\n",
             "    build():\n",
             "        cargo build\n",
             "}\n",
@@ -160,11 +159,11 @@ fn orders_declaration_metadata() {
 
 #[test]
 fn formats_namespace_indentation() {
-    let source = "!version 0.3\n[dev] {\nrun():\n    true\n    }\n";
+    let source = "!version 0.4\ngroup dev {\nrun():\n    true\n    }\n";
 
     assert_eq!(
         format_source(source).expect("valid source should format"),
-        "!version 0.3\n\n[dev] {\n    run():\n        true\n}\n"
+        "!version 0.4\n\ngroup dev {\n    run():\n        true\n}\n"
     );
 }
 
@@ -187,7 +186,7 @@ fn range_formats_one_declaration() {
 
 #[test]
 fn range_formats_namespaced_task_indentation() {
-    let source = "!version 0.3\n[dev] {\n    build( value=\"x\" ):\n        echo ok\n}\n";
+    let source = "!version 0.4\ngroup dev {\n    build( value=\"x\" ):\n        echo ok\n}\n";
     let start = TextSize::from(source.find("build").expect("task should exist") as u32);
 
     let (range, formatted) = format_range(source, TextRange::empty(start))

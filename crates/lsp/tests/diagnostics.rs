@@ -28,7 +28,7 @@ fn leaves_runner_version_checks_to_the_cli() {
     let snapshot = DocumentSnapshot::new(
         "file:///workspace/Onlyfile",
         1,
-        "!version 0.3\nbuild():\n    true\n",
+        "!version 0.4\nbuild():\n    true\n",
     );
     let diagnostics = diagnostics(&snapshot);
 
@@ -42,8 +42,8 @@ fn accepts_multiline_header_inside_namespace() {
         "file:///workspace/Onlyfile",
         1,
         concat!(
-            "!version 0.3\n",
-            "[back] {\n",
+            "!version 0.4\n",
+            "group back {\n",
             "    fmt():\n",
             "        true\n",
             "    check():\n",
@@ -78,7 +78,7 @@ fn accepts_dependency_task() {
     let snapshot = DocumentSnapshot::new(
         "file:///workspace/Onlyfile",
         1,
-        "!version 0.3\nprepare():\n    true\nci() & prepare\n",
+        "!version 0.4\nprepare():\n    true\nci() & prepare\n",
     );
 
     assert!(

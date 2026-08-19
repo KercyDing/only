@@ -3,9 +3,9 @@ use only_lsp::{DocumentSnapshot, LspSemanticTokenKind, semantic_tokens};
 #[test]
 fn classifies_engineering_syntax() {
     let source = concat!(
-        "!version 0.3\n",
+        "!version 0.4\n",
         "!var profile = \"release\"\n",
-        "[dev] {\n",
+        "group dev {\n",
         "build(target=\"x\") ? @env(\"CI\") & prepare shell=bash:\n",
         "    echo {{target}}\n",
         "}\n",

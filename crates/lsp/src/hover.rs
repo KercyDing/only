@@ -391,13 +391,15 @@ fn interpolation_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<
         let range = TextRange::new((start as u32).into(), (end as u32).into());
         if range.contains(offset) {
             let name = source[start + 2..end - 2].trim().to_string();
+            let mut docs = "Replaces this variable at runtime.".to_string();
+            if let Some(default) = interpolation_default(snapshot, offset, &name) {
+                docs.push_str(&format!("\n\nDefault: `{default}`"));
+            }
             return Some(LspHover {
                 kind: LspHoverKind::Interpolation,
                 name: name.clone(),
                 signature: format!("{{{{{name}}}}}"),
-                docs: Some(
-                    "Interpolates a task parameter into the command text at runtime.".to_string(),
-                ),
+                docs: Some(docs),
                 range,
                 container_name: None,
             });
@@ -409,6 +411,45 @@ fn interpolation_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<
     }
 
     None
+}
+
+fn interpolation_default(
+    snapshot: &DocumentSnapshot,
+    offset: TextSize,
+    name: &str,
+) -> Option<String> {
+    let task_default = snapshot
+        .semantic
+        .document
+        .tasks
+        .iter()
+        .find(|task| task.range.contains(offset))
+        .and_then(|task| {
+            task.params
+                .iter()
+                .find(|parameter| parameter.name == name)
+                .and_then(|parameter| parameter.default_value.as_ref())
+        });
+
+    task_default
+        .map(ToString::to_string)
+        .or_else(|| global_variable_default(snapshot, name))
+}
+
+fn global_variable_default(snapshot: &DocumentSnapshot, name: &str) -> Option<String> {
+    snapshot
+        .semantic
+        .document
+        .directives
+        .iter()
+        .find_map(|directive| match directive {
+            only_semantic::DirectiveAst::Variable {
+                name: variable,
+                value,
+                ..
+            } if variable == name => Some(value.to_string()),
+            _ => None,
+        })
 }
 
 fn dependency_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspHover> {
@@ -514,14 +555,8 @@ fn namespace_hover(snapshot: &DocumentSnapshot, offset: TextSize) -> Option<LspH
                 name: name.clone(),
                 signature: if syntax.is_close() {
                     "}".to_owned()
-                } else if syntax.has_open_brace() {
-                    if namespace.is_group {
-                        format!("group {name} {{")
-                    } else {
-                        format!("namespace [{name}] {{")
-                    }
                 } else {
-                    format!("namespace [{name}]")
+                    format!("group {name} {{")
                 },
                 docs: namespace.doc.clone().map(|docs| docs.to_string()),
                 range: syntax.range(),

@@ -21,11 +21,12 @@ fn builds_dag_order_from_semantic_ast() {
 #[test]
 fn builds_namespaced_dag_order_from_semantic_ast() {
     let compiled = compile_document(
-        "[dev]\n\
+        "group dev {\n\
          build():\n\
              cargo build\n\
          serve() & build:\n\
-             cargo run\n",
+             cargo run\n\
+         }\n",
     );
     let plan = build_execution_plan(
         &compiled.document,
@@ -44,7 +45,7 @@ fn builds_namespaced_dag_order_from_semantic_ast() {
 #[test]
 fn applies_global_values_across_dag() {
     let compiled = compile_document(concat!(
-        "!version 0.3\n",
+        "!version 0.4\n",
         "!var profile = \"release\"\n",
         "prepare():\n",
         "    echo {{profile}}\n",
@@ -117,7 +118,7 @@ fn inherits_variant_result_messages() {
 #[test]
 fn overrides_global_value_for_whole_dag() {
     let compiled = compile_document(concat!(
-        "!version 0.3\n",
+        "!version 0.4\n",
         "!var profile = \"release\"\n",
         "prepare():\n",
         "    echo {{profile}}\n",
@@ -169,7 +170,7 @@ fn assigns_parallel_dependency_groups_to_shared_stage() {
 #[test]
 fn carries_shell_and_default_params_into_plan() {
     let compiled = compile_document(
-        "!version 0.3\n!shell bash\n\
+        "!version 0.4\n!shell bash\n\
          build(tag=\"v1\") shell~=pwsh:\n\
              echo {{tag}}\n",
     );
@@ -213,7 +214,7 @@ fn carries_exact_task_shell_assignment_into_plan() {
 #[test]
 fn keeps_command_blocks_as_single_plan_steps() {
     let compiled = compile_document(
-        "!version 0.2\ntask():\n    | value={{value}}\n    | echo \"$value\"\n    echo done\n",
+        "!version 0.4\ntask():\n    | value={{value}}\n    | echo \"$value\"\n    echo done\n",
     );
     let plan = build_execution_plan(
         &compiled.document,

@@ -120,7 +120,7 @@ fn cli_binary_path() -> PathBuf {
 fn formats_onlyfile_and_checks_without_writing() {
     let temp = TempDir::new("fmt");
     let path = temp.path().join("Onlyfile");
-    fs::write(&path, "!version 0.3\n\n\nbuild():\n\t| echo one\n")
+    fs::write(&path, "!version 0.4\n\n\nbuild():\n\t| echo one\n")
         .expect("test Onlyfile should be written");
 
     let unformatted_check = Command::new(cli_binary_path())
@@ -145,7 +145,7 @@ fn formats_onlyfile_and_checks_without_writing() {
         String::from_utf8_lossy(&output.stderr)
     );
     let formatted = fs::read_to_string(&path).expect("formatted file should be readable");
-    assert_eq!(formatted, "!version 0.3\n\nbuild():\n    | echo one\n");
+    assert_eq!(formatted, "!version 0.4\n\nbuild():\n    | echo one\n");
 
     let check = Command::new(cli_binary_path())
         .args(["--fmt", "--check", "-f"])
@@ -277,7 +277,7 @@ fn parses_empty_onlyfile() {
 
 #[test]
 fn parses_minimal_document_shape() {
-    let source = "!shell sh\nhello():\n    echo hello\n[tools]\nfmt():\n    cargo fmt\n";
+    let source = "!shell sh\nhello():\n    echo hello\ngroup tools {\nfmt():\n    cargo fmt\n}\n";
     let document = parse_onlyfile(source).expect("minimal document should parse");
 
     assert!(matches!(
@@ -339,16 +339,18 @@ fn rejects_incompatible_version_before_cli_parsing() {
 
 #[test]
 fn assigns_following_tasks_to_current_namespace() {
-    let source = "[frontend]
+    let source = "group frontend {
 build():
     npm run build
 
 test():
     npm test
 
-[backend]
+}
+group backend {
 serve():
     cargo run
+}
 ";
     let document = parse_onlyfile(source).expect("namespaced tasks should parse");
 
@@ -392,7 +394,7 @@ fn rejects_undefined_dependency_during_parse_validation() {
 
 #[test]
 fn accepts_local_and_global_dependencies() {
-    let source = "bootstrap():\n    echo bootstrap\n[frontend]\ninstall():\n    npm install\nbuild() & install & bootstrap:\n    npm run build\n";
+    let source = "bootstrap():\n    echo bootstrap\ngroup frontend {\ninstall():\n    npm install\nbuild() & install & bootstrap:\n    npm run build\n}\n";
     parse_onlyfile(source).expect("valid dependency graph should parse");
 }
 
@@ -420,9 +422,10 @@ fn rejects_namespace_without_task_target() {
         "bootstrap():
     echo bootstrap
 
-[frontend]
+group frontend {
 install():
     npm install
+}
 ",
         &cli(&["frontend"]),
     )
@@ -1098,9 +1101,10 @@ fn binds_slice_arguments_for_global_task() {
 fn binds_positional_arguments_for_namespaced_task() {
     let _cwd_lock = cwd_lock();
     let plan = compile_plan(
-        r#"[frontend]
+        r#"group frontend {
 build(profile):
     {{profile}}
+}
 "#,
         &cli(&["frontend", "build", "true"]),
     );
@@ -1486,7 +1490,7 @@ fn dry_run_renders_command_blocks() {
     let onlyfile_path = temp_dir.path().join("Onlyfile");
     fs::write(
         &onlyfile_path,
-        "!version 0.2\nprobe(name=\"world\") shell=bash:\n    | echo \"hello {{name}}\"\n    | echo done\n    echo after\n",
+        "!version 0.4\nprobe(name=\"world\") shell=bash:\n    | echo \"hello {{name}}\"\n    | echo done\n    echo after\n",
     )
     .expect("Onlyfile should be written");
 
@@ -1571,7 +1575,7 @@ fn path_does_not_parse_onlyfile() {
     let _cwd_lock = cwd_lock();
     let temp_dir = TempDir::new("path-with-incompatible-file");
     let onlyfile_path = temp_dir.path().join("Onlyfile");
-    fs::write(&onlyfile_path, "!version 0.3\nbuild():\n    true\n")
+    fs::write(&onlyfile_path, "!version 0.4\nbuild():\n    true\n")
         .expect("Onlyfile should be written");
 
     let output = Command::new(cli_binary_path())

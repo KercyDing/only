@@ -18,22 +18,6 @@ pub(crate) fn validate_document(document: &DocumentAst, symbols: &SymbolIndex) -
         .filter(|task| task.namespace.is_none())
         .map(|task| task.name.clone())
         .collect();
-    let supports_command_blocks =
-        document
-            .directives
-            .iter()
-            .find_map(|directive| match directive {
-                DirectiveAst::Version { major, minor, .. } => Some(*major > 0 || *minor >= 2),
-                DirectiveAst::Shell { .. } => None,
-                DirectiveAst::Variable { .. } => None,
-            })
-            == Some(true);
-    let supports_engineering = document.directives.iter().any(|directive| {
-        matches!(directive, DirectiveAst::Version { major, minor, .. } if *major > 0 || *minor >= 3)
-    });
-    let supports_result_metadata = document.directives.iter().any(|directive| {
-        matches!(directive, DirectiveAst::Version { major, minor, .. } if *major > 0 || *minor >= 4)
-    });
     let globals = document
         .directives
         .iter()
@@ -53,56 +37,11 @@ pub(crate) fn validate_document(document: &DocumentAst, symbols: &SymbolIndex) -
         }
     }
 
-    if !supports_engineering && (!globals.is_empty() || document.uses_braced_namespaces) {
-        let range = document
-            .directives
-            .iter()
-            .find_map(|directive| match directive {
-                DirectiveAst::Variable { range, .. } => Some(*range),
-                _ => None,
-            })
-            .or_else(|| document.namespaces.first().map(|namespace| namespace.range))
-            .unwrap_or_default();
-        diagnostics.push(error(
-            "semantic.engineering-version",
-            "this syntax needs `!version 0.3` or newer".to_string(),
-            range,
-        ));
-    }
-
     for namespace in &document.namespaces {
-        if namespace.is_group && !supports_result_metadata {
-            diagnostics.push(error(
-                "semantic.group-version",
-                "group declarations need `!version 0.4` or newer".to_string(),
-                namespace.range,
-            ));
-        }
-        if supports_engineering && !namespace.is_braced {
-            diagnostics.push(error(
-                "namespace.missing-open-brace",
-                format!("group {} must use '{{' and end with '}}'", namespace.name),
-                namespace.range,
-            ));
-        } else if supports_engineering && namespace.close_range.is_none() {
-            diagnostics.push(error(
-                "namespace.missing-close",
-                format!("namespace '{}' must end with '}}'", namespace.name),
-                namespace.range,
-            ));
-        }
-        if supports_result_metadata && !namespace.is_group {
-            diagnostics.push(error(
-                "namespace.group-required",
-                format!("use `group {} {{` for a 0.4 group", namespace.name),
-                namespace.range,
-            ));
-        }
         validate_metadata(
             &namespace.metadata,
             namespace.range,
             &globals,
-            supports_result_metadata,
             false,
             &mut diagnostics,
         );
@@ -119,15 +58,7 @@ pub(crate) fn validate_document(document: &DocumentAst, symbols: &SymbolIndex) -
     }
 
     for task in &document.tasks {
-        validate_task(
-            task,
-            &task_names,
-            &globals,
-            supports_command_blocks,
-            supports_engineering,
-            supports_result_metadata,
-            &mut diagnostics,
-        );
+        validate_task(task, &task_names, &globals, &mut diagnostics);
     }
 
     report_duplicate_directives(document, &mut diagnostics);
@@ -140,19 +71,9 @@ fn validate_task(
     task: &TaskAst,
     task_names: &HashSet<smol_str::SmolStr>,
     globals: &HashSet<smol_str::SmolStr>,
-    supports_command_blocks: bool,
-    supports_engineering: bool,
-    supports_result_metadata: bool,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    validate_metadata(
-        &task.metadata,
-        task.range,
-        globals,
-        supports_result_metadata,
-        true,
-        diagnostics,
-    );
+    validate_metadata(&task.metadata, task.range, globals, true, diagnostics);
 
     let mut params = HashSet::new();
     for (index, param) in task.params.iter().enumerate() {
@@ -187,20 +108,6 @@ fn validate_task(
                 task.range,
             ));
         }
-    }
-
-    let uses_shell_fallback = task
-        .shell
-        .as_ref()
-        .is_some_and(|shell| shell.selection.operator == ShellOperator::Fallback);
-    if !supports_engineering
-        && (task.guards.len() > 1 || task.uses_multiline_header || uses_shell_fallback)
-    {
-        diagnostics.push(error(
-            "semantic.engineering-version",
-            "this syntax needs `!version 0.3` or newer".to_string(),
-            task.range,
-        ));
     }
 
     if let Some(shell) = &task.shell {
@@ -249,15 +156,6 @@ fn validate_task(
     }
 
     for step in &task.steps {
-        if let crate::TaskStepAst::CommandBlock(block) = step
-            && !supports_command_blocks
-        {
-            diagnostics.push(error(
-                "semantic.command-block-version",
-                "command blocks need `!version 0.2` or newer".to_string(),
-                block.range,
-            ));
-        }
         let interpolations = match step {
             crate::TaskStepAst::Command(command) => &command.interpolations,
             crate::TaskStepAst::CommandBlock(block) => &block.interpolations,
@@ -278,17 +176,9 @@ fn validate_metadata(
     metadata: &crate::TaskMetadataAst,
     range: TextRange,
     globals: &HashSet<smol_str::SmolStr>,
-    supports_result_metadata: bool,
     allow_result_messages: bool,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    if metadata.has_structured_fields && !supports_result_metadata {
-        diagnostics.push(error(
-            "semantic.result-metadata-version",
-            "task metadata needs `!version 0.4` or newer".to_string(),
-            range,
-        ));
-    }
     if metadata.desc.is_some() && metadata.help.is_none() {
         diagnostics.push(error(
             "semantic.metadata-help-required",

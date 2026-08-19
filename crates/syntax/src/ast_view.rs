@@ -530,14 +530,6 @@ impl NamespaceNode {
             .map(|token| token.text_range())
     }
 
-    /// Returns whether this node uses the 0.4 `group name {` syntax.
-    pub fn is_group(&self) -> bool {
-        self.syntax
-            .children_with_tokens()
-            .filter_map(|element| element.into_token())
-            .any(|token| token.kind() == SyntaxKind::GroupKw)
-    }
-
     /// Returns whether this node closes the current namespace.
     pub fn is_close(&self) -> bool {
         self.syntax.text().to_string().trim() == "}"

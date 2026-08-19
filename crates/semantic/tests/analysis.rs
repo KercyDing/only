@@ -70,9 +70,9 @@ fn lowers_directives_and_namespaced_tasks() {
 #[test]
 fn lowers_braced_namespace() {
     let compiled = compile_document(concat!(
-        "!version 0.3\n",
+        "!version 0.4\n",
         "!var target = \"release\"\n",
-        "[dev] {\n",
+        "group dev {\n",
         "build():\n",
         "    echo {{target}}\n",
         "}\n",
@@ -92,11 +92,12 @@ fn lowers_braced_namespace() {
 #[test]
 fn resolves_local_namespace_dependencies() {
     let compiled = compile_document(concat!(
-        "[dev]\n",
+        "group dev {\n",
         "build():\n",
         "    cargo build\n",
         "serve() & build:\n",
         "    echo ok\n",
+        "}\n",
     ));
 
     assert!(compiled.diagnostics.is_empty());
@@ -135,9 +136,10 @@ fn reports_namespace_conflict_with_global_task() {
     let compiled = compile_document(concat!(
         "build():\n",
         "    cargo build\n",
-        "[build]\n",
+        "group build {\n",
         "serve():\n",
         "    cargo run\n",
+        "}\n",
     ));
     let messages: Vec<_> = compiled
         .diagnostics
@@ -171,7 +173,7 @@ fn reports_duplicate_parameter_names() {
 #[test]
 fn lowers_parameter_defaults_guard_and_shell() {
     let compiled = compile_document(
-        "!version 0.3\nbuild(tag=\"v1\") ? @env(\"CI\") shell~=bash:\n    echo {{tag}}\n",
+        "!version 0.4\nbuild(tag=\"v1\") ? @env(\"CI\") shell~=bash:\n    echo {{tag}}\n",
     );
 
     assert!(compiled.diagnostics.is_empty());

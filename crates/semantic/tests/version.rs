@@ -27,7 +27,7 @@ fn lowers_version_directive() {
 fn reports_misplaced_version() {
     for source in [
         "!shell bash\n!version 0.1\n",
-        "[dev]\n!version 0.1\n",
+        "group dev {\n!version 0.1\n}\n",
         "build():\n    true\n!version 0.1\n",
     ] {
         assert!(
