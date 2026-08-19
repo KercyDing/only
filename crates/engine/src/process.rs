@@ -73,7 +73,7 @@ impl TerminalContext {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn pty() -> Self {
         Self {
             backend: TerminalBackend::Pty,
@@ -608,13 +608,14 @@ fn platform_exit_reason(code: i32) -> String {
 #[cfg(test)]
 mod tests {
     use std::io::IsTerminal;
+    #[cfg(unix)]
     use std::sync::mpsc;
+    #[cfg(unix)]
     use std::time::{Duration, Instant};
 
-    use super::{
-        CommandStatus, OutputStream, TerminalBackend, TerminalContext, run_with_system_shell,
-        terminal_context,
-    };
+    use super::{CommandStatus, TerminalBackend, terminal_context};
+    #[cfg(unix)]
+    use super::{OutputStream, TerminalContext, run_with_system_shell};
 
     #[test]
     fn formats_exit_status_cleanly() {

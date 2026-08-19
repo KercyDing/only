@@ -1,9 +1,11 @@
-use only_engine::{
-    Invocation, RuntimeOptions, build_execution_plan, run_plan, run_plan_with_options,
-};
+use only_engine::{Invocation, build_execution_plan, run_plan};
+#[cfg(unix)]
+use only_engine::{RuntimeOptions, run_plan_with_options};
 use only_semantic::compile_document;
+#[cfg(unix)]
 use std::fs;
 use std::process::ExitCode;
+#[cfg(unix)]
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
