@@ -36,7 +36,9 @@ Run `only -h` to see global options.";
 pub fn build_global_cli() -> Command {
     let command = Command::new("only")
         .bin_name("only")
-        .about("A minimalist, deterministic task runner\nRepo: https://github.com/KercyDing/only")
+        .about(
+            "An explicit, cross-platform workflow runner.\nRepo: https://github.com/KercyDing/only",
+        )
         .version(env!("CARGO_PKG_VERSION"))
         .styles(cli_styles())
         .next_help_heading("Global options")
