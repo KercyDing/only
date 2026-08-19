@@ -123,6 +123,23 @@ fn run_with_deno_task_shell(
     output: Sender<OutputChunk>,
     terminal: &TerminalContext,
 ) -> Result<CommandStatus, EngineError> {
+    #[cfg(unix)]
+    if terminal.backend == crate::process::TerminalBackend::Pty
+        && let Some(status) =
+            run_with_deno_task_shell_pty(command, working_dir, output.clone(), terminal)?
+    {
+        return Ok(status);
+    }
+
+    run_with_deno_task_shell_pipe(command, working_dir, output, terminal)
+}
+
+fn run_with_deno_task_shell_pipe(
+    command: &str,
+    working_dir: &Path,
+    output: Sender<OutputChunk>,
+    terminal: &TerminalContext,
+) -> Result<CommandStatus, EngineError> {
     let parsed = deno_task_shell::parser::parse(command).map_err(|error| {
         EngineError::Runtime(format!("failed to parse command `{command}`: {error}"))
     })?;
@@ -174,6 +191,80 @@ fn run_with_deno_task_shell(
     join_output_reader(stderr_handle)?;
 
     Ok(CommandStatus::from_code(status))
+}
+
+#[cfg(unix)]
+fn run_with_deno_task_shell_pty(
+    command: &str,
+    working_dir: &Path,
+    output: Sender<OutputChunk>,
+    terminal: &TerminalContext,
+) -> Result<Option<CommandStatus>, EngineError> {
+    let parsed = deno_task_shell::parser::parse(command).map_err(|error| {
+        EngineError::Runtime(format!("failed to parse command `{command}`: {error}"))
+    })?;
+    let pty_system = portable_pty::native_pty_system();
+    let pair = match pty_system.openpty(terminal.size) {
+        Ok(pair) => pair,
+        Err(_) => return Ok(None),
+    };
+    let reader = match pair.master.try_clone_reader() {
+        Ok(reader) => reader,
+        Err(_) => return Ok(None),
+    };
+    let Some(tty_name) = pair.master.tty_name() else {
+        return Ok(None);
+    };
+    let stdout_file = match std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&tty_name)
+    {
+        Ok(file) => file,
+        Err(_) => return Ok(None),
+    };
+    let stderr_file = match stdout_file.try_clone() {
+        Ok(file) => file,
+        Err(_) => return Ok(None),
+    };
+
+    let kill_signal = deno_task_shell::KillSignal::default();
+    let state = deno_task_shell::ShellState::new(
+        build_command_env(),
+        working_dir.to_path_buf(),
+        HashMap::<String, Rc<dyn deno_task_shell::ShellCommand>>::new(),
+        kill_signal.clone(),
+    );
+    let reader_handle =
+        crate::process::spawn_output_reader(reader, crate::process::OutputStream::Stdout, output);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| EngineError::Runtime(format!("failed to start task runtime: {error}")))?;
+    let local = tokio::task::LocalSet::new();
+    let status = local.block_on(&runtime, async {
+        let execution = deno_task_shell::execute_with_pipes(
+            parsed,
+            state,
+            closed_stdin(),
+            deno_task_shell::ShellPipeWriter::from_std(stdout_file),
+            deno_task_shell::ShellPipeWriter::from_std(stderr_file),
+        );
+        let mut execution = Box::pin(execution);
+        loop {
+            match tokio::time::timeout(Duration::from_millis(20), &mut execution).await {
+                Ok(status) => break status,
+                Err(_) if terminal.is_cancelled() => {
+                    kill_signal.send(deno_task_shell::SignalKind::SIGINT);
+                }
+                Err(_) => {}
+            }
+        }
+    });
+    drop(pair.slave);
+    join_output_reader(reader_handle)?;
+
+    Ok(Some(CommandStatus::from_code(status)))
 }
 
 fn run_with_deno_task_shell_inherit(
@@ -272,5 +363,26 @@ mod tests {
 
         assert!(status.failure_reason().is_some());
         assert!(started.elapsed() < Duration::from_secs(2));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn deno_pty_exposes_terminal() {
+        let (output_tx, output_rx) = mpsc::channel();
+        let working_dir = std::env::current_dir().expect("current directory should be available");
+        let status = super::run_with_deno_task_shell(
+            "sh -c 'test -t 1 && printf tty || printf pipe'",
+            &working_dir,
+            output_tx,
+            &TerminalContext::pty(),
+        )
+        .expect("Deno PTY command should run");
+        let output = output_rx
+            .into_iter()
+            .flat_map(|chunk| chunk.bytes)
+            .collect::<Vec<_>>();
+
+        assert_eq!(status, crate::process::CommandStatus::Success);
+        assert_eq!(output, b"tty");
     }
 }

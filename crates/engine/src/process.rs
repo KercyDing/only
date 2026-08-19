@@ -74,7 +74,7 @@ impl TerminalContext {
     }
 
     #[cfg(test)]
-    fn pty() -> Self {
+    pub(crate) fn pty() -> Self {
         Self {
             backend: TerminalBackend::Pty,
             size: portable_pty::PtySize::default(),
