@@ -27,7 +27,6 @@ For a complete workflow, see the [example Onlyfile](../examples/Onlyfile).
 - [9. Organize larger projects with groups](#9-organize-larger-projects-with-groups)
 - [10. Put the pieces together](#10-put-the-pieces-together)
 - [Troubleshooting](#troubleshooting)
-- [Diagnostics](#diagnostics)
 - [Quick reference](#quick-reference)
 
 ---
@@ -74,13 +73,13 @@ only
 To see which file was found:
 
 ```bash
-only -p
+only --where
 ```
 
 You can also select a file yourself:
 
 ```bash
-only ci -f ./examples/Onlyfile --dry-run
+only ci -p ./examples/Onlyfile --dry-run
 ```
 
 ## 2. Document your tasks
@@ -629,13 +628,13 @@ The important idea is simple:
 Check the discovered file:
 
 ```bash
-only -p
+only --where
 ```
 
 Or select one explicitly:
 
 ```bash
-only ci -f ./Onlyfile
+only ci -p ./Onlyfile
 ```
 
 ---
@@ -755,48 +754,6 @@ Check that:
 
 ---
 
-# Diagnostics
-
-`only` checks an `Onlyfile` before it runs any commands.
-
-If you use the Only extension, you can see the same problems in your editor.
-
-The table below explains the diagnostic codes shown by the editor.
-
-| Code | Meaning | What to do |
-| --- | --- | --- |
-| `parse.unexpected-token` | unexpected syntax | check punctuation, indentation, and the task header |
-| `parse.malformed-task-header` | malformed task declaration | use a valid form such as `name():` |
-| `semantic.duplicate-task` | duplicate task definition | rename it or make the guarded variant distinct |
-| `semantic.duplicate-parameter` | a parameter appears more than once | rename one parameter |
-| `semantic.undefined-dependency` | a dependency does not exist | define it or fix the name |
-| `semantic.undefined-variable` | interpolation uses an unknown parameter | declare it or fix the name |
-| `semantic.ambiguous-guard` | variants use the same guard | remove one or change the guard |
-| `semantic.slice-parameter-position` | a slice parameter is not last | move `name..` to the end |
-| `semantic.slice-parameter-default` | a slice has a default value | remove the default |
-| `version.invalid-format` | version is not `MAJOR.MINOR` | use two numeric components |
-| `version.pre-0.1-unsupported` | the declaration is below the first supported version | use a supported version or omit the line |
-| `version.range-overflow` | a version value cannot be represented | use a smaller valid version |
-| `version.duplicate` | the file has more than one `!version` | keep one declaration |
-| `version.not-first-declaration` | `!version` appears too late | move it to the file header |
-
-## Runtime errors
-
-Common runtime errors include:
-
-| Message | Meaning |
-| --- | --- |
-| `task '<name>' does not exist` | the task does not exist |
-| `helper task '<name>' cannot be run directly` | run a public task that uses this helper |
-| `task '<name>' is not available on this system` | no variant matched |
-| `parameter '{{name}}' is required` | pass the missing value |
-| `task '<task>' has no parameter named '<name>'` | check the name used with `-s` |
-| `dependency loop: ...` | tasks depend on each other in a loop |
-| `unsupported shell '<name>'` | the shell name is not supported |
-| `<shell> not found...` | the selected shell is not available on `PATH` |
-
----
-
 # Quick reference
 
 ## CLI
@@ -808,8 +765,8 @@ Common runtime errors include:
 | `only <group> <task>` | run a grouped task |
 | `only --help` | show help |
 | `only <task> --help` | show task help and parameters |
-| `only -p` / `only --path` | print the discovered `Onlyfile` path |
-| `only <task> -f <path>` / `only <task> --file <path>` | use a specific file |
+| `only --where` | print the discovered `Onlyfile` path |
+| `only <task> -p <path>` / `only <task> --path <path>` | use a specific file |
 | `only <task> -s name=value` | override a parameter |
 | `only <task> --dry-run` | show the execution plan |
 | `only <task> --dry-run --full` | show the plan and rendered commands |

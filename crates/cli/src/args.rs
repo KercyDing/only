@@ -158,13 +158,13 @@ where
         };
 
         match text {
-            "-f" | "--file" => {
+            "-p" | "--path" => {
                 let value = iter
                     .next()
                     .ok_or_else(|| OnlyError::parse(format!("option '{text}' needs a value")))?;
                 onlyfile_path = Some(PathBuf::from(value));
             }
-            "-p" | "--path" => {
+            "--where" => {
                 print_discovered_path = true;
             }
             "--dry-run" => {
@@ -200,7 +200,7 @@ where
             "--fmt" => format_requested = true,
             "--check" => format_check = true,
             _ => {
-                if let Some(value) = text.strip_prefix("--file=") {
+                if let Some(value) = text.strip_prefix("--path=") {
                     onlyfile_path = Some(PathBuf::from(value));
                 } else if let Some(value) = text.strip_prefix("--set=") {
                     parameter_overrides.push(parse_override(value)?);
@@ -208,7 +208,7 @@ where
                     if !value.is_empty() {
                         parameter_overrides.push(parse_override(value)?);
                     }
-                } else if let Some(value) = text.strip_prefix("-f") {
+                } else if let Some(value) = text.strip_prefix("-p") {
                     if !value.is_empty() {
                         onlyfile_path = Some(PathBuf::from(value));
                     }
@@ -306,8 +306,8 @@ mod tests {
             "build",
             "-s",
             "profile=prod",
-            "--path",
-            "-fOnlyfile.dev",
+            "--where",
+            "-pOnlyfile.dev",
         ])
         .expect("phase-one parsing should succeed");
 

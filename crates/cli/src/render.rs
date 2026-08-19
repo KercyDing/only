@@ -62,15 +62,14 @@ pub fn build_global_cli() -> Command {
 fn with_global_options(mut command: Command, hidden: bool) -> Command {
     let options = [
         Arg::new("onlyfile")
-            .short('f')
-            .long("file")
+            .short('p')
+            .long("path")
             .value_name("PATH")
             .global(true)
             .hide(hidden)
             .help("Use a specific Onlyfile"),
         Arg::new("print-path")
-            .short('p')
-            .long("path")
+            .long("where")
             .action(ArgAction::SetTrue)
             .global(true)
             .hide(hidden)
@@ -92,9 +91,10 @@ fn with_global_options(mut command: Command, hidden: bool) -> Command {
         Arg::new("full")
             .long("full")
             .action(ArgAction::SetTrue)
+            .requires("dry-run")
             .global(true)
             .hide(hidden)
-            .help("Show the full dry-run"),
+            .help("Show the task plan with commands"),
         Arg::new("quiet")
             .short('q')
             .long("quiet")
@@ -111,9 +111,10 @@ fn with_global_options(mut command: Command, hidden: bool) -> Command {
         Arg::new("format-check")
             .long("check")
             .action(ArgAction::SetTrue)
+            .requires("fmt")
             .global(true)
             .hide(hidden)
-            .help("Check formatting"),
+            .help("Check formatting without writing"),
     ];
 
     for option in options {
@@ -671,11 +672,11 @@ workflow():
         assert!(!help.contains("Install only\n\nInstall to"));
         assert!(!help.contains("Options:"));
         assert!(help.contains("Run `only -h` to see available options."));
-        assert!(!help.contains("--file"));
+        assert!(!help.contains("--path"));
         assert!(!help.contains("--dry-run"));
 
         let root_help = render_help(&document).to_string();
-        assert!(root_help.contains("--file"));
+        assert!(root_help.contains("--path"));
         assert!(root_help.contains("--dry-run"));
     }
 
@@ -695,7 +696,7 @@ workflow():
         assert!(help.contains("\u{1b}[1m\u{1b}[92mDetails:"));
         assert!(!help.contains("Options:"));
         assert!(help.contains("only install [OPTIONS]"));
-        assert!(!help.contains("--file"));
+        assert!(!help.contains("--path"));
     }
 
     #[test]
@@ -712,7 +713,7 @@ workflow():
         assert!(help.contains("Arguments:"));
         assert!(help.contains("[PROFILE]"));
         assert!(help.contains("[ARGS]..."));
-        assert!(!help.contains("--file"));
+        assert!(!help.contains("--path"));
     }
 
     #[test]
@@ -731,9 +732,10 @@ workflow():
         let help = render_global_help().to_string();
 
         assert!(help.contains("Usage: only [TASK] [ARGS]... [OPTIONS]"));
-        assert!(help.contains("--file"));
+        assert!(help.contains("--path"));
         assert!(help.contains("--update"));
         assert!(help.contains("--upgrade"));
+        assert!(help.contains("--where"));
         assert!(help.contains("--version"));
         assert!(help.contains("Repo: https://github.com/KercyDing/only"));
     }

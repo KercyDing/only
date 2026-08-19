@@ -124,7 +124,7 @@ fn formats_onlyfile_and_checks_without_writing() {
         .expect("test Onlyfile should be written");
 
     let unformatted_check = Command::new(cli_binary_path())
-        .args(["--fmt", "--check", "-f"])
+        .args(["--fmt", "--check", "-p"])
         .arg(&path)
         .output()
         .expect("formatter check should run");
@@ -135,7 +135,7 @@ fn formats_onlyfile_and_checks_without_writing() {
     );
 
     let output = Command::new(cli_binary_path())
-        .args(["--fmt", "-f"])
+        .args(["--fmt", "-p"])
         .arg(&path)
         .output()
         .expect("formatter should run");
@@ -148,7 +148,7 @@ fn formats_onlyfile_and_checks_without_writing() {
     assert_eq!(formatted, "!version 0.4\n\nbuild():\n    | echo one\n");
 
     let check = Command::new(cli_binary_path())
-        .args(["--fmt", "--check", "-f"])
+        .args(["--fmt", "--check", "-p"])
         .arg(&path)
         .output()
         .expect("formatter check should run");
@@ -1387,7 +1387,7 @@ fn helper_task_help_is_available_via_cli_binary() {
     .expect("Onlyfile should be written");
 
     let output = Command::new(cli_binary_path())
-        .arg("-f")
+        .arg("-p")
         .arg(&onlyfile_path)
         .arg("_prepare")
         .arg("--help")
@@ -1403,7 +1403,7 @@ fn helper_task_help_is_available_via_cli_binary() {
     assert!(plain_stdout.contains("Usage: only _prepare [TARGET] [OPTIONS]"));
     assert!(plain_stdout.contains("[target]  Required parameter"));
     assert!(plain_stdout.contains("Run `only -h` to see available options."));
-    assert!(!plain_stdout.contains("--file"));
+    assert!(!plain_stdout.contains("--path"));
     assert!(plain_stderr.is_empty(), "stderr was: {plain_stderr}");
 }
 
@@ -1567,11 +1567,12 @@ fn full_without_dry_run_reports_usage_error() {
 
     assert_ne!(output.status.code(), Some(0));
     assert!(plain_stdout.is_empty(), "stdout was: {plain_stdout}");
-    assert!(plain_stderr.contains("--full only works with --dry-run"));
+    assert!(plain_stderr.contains("the following required arguments were not provided"));
+    assert!(plain_stderr.contains("--dry-run"));
 }
 
 #[test]
-fn path_does_not_parse_onlyfile() {
+fn where_does_not_parse_onlyfile() {
     let _cwd_lock = cwd_lock();
     let temp_dir = TempDir::new("path-with-incompatible-file");
     let onlyfile_path = temp_dir.path().join("Onlyfile");
@@ -1579,7 +1580,7 @@ fn path_does_not_parse_onlyfile() {
         .expect("Onlyfile should be written");
 
     let output = Command::new(cli_binary_path())
-        .arg("--path")
+        .arg("--where")
         .current_dir(temp_dir.path())
         .output()
         .expect("CLI process should run");
