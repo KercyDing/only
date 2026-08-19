@@ -44,16 +44,43 @@ pub(crate) struct OutputChunk {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum TerminalBackend {
+    Pipe,
+    Pty,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TerminalContext {
-    pub use_pty: bool,
+    pub backend: TerminalBackend,
+}
+
+impl TerminalContext {
+    #[cfg(test)]
+    fn pipe() -> Self {
+        Self {
+            backend: TerminalBackend::Pipe,
+        }
+    }
+
+    #[cfg(test)]
+    fn pty() -> Self {
+        Self {
+            backend: TerminalBackend::Pty,
+        }
+    }
 }
 
 pub(crate) fn terminal_context() -> TerminalContext {
     TerminalContext {
-        use_pty: std::io::stdin().is_terminal()
+        backend: if std::io::stdin().is_terminal()
             && std::io::stdout().is_terminal()
             && std::io::stderr().is_terminal()
-            && std::env::var_os("CI").is_none(),
+            && std::env::var_os("CI").is_none()
+        {
+            TerminalBackend::Pty
+        } else {
+            TerminalBackend::Pipe
+        },
     }
 }
 
@@ -65,7 +92,7 @@ pub(crate) fn run_with_system_shell(
     output: Sender<OutputChunk>,
     terminal: TerminalContext,
 ) -> Result<CommandStatus, EngineError> {
-    if terminal.use_pty
+    if terminal.backend == TerminalBackend::Pty
         && let Some(status) =
             run_with_system_shell_pty(program, arg, command, working_dir, &output)?
     {
@@ -130,8 +157,19 @@ fn run_with_system_shell_pty(
         Ok(pair) => pair,
         Err(_) => return Ok(None),
     };
+    // All fallible setup happens before spawning. A fallback after the child
+    // starts would execute the command a second time through the Pipe backend.
+    let reader = match pair.master.try_clone_reader() {
+        Ok(reader) => reader,
+        Err(_) => return Ok(None),
+    };
+    let closed_input = match pair.master.take_writer() {
+        Ok(writer) => writer,
+        Err(_) => return Ok(None),
+    };
 
     let mut builder = portable_pty::CommandBuilder::new(program);
+    builder.set_controlling_tty(true);
     builder.arg(arg);
     builder.arg(command);
     builder.cwd(working_dir);
@@ -145,14 +183,6 @@ fn run_with_system_shell_pty(
     // Keep only the master side after spawning. Holding the parent slave open
     // can delay the EOF that terminates the output reader.
     drop(pair.slave);
-    let reader = match pair.master.try_clone_reader() {
-        Ok(reader) => reader,
-        Err(_) => return Ok(None),
-    };
-    let closed_input = match pair.master.take_writer() {
-        Ok(writer) => writer,
-        Err(_) => return Ok(None),
-    };
     drop(closed_input);
     let reader_handle = spawn_output_reader(reader, OutputStream::Stdout, output.clone());
     let status = child.wait().map_err(|error| {
@@ -273,9 +303,13 @@ fn platform_exit_reason(code: i32) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::io::IsTerminal;
     use std::sync::mpsc;
 
-    use super::{CommandStatus, OutputStream, TerminalContext, run_with_system_shell};
+    use super::{
+        CommandStatus, OutputStream, TerminalBackend, TerminalContext, run_with_system_shell,
+        terminal_context,
+    };
 
     #[test]
     fn formats_exit_status_cleanly() {
@@ -305,7 +339,7 @@ mod tests {
             "printf out; printf err >&2",
             std::path::Path::new("."),
             output_tx,
-            TerminalContext { use_pty: true },
+            TerminalContext::pty(),
         )
         .expect("PTY command should run");
 
@@ -322,5 +356,63 @@ mod tests {
             .flat_map(|chunk| chunk.bytes)
             .collect::<Vec<_>>();
         assert!(bytes.ends_with(b"outerr"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pty_closes_task_input() {
+        let (output_tx, _output_rx) = mpsc::channel();
+        let status = run_with_system_shell(
+            "sh",
+            "-c",
+            "read value || test -z \"$value\"",
+            std::path::Path::new("."),
+            output_tx,
+            TerminalContext::pty(),
+        )
+        .expect("PTY command should run");
+
+        assert_eq!(status, CommandStatus::Success);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pipe_keeps_output_streams_separate() {
+        let (output_tx, output_rx) = mpsc::channel();
+        let status = run_with_system_shell(
+            "sh",
+            "-c",
+            "printf out; printf err >&2",
+            std::path::Path::new("."),
+            output_tx,
+            TerminalContext::pipe(),
+        )
+        .expect("Pipe command should run");
+
+        assert_eq!(status, CommandStatus::Success);
+        let chunks = output_rx.into_iter().collect::<Vec<_>>();
+        assert!(
+            chunks
+                .iter()
+                .any(|chunk| { chunk.stream == OutputStream::Stdout && chunk.bytes == b"out" })
+        );
+        assert!(
+            chunks
+                .iter()
+                .any(|chunk| { chunk.stream == OutputStream::Stderr && chunk.bytes == b"err" })
+        );
+    }
+
+    #[test]
+    fn terminal_context_uses_pipe_for_non_terminal_output() {
+        if std::io::stdin().is_terminal()
+            && std::io::stdout().is_terminal()
+            && std::io::stderr().is_terminal()
+            && std::env::var_os("CI").is_none()
+        {
+            return;
+        }
+
+        assert_eq!(terminal_context().backend, TerminalBackend::Pipe);
     }
 }
