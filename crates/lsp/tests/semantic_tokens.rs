@@ -102,3 +102,16 @@ fn classifies_block_markers() {
 
     assert_eq!(markers, vec!["|", "|", "|"]);
 }
+
+#[test]
+fn classifies_task_delimiters() {
+    let source = "build()\n\ntest(target):\n    true\n";
+    let tokens = semantic_tokens(&DocumentSnapshot::new("file:///Onlyfile", 1, source));
+    let delimiters = tokens
+        .iter()
+        .filter(|token| token.kind == LspSemanticTokenKind::Delimiter)
+        .map(|token| &source[usize::from(token.range.start())..usize::from(token.range.end())])
+        .collect::<Vec<_>>();
+
+    assert_eq!(delimiters, vec!["(", ")", "(", ")"]);
+}

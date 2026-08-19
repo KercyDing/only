@@ -52,8 +52,8 @@ impl MetadataKind {
 
     pub fn description(&self) -> Option<&'static str> {
         match self {
-            Self::Help => Some("Sets the short task or group summary."),
-            Self::Desc => Some("Adds details shown in task help."),
+            Self::Help => Some("Short task or group summary."),
+            Self::Desc => Some("Extra task help details."),
             Self::Pass => Some("Shown when a task succeeds."),
             Self::Fail => Some("Shown when a task fails."),
             Self::Unknown(_) => None,

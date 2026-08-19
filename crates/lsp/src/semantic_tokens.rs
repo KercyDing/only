@@ -14,6 +14,7 @@ pub enum LspSemanticTokenKind {
     Variable,
     Metadata,
     BlockMarker,
+    Delimiter,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,6 +57,14 @@ pub fn semantic_tokens(snapshot: &DocumentSnapshot) -> Vec<LspSemanticToken> {
             });
         }
         let header = task.header_info();
+        if let Some(parameters) = task.header().and_then(|header| header.parameter_list()) {
+            tokens.extend(parameters.delimiter_ranges().into_iter().map(|range| {
+                LspSemanticToken {
+                    range,
+                    kind: LspSemanticTokenKind::Delimiter,
+                }
+            }));
+        }
         tokens.extend(
             header
                 .param_refs

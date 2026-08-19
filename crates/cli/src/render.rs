@@ -347,12 +347,11 @@ fn build_namespace_command(
     );
     let mut cmd = with_global_options(command, true);
 
-    let about = metadata_about(
+    if let Some(about) = metadata_about(
         namespace.metadata.help.as_deref(),
         namespace.metadata.desc.as_deref(),
         globals,
-    );
-    if !about.is_empty() {
+    ) {
         cmd = cmd.about(about);
     }
 
@@ -381,7 +380,7 @@ fn build_task_command(task: &TaskAst, globals: &[PlanParam]) -> Command {
     let command = hide_subcommand_help(
         Command::new(task.name.to_string())
             .styles(cli_styles())
-            .about(about)
+            .about(about.unwrap_or_default())
             .override_usage(task_usage(task))
             .help_template(if task.params.is_empty() {
                 TASK_HELP_TEMPLATE
@@ -508,16 +507,36 @@ fn render_metadata(text: &str, globals: &[PlanParam]) -> String {
     render_command(text, globals).unwrap_or_else(|_| text.to_string())
 }
 
-fn metadata_about(help: Option<&str>, desc: Option<&str>, globals: &[PlanParam]) -> String {
+fn metadata_about(
+    help: Option<&str>,
+    desc: Option<&str>,
+    globals: &[PlanParam],
+) -> Option<StyledStr> {
     let help = help.map(|text| render_metadata(text, globals));
     let desc = desc.map(|text| render_metadata(text, globals));
 
     match (help, desc) {
-        (Some(help), Some(desc)) => format!("{help}\n\n{desc}"),
-        (Some(help), None) => help,
-        (None, Some(desc)) => desc,
-        (None, None) => String::new(),
+        (Some(help), Some(desc)) => Some(StyledStr::from(format!(
+            "{help}\n\n{}",
+            details_text(&desc)
+        ))),
+        (Some(help), None) => Some(StyledStr::from(help)),
+        (None, Some(desc)) => Some(StyledStr::from(details_text(&desc))),
+        (None, None) => None,
     }
+}
+
+fn details_text(desc: &str) -> String {
+    let label_style = TermStyle::new()
+        .fg_color(Some(TermAnsiColor::BrightGreen.into()))
+        .bold();
+    let indented = desc.replace('\n', "\n         ");
+    format!(
+        "{}Details:{} {}",
+        label_style.render(),
+        label_style.render_reset(),
+        indented
+    )
 }
 
 fn global_tasks(document: &DocumentAst) -> impl Iterator<Item = &TaskAst> {
@@ -646,8 +665,10 @@ workflow():
             .expect_err("task help should short-circuit parsing");
         let help = error.to_string();
 
-        assert!(help.contains("Install only\n\nInstall to ~/.local/bin/only."));
+        assert!(help.contains("Install only\n\n"));
+        assert!(help.contains("Details: Install to ~/.local/bin/only."));
         assert!(help.contains("only install [OPTIONS]"));
+        assert!(!help.contains("Install only\n\nInstall to"));
         assert!(!help.contains("Options:"));
         assert!(help.contains("Run `only -h` to see available options."));
         assert!(!help.contains("--file"));
@@ -660,7 +681,10 @@ workflow():
 
     #[test]
     fn task_help_styles() {
-        let document = compile_document("[help] Install only\ninstall():\n    true\n").document;
+        let document = compile_document(
+            "[help] Install only\n[desc] Install to ~/.local/bin/only.\ninstall():\n    true\n",
+        )
+        .document;
         let mut command = build_cli(&document);
         let task = command
             .find_subcommand_mut("install")
@@ -668,6 +692,7 @@ workflow():
         let help = task.render_help().ansi().to_string();
 
         assert!(help.contains("\u{1b}[1m\u{1b}[92mUsage:"));
+        assert!(help.contains("\u{1b}[1m\u{1b}[92mDetails:"));
         assert!(!help.contains("Options:"));
         assert!(help.contains("only install [OPTIONS]"));
         assert!(!help.contains("--file"));

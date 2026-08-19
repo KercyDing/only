@@ -844,6 +844,16 @@ impl ParameterListNode {
         self.syntax.text_range()
     }
 
+    /// Returns ranges for the parameter list parentheses.
+    pub fn delimiter_ranges(&self) -> Vec<TextRange> {
+        self.syntax
+            .children_with_tokens()
+            .filter_map(|element| element.into_token())
+            .filter(|token| matches!(token.kind(), SyntaxKind::LParen | SyntaxKind::RParen))
+            .map(|token| token.text_range())
+            .collect()
+    }
+
     pub fn parameters(&self) -> impl Iterator<Item = ParameterNode> + '_ {
         self.syntax.children().filter_map(ParameterNode::cast)
     }

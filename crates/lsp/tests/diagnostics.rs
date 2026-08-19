@@ -24,6 +24,23 @@ fn maps_semantic_diagnostics_into_lsp_values() {
 }
 
 #[test]
+fn reports_duplicate_dependency() {
+    let snapshot = DocumentSnapshot::new(
+        "file:///workspace/Onlyfile",
+        1,
+        "prepare():\n    true\n\nci() & prepare & prepare:\n    true\n",
+    );
+    let diagnostics = diagnostics(&snapshot);
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "semantic.duplicate-dependency");
+    assert_eq!(
+        diagnostics[0].message,
+        "dependency 'prepare' is repeated in task 'ci'"
+    );
+}
+
+#[test]
 fn leaves_runner_version_checks_to_the_cli() {
     let snapshot = DocumentSnapshot::new(
         "file:///workspace/Onlyfile",
@@ -87,6 +104,59 @@ fn accepts_dependency_task() {
         diagnostics(&snapshot)
     );
     assert_eq!(snapshot.semantic.document.tasks.len(), 2);
+}
+
+#[test]
+fn accepts_task_without_newline() {
+    let snapshot = DocumentSnapshot::new(
+        "file:///workspace/Onlyfile",
+        1,
+        "!version 0.4\n[help] Example\nabc()",
+    );
+
+    assert!(diagnostics(&snapshot).is_empty());
+    assert_eq!(snapshot.semantic.document.tasks.len(), 1);
+}
+
+#[test]
+fn accepts_indented_task_header() {
+    let snapshot = DocumentSnapshot::new(
+        "file:///workspace/Onlyfile",
+        1,
+        "!version 0.4\n[help] Example\nabc()\n    ",
+    );
+
+    assert!(diagnostics(&snapshot).is_empty());
+    assert_eq!(snapshot.semantic.document.tasks.len(), 1);
+}
+
+#[test]
+fn reports_missing_task_colon() {
+    let source = "!version 0.4\n[help] Example\nabc()\n    echo example";
+    let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
+    let diagnostics = diagnostics(&snapshot);
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "parse.missing-task-colon");
+    assert_eq!(diagnostics[0].message, "missing ':' before command");
+}
+
+#[test]
+fn reports_empty_task_body() {
+    let source = "!version 0.4\n[help] Example\nabc():";
+    let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
+    let diagnostics = diagnostics(&snapshot);
+
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0].code, "semantic.empty-task-body");
+    assert_eq!(
+        diagnostics[0].message,
+        "task body is empty; add a command or remove ':'"
+    );
+    assert_eq!(
+        &source[usize::from(diagnostics[0].range.start())..usize::from(diagnostics[0].range.end())],
+        ":"
+    );
 }
 
 #[test]

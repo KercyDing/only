@@ -58,6 +58,7 @@ pub struct TaskAst {
 pub struct TaskMetadataAst {
     pub help: Option<SmolStr>,
     pub help_count: usize,
+    pub help_ranges: Vec<TextRange>,
     pub desc: Option<SmolStr>,
     pub pass: Option<SmolStr>,
     pub fail: Option<SmolStr>,

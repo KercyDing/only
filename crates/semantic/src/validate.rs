@@ -138,6 +138,7 @@ fn validate_task(
         }
     }
 
+    let mut dependencies = HashSet::new();
     for dependency in &task.dependencies {
         if !task_names.contains(&dependency.name) {
             diagnostics.push(error(
@@ -146,6 +147,17 @@ fn validate_task(
                     "task '{}' depends on missing task '{}'",
                     task.qualified_name(),
                     dependency.name
+                ),
+                dependency.range,
+            ));
+        }
+        if !dependencies.insert(dependency.name.clone()) {
+            diagnostics.push(error(
+                "semantic.duplicate-dependency",
+                format!(
+                    "dependency '{}' is repeated in task '{}'",
+                    dependency.name,
+                    task.qualified_name()
                 ),
                 dependency.range,
             ));
@@ -176,18 +188,11 @@ fn validate_metadata(
     allow_result_messages: bool,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    if metadata.desc.is_some() && metadata.help.is_none() {
-        diagnostics.push(error(
-            "semantic.metadata-help-required",
-            "`[help]` is required when `[desc]` is used".to_string(),
-            range,
-        ));
-    }
     if metadata.help_count > 1 {
         diagnostics.push(error(
             "semantic.duplicate-help",
             "`[help]` can be used only once".to_string(),
-            range,
+            metadata.help_ranges.get(1).copied().unwrap_or(range),
         ));
     }
     for field in &metadata.unknown_fields {

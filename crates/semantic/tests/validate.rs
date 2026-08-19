@@ -22,6 +22,28 @@ fn reports_validation_errors_for_dependencies_and_variables() {
 }
 
 #[test]
+fn rejects_duplicate_dependencies() {
+    let source = "prepare():\n    true\n\nci() & prepare & prepare:\n    true\n";
+    let compiled = compile_document(source);
+    let diagnostic = compiled
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "semantic.duplicate-dependency")
+        .expect("duplicate dependency should be rejected");
+
+    assert_eq!(
+        diagnostic.message,
+        "dependency 'prepare' is repeated in task 'ci'"
+    );
+    assert_eq!(
+        usize::from(diagnostic.primary_range.start()),
+        source
+            .rfind("prepare")
+            .expect("second dependency should exist")
+    );
+}
+
+#[test]
 fn reports_duplicate_directives() {
     let compiled = compile_document("!shell bash\n!shell deno\n");
     let messages: Vec<_> = compiled
@@ -178,41 +200,30 @@ fn metadata_interpolation_only_uses_global_variables() {
 }
 
 #[test]
-fn desc_requires_help() {
-    let compiled = compile_document("!version 0.4\n[desc] Details\nbuild():\n    true\n");
+fn desc_can_omit_help() {
+    let compiled = compile_document("!version 0.4\n[desc] Details\n_private():\n    true\n");
 
     assert!(
-        compiled
-            .diagnostics
-            .iter()
-            .any(|diagnostic| { diagnostic.code.as_str() == "semantic.metadata-help-required" })
-    );
-}
-
-#[test]
-fn result_messages_can_omit_help() {
-    let compiled =
-        compile_document("!version 0.4\n[pass] Done\n[fail] Failed\n_private():\n    true\n");
-
-    assert!(
-        !compiled
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code.as_str() == "semantic.metadata-help-required")
+        compiled.diagnostics.is_empty(),
+        "{:?}",
+        compiled.diagnostics
     );
 }
 
 #[test]
 fn rejects_duplicate_help_and_group_result_messages() {
-    let compiled = compile_document(
-        "!version 0.4\n[help] One\n[help] Two\n[pass] Done\ngroup dev {\n    build():\n        true\n}\n",
-    );
+    let source = "!version 0.4\n[help] One\n[help] Two\n[pass] Done\ngroup dev {\n    build():\n        true\n}\n";
+    let compiled = compile_document(source);
 
-    assert!(
-        compiled
-            .diagnostics
-            .iter()
-            .any(|diagnostic| diagnostic.code.as_str() == "semantic.duplicate-help")
+    let duplicate_help = compiled
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_str() == "semantic.duplicate-help")
+        .expect("duplicate help should be rejected");
+    assert_eq!(
+        &source[usize::from(duplicate_help.primary_range.start())
+            ..usize::from(duplicate_help.primary_range.end())],
+        "[help]"
     );
     assert!(
         compiled

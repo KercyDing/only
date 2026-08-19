@@ -126,8 +126,11 @@ impl Backend {
                 label: item.label,
                 kind: Some(match item.kind {
                     LspCompletionKind::Directive => CompletionItemKind::KEYWORD,
+                    LspCompletionKind::Keyword => CompletionItemKind::KEYWORD,
                     LspCompletionKind::Guard => CompletionItemKind::FUNCTION,
                     LspCompletionKind::Metadata => CompletionItemKind::PROPERTY,
+                    LspCompletionKind::Task => CompletionItemKind::FUNCTION,
+                    LspCompletionKind::Group => CompletionItemKind::MODULE,
                 }),
                 detail: Some(item.detail),
                 insert_text: Some(item.insert_text.clone()),
@@ -209,6 +212,8 @@ impl LanguageServerProtocol for Backend {
                         "!".to_string(),
                         "@".to_string(),
                         "[".to_string(),
+                        "&".to_string(),
+                        ".".to_string(),
                     ]),
                     ..CompletionOptions::default()
                 }),
@@ -233,6 +238,7 @@ impl LanguageServerProtocol for Backend {
                                     SemanticTokenType::new("variable"),
                                     SemanticTokenType::new("metadata"),
                                     SemanticTokenType::new("blockMarker"),
+                                    SemanticTokenType::new("delimiter"),
                                 ],
                                 token_modifiers: Vec::new(),
                             },
@@ -397,6 +403,7 @@ impl LanguageServerProtocol for Backend {
                 LspSemanticTokenKind::Variable => 7,
                 LspSemanticTokenKind::Metadata => 8,
                 LspSemanticTokenKind::BlockMarker => 9,
+                LspSemanticTokenKind::Delimiter => 10,
             };
             data.push(SemanticToken {
                 delta_line: start.line - previous_line,

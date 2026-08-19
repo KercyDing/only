@@ -207,7 +207,10 @@ fn range_formats_group_task_indentation() {
 fn formatting_rejects_invalid_source() {
     assert!(format_source("broken(\n").is_err());
     assert!(format_source("build(): cargo build\n").is_err());
-    assert!(format_source("build():").is_err());
+    assert_eq!(
+        format_source("build():").expect("empty task should format"),
+        "build()\n"
+    );
 }
 
 #[test]

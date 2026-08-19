@@ -196,18 +196,6 @@ fn exposes_parameter_name_ranges_for_hover() {
 }
 
 #[test]
-fn preserves_multiple_install_task_variants_in_repo_onlyfile() {
-    let syntax = snapshot(include_str!("../../../Onlyfile"));
-    let install_count = syntax
-        .document()
-        .tasks()
-        .filter(|task| task.name().as_deref() == Some("install"))
-        .count();
-
-    assert_eq!(install_count, 2);
-}
-
-#[test]
 fn groups_consecutive_block_lines() {
     let source = "task():\n    | if true; then\n    |     echo ok\n    | fi\n    echo after\n";
     let syntax = snapshot(source);

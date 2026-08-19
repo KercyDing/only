@@ -271,16 +271,15 @@ fn rejects_inline_command() {
 }
 
 #[test]
-fn rejects_task_header_without_newline() {
+fn accepts_task_header_at_eof() {
     let parsed = parse("build():");
 
+    assert!(parsed.diagnostics().is_empty());
     assert!(
         parsed
             .root_children()
-            .all(|node| node.kind() != SyntaxKind::TaskDecl)
+            .any(|node| node.kind() == SyntaxKind::TaskDecl)
     );
-    assert!(parsed.diagnostics().iter().any(|diagnostic| diagnostic.code
-        == DiagnosticCode::new("parse.malformed-task-header")));
 }
 
 #[test]

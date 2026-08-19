@@ -115,8 +115,21 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
             left_directive_region = true;
             discard_detached_metadata(&mut pending_docs, &source, task.range().start());
             let docs = std::mem::take(&mut pending_docs);
+            let empty_body_range = task
+                .header()
+                .and_then(|header| header.terminator().map(|terminator| terminator.range()))
+                .filter(|_| task.steps().next().is_none());
             match lower_task(&task, current_namespace.clone(), docs) {
-                Ok(task) => tasks.push(task),
+                Ok(task) => {
+                    if let Some(range) = empty_body_range {
+                        diagnostics.push(semantic_error(
+                            "semantic.empty-task-body",
+                            "task body is empty; add a command or remove ':'",
+                            range,
+                        ));
+                    }
+                    tasks.push(task);
+                }
                 Err(diagnostic) => diagnostics.push(diagnostic),
             }
             saw_declaration = true;
@@ -307,6 +320,7 @@ fn lower_metadata_comments(nodes: &[MetadataNode]) -> TaskMetadataAst {
     let mut unknown_fields = Vec::new();
     let mut has_structured_fields = false;
     let mut help_count = 0;
+    let mut help_ranges = Vec::new();
 
     for node in nodes {
         if let Some((field, value)) = node.field() {
@@ -314,6 +328,7 @@ fn lower_metadata_comments(nodes: &[MetadataNode]) -> TaskMetadataAst {
                 MetadataKind::Help => {
                     has_structured_fields = true;
                     help_count += 1;
+                    help_ranges.push(node.tag_range().unwrap_or_else(|| node.range()));
                     help.push(value);
                 }
                 MetadataKind::Desc => {
@@ -336,6 +351,7 @@ fn lower_metadata_comments(nodes: &[MetadataNode]) -> TaskMetadataAst {
     TaskMetadataAst {
         help: join_comment_lines(&help),
         help_count,
+        help_ranges,
         desc: join_comment_lines(&desc),
         pass: join_comment_lines(&pass),
         fail: join_comment_lines(&fail),

@@ -104,7 +104,7 @@ check():
     cargo check
 ```
 
-`[help]` appears in the task list and help page. Add one or more `[desc]` lines when you need more detail. A `[desc]` needs a `[help]` before it.
+`[help]` appears in the task list and help page. Add one or more `[desc]` lines when you need more detail. `[desc]` can be used on its own.
 
 `[pass]` is printed after the task succeeds. `[fail]` is printed after it fails. You can use either one without `[help]`.
 

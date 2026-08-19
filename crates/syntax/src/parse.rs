@@ -126,13 +126,17 @@ pub(crate) fn parse_tokens(tokens: &[LexToken]) -> ParseResult {
                 builder.push_node(SyntaxKind::NamespaceBlock, token_slice);
                 in_braced_namespace = has_open_brace && !is_close;
             }
-            ParsedTopLevelItem::Task { malformed } => {
+            ParsedTopLevelItem::Task {
+                malformed,
+                missing_colon,
+            } => {
                 if malformed {
-                    diagnostics.push(parse_error(
-                        "parse.malformed-task-header",
-                        "invalid task header",
-                        token.range,
-                    ));
+                    let (code, message) = if missing_colon {
+                        ("parse.missing-task-colon", "missing ':' before command")
+                    } else {
+                        ("parse.malformed-task-header", "invalid task header")
+                    };
+                    diagnostics.push(parse_error(code, message, token.range));
                     builder.push_node(SyntaxKind::Error, token_slice);
                     continue;
                 }
@@ -168,6 +172,7 @@ enum ParsedTopLevelItem {
     },
     Task {
         malformed: bool,
+        missing_colon: bool,
     },
     Unexpected,
 }
@@ -285,6 +290,7 @@ fn parse_task_item(
     let mut header_complete = false;
     let mut line_start = false;
     let mut malformed = false;
+    let mut missing_colon = false;
     let mut expect_guard_at = false;
     let mut phase = TaskHeaderPhase::BeforeTail;
     let mut saw_parameter_list = false;
@@ -311,7 +317,10 @@ fn parse_task_item(
 
         if saw_colon
             && !header_complete
-            && !matches!(kind, SyntaxKind::Whitespace | SyntaxKind::Newline)
+            && !matches!(
+                kind,
+                SyntaxKind::Whitespace | SyntaxKind::Newline | SyntaxKind::Eof
+            )
         {
             malformed = true;
         }
@@ -347,8 +356,10 @@ fn parse_task_item(
                         expect_clause_start = false;
                     }
                     SyntaxKind::Newline => malformed = true,
+                    SyntaxKind::Eof => {}
                     _ => {
                         malformed = true;
+                        missing_colon = true;
                         expect_clause_start = false;
                     }
                 }
@@ -374,7 +385,10 @@ fn parse_task_item(
                     SyntaxKind::ShellKw | SyntaxKind::ShellFallbackKw => {
                         phase = TaskHeaderPhase::Shell;
                     }
-                    SyntaxKind::Whitespace | SyntaxKind::Indent | SyntaxKind::Newline => {}
+                    SyntaxKind::Whitespace
+                    | SyntaxKind::Indent
+                    | SyntaxKind::Newline
+                    | SyntaxKind::Eof => {}
                     SyntaxKind::At if expect_guard_at => {
                         expect_guard_at = false;
                     }
@@ -500,6 +514,7 @@ fn parse_task_item(
         advance(input);
 
         if kind == SyntaxKind::Eof {
+            malformed |= !phase.is_balanced() || expect_guard_at;
             break;
         }
 
@@ -527,7 +542,10 @@ fn parse_task_item(
         line_start = kind == SyntaxKind::Newline;
     }
 
-    Ok(ParsedTopLevelItem::Task { malformed })
+    Ok(ParsedTopLevelItem::Task {
+        malformed,
+        missing_colon,
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
