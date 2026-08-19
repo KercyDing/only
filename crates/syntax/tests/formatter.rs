@@ -51,7 +51,7 @@ fn wraps_headers_with_three_clauses() {
 }
 
 #[test]
-fn formats_multiline_header_inside_namespace() {
+fn formats_multiline_header_inside_group() {
     let source = concat!(
         "!version 0.4\n",
         "group back {\n",
@@ -81,7 +81,7 @@ fn formats_multiline_header_inside_namespace() {
 }
 
 #[test]
-fn preserves_comments_and_namespace_boundaries() {
+fn preserves_comments_and_group_boundaries() {
     let source = concat!(
         "!version 0.4\n",
         "# Build tools.\n",
@@ -158,7 +158,7 @@ fn orders_declaration_metadata() {
 }
 
 #[test]
-fn formats_namespace_indentation() {
+fn formats_group_indentation() {
     let source = "!version 0.4\ngroup dev {\nrun():\n    true\n    }\n";
 
     assert_eq!(
@@ -185,7 +185,7 @@ fn range_formats_one_declaration() {
 }
 
 #[test]
-fn range_formats_namespaced_task_indentation() {
+fn range_formats_group_task_indentation() {
     let source = "!version 0.4\ngroup dev {\n    build( value=\"x\" ):\n        echo ok\n}\n";
     let start = TextSize::from(source.find("build").expect("task should exist") as u32);
 

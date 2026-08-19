@@ -227,13 +227,11 @@ fn format_top_level_node(node: SyntaxNode, source: &str) -> Result<(ItemKind, St
             Ok((ItemKind::Metadata, text))
         }
         SyntaxKind::NamespaceBlock => {
-            let namespace = NamespaceNode::cast(node).expect("namespace kind must cast");
-            if namespace.is_close() {
+            let group = NamespaceNode::cast(node).expect("group kind must cast");
+            if group.is_close() {
                 Ok((ItemKind::NamespaceClose, "}".to_owned()))
             } else {
-                let name = namespace
-                    .name()
-                    .ok_or_else(|| "invalid namespace".to_owned())?;
+                let name = group.name().ok_or_else(|| "invalid group".to_owned())?;
                 Ok((ItemKind::GroupOpen, format!("group {name} {{")))
             }
         }

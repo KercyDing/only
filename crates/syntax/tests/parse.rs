@@ -1,7 +1,7 @@
 use only_syntax::{DiagnosticCode, ParseResultExt, SyntaxKind, parse};
 
 #[test]
-fn parses_document_with_directive_task_and_namespace() {
+fn parses_document_with_directive_task_and_group() {
     let parsed =
         parse("!shell deno\nbuild():\n    echo hi\ngroup dev {\nserve():\n    cargo run\n}\n");
     let kinds: Vec<_> = parsed.root_children().map(|node| node.kind()).collect();
@@ -13,7 +13,7 @@ fn parses_document_with_directive_task_and_namespace() {
 }
 
 #[test]
-fn multiline_task_header_inside_namespace() {
+fn multiline_task_header_inside_group() {
     let parsed = parse(concat!(
         "!version 0.4\n",
         "group back {\n",
@@ -114,7 +114,7 @@ fn keeps_parsing_after_comments_and_blank_lines() {
 }
 
 #[test]
-fn parses_task_metadata_without_namespace_conflicts() {
+fn parses_task_metadata_without_group_conflicts() {
     let parsed = parse(
         "[help] Build the project\n[unknown] ignored text\nbuild():\n    true\ngroup dev {\n}\n",
     );
@@ -147,7 +147,7 @@ fn top_level_comment_ends_previous_task_body() {
 }
 
 #[test]
-fn treats_indented_namespace_braces_as_structure() {
+fn treats_indented_group_braces_as_structure() {
     let parsed =
         parse("!version 0.4\n    group dev {\nrun():\n    true\n    }\nroot():\n    true\n");
     let namespaces = parsed

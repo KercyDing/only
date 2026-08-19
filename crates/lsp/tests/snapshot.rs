@@ -316,7 +316,7 @@ fn describes_parallel_dependency_group() {
 }
 
 #[test]
-fn resolves_local_namespace_dependency_hover() {
+fn resolves_local_group_dependency_hover() {
     let source = concat!(
         "!version 0.4\n",
         "group dev {\n",
@@ -341,7 +341,7 @@ fn resolves_local_namespace_dependency_hover() {
 }
 
 #[test]
-fn returns_braced_namespace_hover() {
+fn returns_group_hover() {
     let source = concat!(
         "!version 0.4\n",
         "[help] Development tasks.\n",
@@ -351,10 +351,10 @@ fn returns_braced_namespace_hover() {
         "}\n",
     );
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
-    let open_offset = TextSize::from(source.find("dev").expect("namespace should exist") as u32);
+    let open_offset = TextSize::from(source.find("dev").expect("group should exist") as u32);
     let close_offset = TextSize::from(source.rfind('}').expect("close brace should exist") as u32);
 
-    let open = hover(&snapshot, open_offset).expect("namespace hover should exist");
+    let open = hover(&snapshot, open_offset).expect("group hover should exist");
     let close = hover(&snapshot, close_offset).expect("close hover should exist");
 
     assert_eq!(open.kind, LspHoverKind::Namespace);

@@ -117,7 +117,7 @@ pub(crate) fn parse_tokens(tokens: &[LexToken]) -> ParseResult {
                 if malformed {
                     diagnostics.push(parse_error(
                         "parse.malformed-namespace-header",
-                        "invalid namespace",
+                        "invalid group",
                         token.range,
                     ));
                     builder.push_node(SyntaxKind::Error, token_slice);

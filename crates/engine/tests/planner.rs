@@ -19,7 +19,7 @@ fn builds_dag_order_from_semantic_ast() {
 }
 
 #[test]
-fn builds_namespaced_dag_order_from_semantic_ast() {
+fn builds_group_dag_order_from_semantic_ast() {
     let compiled = compile_document(
         "group dev {\n\
          build():\n\

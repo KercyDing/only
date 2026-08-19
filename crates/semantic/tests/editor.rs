@@ -5,7 +5,7 @@ use only_semantic::{
 use text_size::TextSize;
 
 #[test]
-fn builds_document_symbols_for_namespaces_and_tasks() {
+fn builds_document_symbols_for_groups_and_tasks() {
     let compiled = compile_document(
         "# Developer commands.\ngroup dev {\n# Start the app.\nserve(port=\"3000\"):\n    echo {{port}}\n}\n",
     );
@@ -21,7 +21,7 @@ fn builds_document_symbols_for_namespaces_and_tasks() {
 }
 
 #[test]
-fn builds_folding_ranges_for_namespace_and_task_blocks() {
+fn builds_folding_ranges_for_group_and_task_blocks() {
     let source = concat!(
         "!version 0.4\n",
         "group dev {\n",
@@ -40,12 +40,12 @@ fn builds_folding_ranges_for_namespace_and_task_blocks() {
     let namespace = ranges
         .iter()
         .find(|range| range.kind == FoldingRangeKind::Namespace)
-        .expect("namespace range should exist");
+        .expect("group range should exist");
     let close_end = source.find("}\n").expect("close brace should exist") + 2;
 
     assert_eq!(
         usize::from(namespace.range.start()),
-        source.find("group dev").expect("namespace should exist")
+        source.find("group dev").expect("group should exist")
     );
     assert_eq!(usize::from(namespace.range.end()), close_end);
     assert!(

@@ -117,9 +117,7 @@ pub(crate) fn resolve_target(
         [] => Err(OnlyError::parse("no task was selected")),
         [name] => {
             if namespaces.contains(name.as_str()) {
-                return Err(OnlyError::parse(format!(
-                    "choose a task in namespace '{name}'"
-                )));
+                return Err(OnlyError::parse(format!("choose a task in group '{name}'")));
             }
 
             Ok((name.clone(), Vec::new()))

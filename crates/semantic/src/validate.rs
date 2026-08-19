@@ -48,10 +48,7 @@ pub(crate) fn validate_document(document: &DocumentAst, symbols: &SymbolIndex) -
         if global_task_names.contains(&namespace.name) {
             diagnostics.push(error(
                 "semantic.namespace-conflict",
-                format!(
-                    "task and namespace cannot both be named '{}'",
-                    namespace.name
-                ),
+                format!("task and group cannot both be named '{}'", namespace.name),
                 namespace.range,
             ));
         }

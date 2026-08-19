@@ -1,7 +1,7 @@
 use only_semantic::compile_document;
 
 #[test]
-fn builds_namespace_and_task_symbols() {
+fn builds_group_and_task_symbols() {
     let compiled = compile_document("group dev {\nserve():\n    cargo run\n}\n");
 
     assert_eq!(compiled.symbols.namespaces.len(), 1);

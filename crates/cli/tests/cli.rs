@@ -338,7 +338,7 @@ fn rejects_incompatible_version_before_cli_parsing() {
 }
 
 #[test]
-fn assigns_following_tasks_to_current_namespace() {
+fn assigns_following_tasks_to_current_group() {
     let source = "group frontend {
 build():
     npm run build
@@ -352,7 +352,7 @@ serve():
     cargo run
 }
 ";
-    let document = parse_onlyfile(source).expect("namespaced tasks should parse");
+    let document = parse_onlyfile(source).expect("group tasks should parse");
 
     assert!(document.tasks.iter().all(|task| task.namespace.is_some()));
     assert_eq!(document.namespaces.len(), 2);
@@ -372,10 +372,10 @@ serve():
 }
 
 #[test]
-fn does_not_assign_namespace_doc_to_first_task() {
+fn does_not_assign_group_doc_to_first_task() {
     let source =
         "!version 0.4\n# Developer workflow.\ngroup dev {\n    smoke():\n        echo smoke\n}\n";
-    let document = parse_onlyfile(source).expect("namespaced tasks should parse");
+    let document = parse_onlyfile(source).expect("group tasks should parse");
 
     assert!(document.namespaces[0].doc.is_none());
     assert_eq!(task(&document, Some("dev"), "smoke").name, "smoke");
@@ -417,7 +417,7 @@ fn compiles_parallel_dependency_groups_into_shared_stage() {
 }
 
 #[test]
-fn rejects_namespace_without_task_target() {
+fn rejects_group_without_task_target() {
     let error = compile_for_cli_input(
         "bootstrap():
     echo bootstrap
@@ -429,9 +429,9 @@ install():
 ",
         &cli(&["frontend"]),
     )
-    .expect_err("namespace should require explicit task");
+    .expect_err("group should require explicit task");
 
-    assert_eq!(error.to_string(), "choose a task in namespace 'frontend'");
+    assert_eq!(error.to_string(), "choose a task in group 'frontend'");
 }
 
 #[test]
@@ -1098,7 +1098,7 @@ fn binds_slice_arguments_for_global_task() {
 }
 
 #[test]
-fn binds_positional_arguments_for_namespaced_task() {
+fn binds_positional_arguments_for_group_task() {
     let _cwd_lock = cwd_lock();
     let plan = compile_plan(
         r#"group frontend {

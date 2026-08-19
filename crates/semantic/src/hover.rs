@@ -9,7 +9,7 @@ use crate::SemanticSnapshot;
 /// None.
 ///
 /// Returns:
-/// Stable hover categories for namespace and task items.
+/// Stable hover categories for groups and task items.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HoverKind {
     Namespace,
@@ -40,14 +40,14 @@ pub struct HoverInfo {
 /// offset: Source offset queried by the editor host.
 ///
 /// Returns:
-/// Hover information for the matching namespace or task item.
+/// Hover information for the matching group or task item.
 pub fn hover_at(snapshot: &SemanticSnapshot, offset: TextSize) -> Option<HoverInfo> {
     for namespace in &snapshot.document.namespaces {
         if namespace.range.contains(offset) {
             return Some(HoverInfo {
                 kind: HoverKind::Namespace,
                 name: namespace.name.clone(),
-                signature: SmolStr::from(format!("[{}]", namespace.name)),
+                signature: SmolStr::from(format!("group {} {{", namespace.name)),
                 docs: namespace.doc.clone(),
                 range: namespace.range,
                 container_name: None,

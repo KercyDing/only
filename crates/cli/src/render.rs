@@ -129,7 +129,7 @@ fn with_global_options(mut command: Command, hidden: bool) -> Command {
 /// document: Parsed task document.
 ///
 /// Returns:
-/// Clap command with global tasks and namespaces wired as subcommands.
+/// Clap command with global tasks and groups wired as subcommands.
 pub fn build_cli(document: &DocumentAst) -> Command {
     let mut cmd = build_global_cli();
     let globals = global_plan_params(document);
@@ -155,7 +155,7 @@ pub fn build_cli(document: &DocumentAst) -> Command {
 /// document: Parsed task document.
 ///
 /// Returns:
-/// Help text including dynamically discovered tasks and namespaces.
+/// Help text including dynamically discovered tasks and groups.
 pub fn render_help(document: &DocumentAst) -> StyledStr {
     let mut cmd = build_cli(document);
     cmd.render_help()
@@ -167,7 +167,7 @@ pub fn render_help(document: &DocumentAst) -> StyledStr {
 /// document: Parsed task document.
 ///
 /// Returns:
-/// User-facing task list with global tasks and namespaces.
+/// User-facing task list with global tasks and groups.
 pub fn render_available_tasks(document: &DocumentAst) -> String {
     let globals = global_plan_params(document);
     let tasks = task_listing_entries(document, global_tasks(document), &globals);
@@ -248,14 +248,14 @@ fn render_listing_section(
     output
 }
 
-/// Renders help for a namespace and all of its child tasks.
+/// Renders help for a group and all of its child tasks.
 ///
 /// Args:
 /// document: Parsed task document.
-/// namespace: Parsed namespace definition.
+/// namespace: Parsed group definition.
 ///
 /// Returns:
-/// Help text for the namespace subcommand.
+/// Help text for the group subcommand.
 pub fn render_namespace_help(document: &DocumentAst, namespace: &NamespaceAst) -> StyledStr {
     let globals = global_plan_params(document);
     let mut command = build_namespace_command(document, namespace, &globals);
@@ -571,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    fn namespace_lists_without_slash() {
+    fn group_lists_without_slash() {
         let document = parse_onlyfile(
             "!version 0.4
 group dev {
@@ -591,7 +591,7 @@ workflow():
     }
 
     #[test]
-    fn namespace_help_alias() {
+    fn group_help_alias() {
         let document = parse_onlyfile(
             "!version 0.4
 group dev {
@@ -738,7 +738,7 @@ workflow():
     }
 
     #[test]
-    fn renders_namespace_help() {
+    fn renders_group_help() {
         let document = parse_onlyfile(
             "!version 0.4
 group dev {
@@ -746,7 +746,7 @@ group dev {
 workflow():
     echo ok
 
-[help] Run a namespaced smoke command.
+[help] Run a group smoke command.
 smoke():
     echo smoke
 }
@@ -762,7 +762,7 @@ smoke():
         assert!(help.contains("workflow"));
         assert!(help.contains("Default developer workflow."));
         assert!(help.contains("smoke"));
-        assert!(help.contains("Run a namespaced smoke command."));
+        assert!(help.contains("Run a group smoke command."));
         assert!(!help.contains("Commands:"));
     }
 
@@ -852,7 +852,7 @@ workflow():
     }
 
     #[test]
-    fn namespace_summary() {
+    fn group_summary() {
         let document = parse_onlyfile(
             "!version 0.4\n[help] Developer workflow.\ngroup dev {\n    [help] Run smoke.\n    smoke():\n        echo smoke\n}\n",
         )
@@ -864,7 +864,7 @@ workflow():
     }
 
     #[test]
-    fn namespace_help_without_doc() {
+    fn group_help_without_doc() {
         let document = parse_onlyfile(
             "!version 0.4
 group dev {
@@ -883,7 +883,7 @@ group dev {
     }
 
     #[test]
-    fn namespace_about() {
+    fn group_about() {
         let document = parse_onlyfile(
             "!version 0.4
 [help] Developer workflow.
@@ -922,7 +922,7 @@ group dev {
     }
 
     #[test]
-    fn hides_helper_namespace() {
+    fn hides_helper_group() {
         let document = parse_onlyfile(
             "!version 0.4\ncheck():\n    cargo check\n\n[help] Hidden group.\ngroup dev {\n    _hidden():\n        echo hidden\n}\n",
         )

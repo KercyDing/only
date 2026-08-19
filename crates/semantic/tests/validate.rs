@@ -46,7 +46,7 @@ fn reports_duplicate_global_variables() {
 }
 
 #[test]
-fn reports_close_without_namespace() {
+fn reports_close_without_group() {
     let compiled = compile_document("!version 0.4\n}\n");
 
     assert!(

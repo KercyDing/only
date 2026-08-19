@@ -37,7 +37,7 @@ fn leaves_runner_version_checks_to_the_cli() {
 }
 
 #[test]
-fn accepts_multiline_header_inside_namespace() {
+fn accepts_multiline_header_inside_group() {
     let snapshot = DocumentSnapshot::new(
         "file:///workspace/Onlyfile",
         1,

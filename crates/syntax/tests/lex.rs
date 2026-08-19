@@ -70,7 +70,7 @@ fn lexes_fallback_shell_operator() {
 }
 
 #[test]
-fn lexes_namespace_braces() {
+fn lexes_group_braces() {
     let tokens = lex("group dev {\n}\n");
     let kinds = tokens.iter().map(|token| token.kind).collect::<Vec<_>>();
 

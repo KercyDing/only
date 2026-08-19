@@ -75,7 +75,7 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
                 match current_namespace.as_deref() {
                     None => diagnostics.push(semantic_error(
                         "namespace.close-without-open",
-                        "there is no namespace to close",
+                        "there is no group to close",
                         namespace.range(),
                     )),
                     Some(current) => {
@@ -93,7 +93,7 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
             } else if namespace.is_empty() {
                 diagnostics.push(semantic_error(
                     "namespace.empty-label",
-                    "namespace name cannot be empty",
+                    "group name cannot be empty",
                     namespace.range(),
                 ));
             } else {
@@ -363,7 +363,7 @@ fn lower_namespace(
     let range = node.range();
     let name = node
         .name()
-        .ok_or_else(|| lower_error("lower.invalid-namespace", "invalid namespace", range))?;
+        .ok_or_else(|| lower_error("lower.invalid-namespace", "invalid group", range))?;
 
     let metadata = lower_metadata_comments(&docs);
     Ok(NamespaceAst {

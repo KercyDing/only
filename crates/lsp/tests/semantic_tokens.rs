@@ -30,7 +30,7 @@ fn classifies_engineering_syntax() {
     let namespace = tokens
         .iter()
         .find(|token| token.kind == LspSemanticTokenKind::Namespace)
-        .expect("namespace name should have namespace highlighting");
+        .expect("group name should have group highlighting");
     assert_eq!(
         &source[usize::from(namespace.range.start())..usize::from(namespace.range.end())],
         "dev"

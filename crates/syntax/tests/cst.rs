@@ -17,10 +17,7 @@ fn exposes_typed_top_level_nodes() {
     let doc = document.metadata().next().expect("metadata should exist");
     assert_eq!(doc.text().as_deref(), Some("Developer tasks."));
 
-    let namespace = document
-        .namespaces()
-        .next()
-        .expect("namespace should exist");
+    let namespace = document.namespaces().next().expect("group should exist");
     assert_eq!(namespace.name().as_deref(), Some("dev"));
 
     let task = document.tasks().next().expect("task should exist");

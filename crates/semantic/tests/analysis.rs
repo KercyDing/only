@@ -33,7 +33,7 @@ fn reports_undefined_dependency_and_variable() {
 }
 
 #[test]
-fn lowers_directives_and_namespaced_tasks() {
+fn lowers_directives_and_group_tasks() {
     let compiled = compile_document(concat!(
         "!version 0.4\n",
         "!shell deno\n",
@@ -68,7 +68,7 @@ fn lowers_directives_and_namespaced_tasks() {
 }
 
 #[test]
-fn lowers_braced_namespace() {
+fn lowers_group() {
     let compiled = compile_document(concat!(
         "!version 0.4\n",
         "!var target = \"release\"\n",
@@ -90,7 +90,7 @@ fn lowers_braced_namespace() {
 }
 
 #[test]
-fn resolves_local_namespace_dependencies() {
+fn resolves_local_group_dependencies() {
     let compiled = compile_document(concat!(
         "group dev {\n",
         "build():\n",
@@ -132,7 +132,7 @@ fn lowers_parallel_dependency_groups_into_stages() {
 }
 
 #[test]
-fn reports_namespace_conflict_with_global_task() {
+fn reports_group_conflict_with_global_task() {
     let compiled = compile_document(concat!(
         "build():\n",
         "    cargo build\n",
@@ -150,7 +150,7 @@ fn reports_namespace_conflict_with_global_task() {
     assert!(
         messages
             .iter()
-            .any(|msg| msg == &"task and namespace cannot both be named 'build'")
+            .any(|msg| msg == &"task and group cannot both be named 'build'")
     );
 }
 
