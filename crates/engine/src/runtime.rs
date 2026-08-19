@@ -14,7 +14,7 @@ use crate::error::{
     command_block_failed, command_block_start_failed, command_failed, task_failure,
 };
 use crate::interpolate::{interpolate, interpolate_with_parts};
-use crate::process::{OutputChunk, OutputStream, TerminalContext, terminal_context};
+use crate::process::{OutputChunk, OutputStream, TerminalContext, begin_terminal_invocation};
 use crate::shell::{run_command, run_command_inherit};
 use crate::{EngineError, ExecutionNode, ExecutionPlan, ExecutionStep, PlanParam};
 
@@ -95,7 +95,7 @@ pub fn run_plan_with_options(
     let mut finished_count = 0usize;
     let mut active_count = 0usize;
     let mut failure_seen = false;
-    let terminal = terminal_context();
+    let terminal = begin_terminal_invocation()?;
 
     thread::scope(|scope| {
         let mut handles = Vec::new();
@@ -108,6 +108,7 @@ pub fn run_plan_with_options(
                 let working_dir = plan.working_dir.clone();
                 let shell = plan.shell.clone();
                 let event_tx = event_tx.clone();
+                let terminal = terminal.clone();
                 // Only the selected root may own the caller's stdin. Dependency
                 // tasks stay isolated even when the graph happens to run serially.
                 let direct = plan.successors[index].is_empty()
@@ -120,11 +121,15 @@ pub fn run_plan_with_options(
                             EngineError::Runtime("failed to start task presentation".to_string())
                         })?;
                     if direct {
-                        let (error, result) =
-                            match run_node_inherit(&node, &working_dir, shell.as_ref()) {
-                                Ok(result) => result,
-                                Err(error) => (Some(error), None),
-                            };
+                        let (error, result) = match run_node_inherit(
+                            &node,
+                            &working_dir,
+                            shell.as_ref(),
+                            &terminal,
+                        ) {
+                            Ok(result) => result,
+                            Err(error) => (Some(error), None),
+                        };
                         event_tx
                             .send(ExecutionEvent::Finished {
                                 task_index: index,
@@ -275,7 +280,7 @@ fn run_node(
         };
 
         let shell = select_shell(node, default_shell);
-        let status = match run_command(&rendered, working_dir, &shell, output_tx.clone(), terminal)
+        let status = match run_command(&rendered, working_dir, &shell, output_tx.clone(), &terminal)
         {
             Ok(status) => status,
             Err(error) => {
@@ -345,19 +350,21 @@ fn run_node_inherit(
     node: &ExecutionNode,
     working_dir: &std::path::Path,
     default_shell: Option<&ShellKind>,
+    terminal: &TerminalContext,
 ) -> Result<(Option<EngineError>, Option<TaskResult>), EngineError> {
     let total_steps = node.steps.len();
     let execution = (|| {
         for (index, step) in node.steps.iter().enumerate() {
             let rendered = interpolate_step(step, &node.params)?;
             let shell = select_shell(node, default_shell);
-            let status = run_command_inherit(&rendered, working_dir, &shell).map_err(|error| {
-                if step.is_block() {
-                    command_block_start_failed(shell.kind.as_str(), error)
-                } else {
-                    error
-                }
-            })?;
+            let status =
+                run_command_inherit(&rendered, working_dir, &shell, terminal).map_err(|error| {
+                    if step.is_block() {
+                        command_block_start_failed(shell.kind.as_str(), error)
+                    } else {
+                        error
+                    }
+                })?;
 
             if let Some(reason) = status.failure_reason() {
                 return Err(if step.is_block() {

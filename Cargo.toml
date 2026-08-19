@@ -25,7 +25,9 @@ only-syntax = { version = "0.4.1", path = "crates/syntax" }
 
 anstyle = "1.0"
 clap = { version = "4.6", features = ["color", "std", "string"] }
+ctrlc = "3.5"
 deno_task_shell = "0.33"
+libc = "0.2"
 portable-pty = "0.9"
 logos = "0.16"
 miette = { version = "7.6", features = ["fancy"] }
@@ -35,8 +37,10 @@ self-replace = "1.5"
 sha2 = "0.11"
 smol_str = "0.3"
 text-size = "1.1"
+terminal_size = "0.4"
 tokio = { version = "1.53", features = ["rt"] }
 winnow = "1.0"
+windows-sys = "0.61"
 
 [profile.release]
 opt-level = "z"

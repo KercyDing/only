@@ -3,6 +3,7 @@ use std::io::Read;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::mpsc::Sender;
+use std::time::Duration;
 
 use only_semantic::{ShellKind, ShellOperator, ShellSelection};
 
@@ -18,11 +19,11 @@ pub(crate) fn run_command(
     working_dir: &Path,
     shell: &ShellSelection,
     output: Sender<OutputChunk>,
-    terminal: TerminalContext,
+    terminal: &TerminalContext,
 ) -> Result<CommandStatus, EngineError> {
     let resolved_shell = resolve_shell(shell)?;
     match resolved_shell {
-        ShellKind::Deno => run_with_deno_task_shell(command, working_dir, output),
+        ShellKind::Deno => run_with_deno_task_shell(command, working_dir, output, terminal),
         ShellKind::Sh => run_with_system_shell("sh", "-c", command, working_dir, output, terminal),
         ShellKind::Bash => {
             run_with_system_shell("bash", "-c", command, working_dir, output, terminal)
@@ -46,16 +47,25 @@ pub(crate) fn run_command_inherit(
     command: &str,
     working_dir: &Path,
     shell: &ShellSelection,
+    terminal: &TerminalContext,
 ) -> Result<CommandStatus, EngineError> {
     let resolved_shell = resolve_shell(shell)?;
     match resolved_shell {
-        ShellKind::Deno => run_with_deno_task_shell_inherit(command, working_dir),
-        ShellKind::Sh => run_with_system_shell_inherit("sh", "-c", command, working_dir),
-        ShellKind::Bash => run_with_system_shell_inherit("bash", "-c", command, working_dir),
-        ShellKind::Powershell => {
-            run_with_system_shell_inherit(power_shell_command(), "-Command", command, working_dir)
+        ShellKind::Deno => run_with_deno_task_shell_inherit(command, working_dir, terminal),
+        ShellKind::Sh => run_with_system_shell_inherit("sh", "-c", command, working_dir, terminal),
+        ShellKind::Bash => {
+            run_with_system_shell_inherit("bash", "-c", command, working_dir, terminal)
         }
-        ShellKind::Pwsh => run_with_system_shell_inherit("pwsh", "-Command", command, working_dir),
+        ShellKind::Powershell => run_with_system_shell_inherit(
+            power_shell_command(),
+            "-Command",
+            command,
+            working_dir,
+            terminal,
+        ),
+        ShellKind::Pwsh => {
+            run_with_system_shell_inherit("pwsh", "-Command", command, working_dir, terminal)
+        }
         ShellKind::Unknown(name) => Err(EngineError::UnsupportedShell(name.to_string())),
     }
 }
@@ -111,16 +121,18 @@ fn run_with_deno_task_shell(
     command: &str,
     working_dir: &Path,
     output: Sender<OutputChunk>,
+    terminal: &TerminalContext,
 ) -> Result<CommandStatus, EngineError> {
     let parsed = deno_task_shell::parser::parse(command).map_err(|error| {
         EngineError::Runtime(format!("failed to parse command `{command}`: {error}"))
     })?;
     let env_vars = build_command_env();
+    let kill_signal = deno_task_shell::KillSignal::default();
     let state = deno_task_shell::ShellState::new(
         env_vars,
         working_dir.to_path_buf(),
         HashMap::<String, Rc<dyn deno_task_shell::ShellCommand>>::new(),
-        deno_task_shell::KillSignal::default(),
+        kill_signal.clone(),
     );
     let (stdout_reader, stdout_writer) = deno_task_shell::pipe();
     let (stderr_reader, stderr_writer) = deno_task_shell::pipe();
@@ -139,52 +151,72 @@ fn run_with_deno_task_shell(
         .build()
         .map_err(|error| EngineError::Runtime(format!("failed to start task runtime: {error}")))?;
     let local = tokio::task::LocalSet::new();
-    let status = local.block_on(
-        &runtime,
-        deno_task_shell::execute_with_pipes(
+    let status = local.block_on(&runtime, async {
+        let execution = deno_task_shell::execute_with_pipes(
             parsed,
             state,
             closed_stdin(),
             stdout_writer,
             stderr_writer,
-        ),
-    );
+        );
+        let mut execution = Box::pin(execution);
+        loop {
+            match tokio::time::timeout(Duration::from_millis(20), &mut execution).await {
+                Ok(status) => break status,
+                Err(_) if terminal.is_cancelled() => {
+                    kill_signal.send(deno_task_shell::SignalKind::SIGINT);
+                }
+                Err(_) => {}
+            }
+        }
+    });
     join_output_reader(stdout_handle)?;
     join_output_reader(stderr_handle)?;
 
-    Ok(CommandStatus::from_code(status as i32))
+    Ok(CommandStatus::from_code(status))
 }
 
 fn run_with_deno_task_shell_inherit(
     command: &str,
     working_dir: &Path,
+    terminal: &TerminalContext,
 ) -> Result<CommandStatus, EngineError> {
     let parsed = deno_task_shell::parser::parse(command).map_err(|error| {
         EngineError::Runtime(format!("failed to parse command `{command}`: {error}"))
     })?;
+    let kill_signal = deno_task_shell::KillSignal::default();
     let state = deno_task_shell::ShellState::new(
         build_command_env(),
         working_dir.to_path_buf(),
         HashMap::<String, Rc<dyn deno_task_shell::ShellCommand>>::new(),
-        deno_task_shell::KillSignal::default(),
+        kill_signal.clone(),
     );
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| EngineError::Runtime(format!("failed to start task runtime: {error}")))?;
     let local = tokio::task::LocalSet::new();
-    let status = local.block_on(
-        &runtime,
-        deno_task_shell::execute_with_pipes(
+    let status = local.block_on(&runtime, async {
+        let execution = deno_task_shell::execute_with_pipes(
             parsed,
             state,
             deno_task_shell::ShellPipeReader::stdin(),
             deno_task_shell::ShellPipeWriter::stdout(),
             deno_task_shell::ShellPipeWriter::stderr(),
-        ),
-    );
+        );
+        let mut execution = Box::pin(execution);
+        loop {
+            match tokio::time::timeout(Duration::from_millis(20), &mut execution).await {
+                Ok(status) => break status,
+                Err(_) if terminal.is_cancelled() => {
+                    kill_signal.send(deno_task_shell::SignalKind::SIGINT);
+                }
+                Err(_) => {}
+            }
+        }
+    });
 
-    Ok(CommandStatus::from_code(status as i32))
+    Ok(CommandStatus::from_code(status))
 }
 
 struct ShellPipeReaderAdapter(deno_task_shell::ShellPipeReader);
@@ -209,5 +241,36 @@ fn power_shell_command() -> &'static str {
         "powershell.exe"
     } else {
         "powershell"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    use super::run_with_deno_task_shell;
+    use crate::process::TerminalContext;
+
+    #[test]
+    fn cancels_deno_shell() {
+        let context = TerminalContext::pipe();
+        let execution_context = context.clone();
+        let (output_tx, _output_rx) = mpsc::channel();
+        let working_dir = std::env::current_dir().expect("current directory should be available");
+        let started = Instant::now();
+        let command = std::thread::spawn(move || {
+            run_with_deno_task_shell("sleep 30", &working_dir, output_tx, &execution_context)
+        });
+
+        std::thread::sleep(Duration::from_millis(50));
+        context.cancel();
+        let status = command
+            .join()
+            .expect("command thread should finish")
+            .expect("cancelled command should be reaped");
+
+        assert!(status.failure_reason().is_some());
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 }
