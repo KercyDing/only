@@ -59,7 +59,7 @@ fn runs_plan_with_explicit_sh_shell() {
 #[test]
 fn keeps_state_inside_command_block() {
     let compiled = compile_document(
-        "!version 0.2\n!shell sh\nstate():\n    | value=inside\n    | test \"$value\" = inside\n    test -z \"$value\"\n",
+        "!version 0.2\n!shell sh\nstate(value=\"inside\"):\n    | value={{value}}\n    | test \"$value\" = inside\n    test -z \"$value\"\n",
     );
     let plan = build_execution_plan(
         &compiled.document,

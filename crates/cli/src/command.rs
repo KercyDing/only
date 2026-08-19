@@ -233,7 +233,7 @@ fn render_dry_run(plan: &ExecutionPlan, variant: &TaskAst, full: bool) -> Result
                     .map_err(|error| OnlyError::runtime(error.to_string()))?;
                 let step_last = step_index + 1 == node.steps.len();
                 match step {
-                    only_engine::ExecutionStep::Command(_) => {
+                    only_engine::ExecutionStep::Command { .. } => {
                         push_tree_line(&mut output, &command_prefix, step_last, &rendered);
                     }
                     only_engine::ExecutionStep::CommandBlock { line_count, .. } if !full => {

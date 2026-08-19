@@ -225,10 +225,17 @@ fn keeps_command_blocks_as_single_plan_steps() {
     );
 
     assert_eq!(plan.nodes[0].steps.len(), 2);
-    assert!(matches!(
-        &plan.nodes[0].steps[0],
-        only_engine::ExecutionStep::CommandBlock { line_count: 2, .. }
-    ));
+    let only_engine::ExecutionStep::CommandBlock {
+        line_count,
+        interpolations,
+        ..
+    } = &plan.nodes[0].steps[0]
+    else {
+        panic!("expected a command block");
+    };
+    assert_eq!(*line_count, 2);
+    assert_eq!(interpolations.len(), 1);
+    assert_eq!(interpolations[0].name, "value");
     assert_eq!(
         plan.nodes[0].steps[0].source(),
         "value={{value}}\necho \"$value\"\n"

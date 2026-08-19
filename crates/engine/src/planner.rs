@@ -1,7 +1,9 @@
 use std::fmt;
 use std::path::PathBuf;
 
-use only_semantic::{DirectiveAst, DocumentAst, ShellKind, ShellSelection, TaskAst};
+use only_semantic::{
+    DirectiveAst, DocumentAst, InterpolationAst, ShellKind, ShellSelection, TaskAst,
+};
 
 use crate::dag::expand_execution_order;
 use crate::resolve::{
@@ -32,14 +34,21 @@ pub struct ExecutionNode {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExecutionStep {
-    Command(String),
-    CommandBlock { source: String, line_count: usize },
+    Command {
+        source: String,
+        interpolations: Vec<InterpolationAst>,
+    },
+    CommandBlock {
+        source: String,
+        line_count: usize,
+        interpolations: Vec<InterpolationAst>,
+    },
 }
 
 impl ExecutionStep {
     pub fn source(&self) -> &str {
         match self {
-            Self::Command(command) => command,
+            Self::Command { source, .. } => source,
             Self::CommandBlock { source, .. } => source,
         }
     }

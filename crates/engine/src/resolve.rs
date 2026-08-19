@@ -71,12 +71,14 @@ pub(crate) fn build_execution_nodes(
                 .steps
                 .iter()
                 .map(|step| match step {
-                    TaskStepAst::Command(command) => {
-                        ExecutionStep::Command(command.text.to_string())
-                    }
+                    TaskStepAst::Command(command) => ExecutionStep::Command {
+                        source: command.text.to_string(),
+                        interpolations: command.interpolations.clone(),
+                    },
                     TaskStepAst::CommandBlock(block) => ExecutionStep::CommandBlock {
                         source: block.source.to_string(),
                         line_count: block.line_ranges.len(),
+                        interpolations: block.interpolations.clone(),
                     },
                 })
                 .collect(),

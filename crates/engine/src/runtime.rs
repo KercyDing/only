@@ -9,10 +9,10 @@ use only_semantic::{ShellKind, ShellSelection};
 use crate::error::{
     command_block_failed, command_block_start_failed, command_failed, task_failure,
 };
-use crate::interpolate::interpolate;
+use crate::interpolate::{interpolate, interpolate_with_parts};
 use crate::process::{OutputChunk, OutputStream};
 use crate::shell::{run_command, run_command_inherit};
-use crate::{EngineError, ExecutionNode, ExecutionPlan};
+use crate::{EngineError, ExecutionNode, ExecutionPlan, ExecutionStep, PlanParam};
 
 /// Runs a pre-built execution plan.
 ///
@@ -231,7 +231,7 @@ fn run_node(
     let mut task_error = None;
 
     for (index, step) in node.steps.iter().enumerate() {
-        let rendered = match interpolate(step.source(), &node.params) {
+        let rendered = match interpolate_step(step, &node.params) {
             Ok(rendered) => rendered,
             Err(error) => {
                 task_error = Some(error);
@@ -314,7 +314,7 @@ fn run_node_inherit(
     let total_steps = node.steps.len();
     let execution = (|| {
         for (index, step) in node.steps.iter().enumerate() {
-            let rendered = interpolate(step.source(), &node.params)?;
+            let rendered = interpolate_step(step, &node.params)?;
             let shell = select_shell(node, default_shell);
             let status = run_command_inherit(&rendered, working_dir, &shell).map_err(|error| {
                 if step.is_block() {
@@ -349,6 +349,20 @@ fn run_node_inherit(
                 Err(error)
             }
         }
+    }
+}
+
+fn interpolate_step(step: &ExecutionStep, params: &[PlanParam]) -> Result<String, EngineError> {
+    match step {
+        ExecutionStep::Command {
+            source,
+            interpolations,
+        }
+        | ExecutionStep::CommandBlock {
+            source,
+            interpolations,
+            ..
+        } => interpolate_with_parts(source, interpolations, params),
     }
 }
 
