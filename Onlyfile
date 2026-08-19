@@ -16,7 +16,6 @@ ci()
     & check
     & clippy
     & test
-    & build("release")
 
 [help] Format code
 [pass] Format complete.
