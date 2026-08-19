@@ -185,8 +185,14 @@ fn render_dry_run_for_cli(compiled: &CliCompileResult, cli: &CliInput) -> Result
 }
 
 fn run_compiled_plan(plan: &ExecutionPlan, cli: &CliInput) -> Result<ExitCode> {
-    run_plan_with_options(plan, RuntimeOptions { quiet: cli.quiet })
-        .map_err(|error| OnlyError::runtime(error.to_string()))
+    run_plan_with_options(
+        plan,
+        RuntimeOptions {
+            quiet: cli.quiet,
+            ..RuntimeOptions::default()
+        },
+    )
+    .map_err(|error| OnlyError::runtime(error.to_string()))
 }
 
 fn render_dry_run(plan: &ExecutionPlan, variant: &TaskAst, full: bool) -> Result<String> {

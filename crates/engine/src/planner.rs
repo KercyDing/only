@@ -68,6 +68,7 @@ pub struct PlanParam {
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ExecutionPlan {
     pub nodes: Vec<ExecutionNode>,
+    pub successors: Vec<Vec<usize>>,
     pub shell: Option<ShellKind>,
     pub working_dir: PathBuf,
 }
@@ -215,10 +216,11 @@ pub fn try_build_execution_plan_in_dir(
             effective_globals.insert(name.clone(), value.clone());
         }
     }
-    let ordered = expand_execution_order(root, &overrides, &tasks, &effective_globals)?;
+    let expanded = expand_execution_order(root, &overrides, &tasks, &effective_globals)?;
 
     Ok(ExecutionPlan {
-        nodes: build_execution_nodes(ordered),
+        nodes: build_execution_nodes(expanded.ordered),
+        successors: expanded.successors,
         shell: document_shell(document),
         working_dir,
     })

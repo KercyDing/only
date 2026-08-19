@@ -1,6 +1,10 @@
-use only_engine::{Invocation, build_execution_plan, run_plan};
+use only_engine::{
+    Invocation, RuntimeOptions, build_execution_plan, run_plan, run_plan_with_options,
+};
 use only_semantic::compile_document;
+use std::fs;
 use std::process::ExitCode;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[test]
 fn runs_plan_with_default_parameter_interpolation() {
@@ -36,6 +40,96 @@ fn reports_command_failure_with_context() {
     assert!(rendered.contains("due to "));
     assert!(!rendered.contains("ExitCode("));
     assert!(!rendered.contains("command:"));
+}
+
+#[cfg(unix)]
+#[test]
+fn releases_ready_successors() {
+    let directory = std::env::temp_dir().join(format!(
+        "only-runtime-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after Unix epoch")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&directory).expect("temporary directory should be created");
+    let compiled = compile_document(
+        "!version 0.4
+f1() shell=sh:
+    touch f1
+f2() shell=sh:
+    test -f f1
+    touch f2
+front() & f1 & f2:
+    true
+b1() shell=sh:
+    sleep 0.2
+    test -f f2
+back() & b1:
+    true
+root() & (front, back):
+    true
+",
+    );
+    let plan = only_engine::try_build_execution_plan_in_dir(
+        &compiled.document,
+        Invocation::Task {
+            target: "root",
+            args: vec![],
+            overrides: vec![],
+        },
+        directory.clone(),
+    )
+    .expect("plan should build");
+
+    let code = run_plan(&plan).expect("ready successor should run before unrelated branch ends");
+    assert_eq!(code, ExitCode::SUCCESS);
+    fs::remove_dir_all(directory).expect("temporary directory should be removed");
+}
+
+#[cfg(unix)]
+#[test]
+fn stops_scheduling_after_failure() {
+    let directory = std::env::temp_dir().join(format!(
+        "only-runtime-{}",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after Unix epoch")
+            .as_nanos()
+    ));
+    fs::create_dir_all(&directory).expect("temporary directory should be created");
+    let compiled = compile_document(
+        "!version 0.4
+fail() shell=sh:
+    false
+later() shell=sh:
+    touch later
+root() & (fail, later):
+    true
+",
+    );
+    let plan = only_engine::try_build_execution_plan_in_dir(
+        &compiled.document,
+        Invocation::Task {
+            target: "root",
+            args: vec![],
+            overrides: vec![],
+        },
+        directory.clone(),
+    )
+    .expect("plan should build");
+
+    let error = run_plan_with_options(
+        &plan,
+        RuntimeOptions {
+            quiet: true,
+            max_parallelism: Some(1),
+        },
+    )
+    .expect_err("failure should stop further scheduling");
+    assert!(error.to_string().contains("task 'fail' failed"));
+    assert!(!directory.join("later").exists());
+    fs::remove_dir_all(directory).expect("temporary directory should be removed");
 }
 
 #[cfg(unix)]

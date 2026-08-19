@@ -156,9 +156,8 @@ fn run_with_deno_task_shell_inherit(
     let parsed = deno_task_shell::parser::parse(command).map_err(|error| {
         EngineError::Runtime(format!("failed to parse command `{command}`: {error}"))
     })?;
-    let env_vars = build_command_env();
     let state = deno_task_shell::ShellState::new(
-        env_vars,
+        build_command_env(),
         working_dir.to_path_buf(),
         HashMap::<String, Rc<dyn deno_task_shell::ShellCommand>>::new(),
         deno_task_shell::KillSignal::default(),

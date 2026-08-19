@@ -7,6 +7,11 @@ use crate::resolve::{TaskIndex, bind_parameters, merge_parameter_inputs, select_
 
 pub(crate) type BoundTask<'a> = (usize, &'a TaskAst, HashMap<String, String>);
 
+pub(crate) struct ExpandedExecution<'a> {
+    pub ordered: Vec<BoundTask<'a>>,
+    pub successors: Vec<Vec<usize>>,
+}
+
 #[derive(Default)]
 struct ExecutionGraph<'a> {
     nodes: HashMap<String, (&'a TaskAst, HashMap<String, String>)>,
@@ -19,7 +24,7 @@ pub(crate) fn expand_execution_order<'a>(
     root_bindings: &HashMap<String, String>,
     tasks: &TaskIndex<'a>,
     globals: &HashMap<String, String>,
-) -> Result<Vec<BoundTask<'a>>, PlanError> {
+) -> Result<ExpandedExecution<'a>, PlanError> {
     let mut graph = ExecutionGraph::default();
     let mut visiting = Vec::new();
     let root_bindings = bind_parameters(root, Some(root_bindings), globals)?;
@@ -144,7 +149,7 @@ fn group_dependencies(task: &TaskAst) -> Vec<Vec<&DependencyAst>> {
     groups
 }
 
-fn build_staged_order<'a>(graph: ExecutionGraph<'a>) -> Result<Vec<BoundTask<'a>>, PlanError> {
+fn build_staged_order<'a>(graph: ExecutionGraph<'a>) -> Result<ExpandedExecution<'a>, PlanError> {
     let mut indegree = graph
         .registration_order
         .iter()
@@ -201,5 +206,22 @@ fn build_staged_order<'a>(graph: ExecutionGraph<'a>) -> Result<Vec<BoundTask<'a>
         stage += 1;
     }
 
-    Ok(ordered)
+    let indices = ordered
+        .iter()
+        .enumerate()
+        .map(|(index, (_, task, _))| (task.qualified_name().to_string(), index))
+        .collect::<HashMap<_, _>>();
+    let mut successors = vec![Vec::new(); ordered.len()];
+    for (name, dependents) in graph.edges {
+        let source = indices[&name];
+        for dependent in dependents {
+            successors[source].push(indices[&dependent]);
+        }
+        successors[source].sort_unstable();
+    }
+
+    Ok(ExpandedExecution {
+        ordered,
+        successors,
+    })
 }

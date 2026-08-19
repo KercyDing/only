@@ -1,4 +1,5 @@
 use anstyle::{AnsiColor as TermAnsiColor, Style as TermStyle};
+use std::collections::VecDeque;
 use std::io::{self, Write};
 use std::process::ExitCode;
 use std::sync::mpsc;
@@ -35,6 +36,7 @@ pub fn run_plan(plan: &ExecutionPlan) -> Result<ExitCode, EngineError> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct RuntimeOptions {
     pub quiet: bool,
+    pub max_parallelism: Option<usize>,
 }
 
 /// Runs a pre-built execution plan with host display options.
@@ -50,159 +52,147 @@ pub fn run_plan_with_options(
     options: RuntimeOptions,
 ) -> Result<ExitCode, EngineError> {
     let total_tasks = plan.nodes.len();
-    let mut task_index = 0usize;
-
-    while task_index < total_tasks {
-        let stage = plan.nodes[task_index].stage;
-        let stage_start = task_index;
-        while task_index < total_tasks && plan.nodes[task_index].stage == stage {
-            task_index += 1;
-        }
-        let stage_nodes = &plan.nodes[stage_start..task_index];
-
-        if !options.quiet {
-            for (offset, node) in stage_nodes.iter().enumerate() {
-                eprintln!(
-                    "{}",
-                    render_task_progress(stage_start + offset + 1, total_tasks, &node.name)
-                );
-            }
-        }
-
-        if stage_nodes.len() == 1 {
-            run_node_inherit(
-                &stage_nodes[0],
-                &plan.working_dir,
-                plan.shell.as_ref(),
-                options.quiet,
-            )?;
-        } else {
-            execute_stage(
-                stage_nodes,
-                &plan.working_dir,
-                plan.shell.as_ref(),
-                options.quiet,
-            )?;
-        }
+    if total_tasks == 0 {
+        return Ok(ExitCode::SUCCESS);
+    }
+    if plan.successors.len() != total_tasks {
+        return Err(EngineError::Runtime(
+            "execution plan has invalid dependency edges".to_string(),
+        ));
     }
 
-    Ok(ExitCode::SUCCESS)
-}
-
-fn execute_stage(
-    stage_nodes: &[ExecutionNode],
-    working_dir: &std::path::Path,
-    default_shell: Option<&ShellKind>,
-    quiet: bool,
-) -> Result<(), EngineError> {
-    let stage_len = stage_nodes.len();
-    let (event_tx, event_rx) = mpsc::channel::<StageEvent>();
-
-    thread::scope(|scope| {
-        let mut handles = Vec::new();
-
-        for (index, node) in stage_nodes.iter().cloned().enumerate() {
-            let working_dir = working_dir.to_path_buf();
-            let shell = default_shell.cloned();
-            let event_tx = event_tx.clone();
-            handles.push(
-                scope.spawn(move || run_node(index, &node, &working_dir, shell.as_ref(), event_tx)),
-            );
+    let mut indegree = vec![0usize; total_tasks];
+    for successors in &plan.successors {
+        for &successor in successors {
+            if successor >= total_tasks {
+                return Err(EngineError::Runtime(
+                    "execution plan has invalid dependency edge".to_string(),
+                ));
+            }
+            indegree[successor] += 1;
         }
-        drop(event_tx);
-
-        run_ordered_output_event_loop(&event_rx, stage_len, quiet)?;
-
-        collect_thread_results(handles)
-    })
-}
-
-fn run_ordered_output_event_loop(
-    event_rx: &mpsc::Receiver<StageEvent>,
-    stage_len: usize,
-    quiet: bool,
-) -> Result<(), EngineError> {
-    let mut buffers = vec![Vec::<OutputChunk>::new(); stage_len];
-    let mut finished = vec![false; stage_len];
-    let mut results = (0..stage_len)
+    }
+    let mut ready = (0..total_tasks)
+        .filter(|&index| indegree[index] == 0)
+        .collect::<VecDeque<_>>();
+    let limit = options.max_parallelism.unwrap_or(usize::MAX).max(1);
+    let (event_tx, event_rx) = mpsc::channel::<ExecutionEvent>();
+    let mut buffers = vec![Vec::<OutputChunk>::new(); total_tasks];
+    let mut finished = vec![false; total_tasks];
+    let mut results = (0..total_tasks)
         .map(|_| None)
         .collect::<Vec<Option<TaskResult>>>();
-    let mut task_errors = (0..stage_len)
+    let mut task_errors = (0..total_tasks)
         .map(|_| None)
         .collect::<Vec<Option<EngineError>>>();
     let mut current_index = 0usize;
     let mut finished_count = 0usize;
-    let mut first_error = None;
+    let mut active_count = 0usize;
+    let mut failure_seen = false;
 
-    while finished_count < stage_len {
-        match event_rx.recv() {
-            Ok(StageEvent::Output { task_index, chunk }) => {
-                if task_index == current_index {
-                    print_output_chunk(&chunk)?;
-                } else {
-                    buffers[task_index].push(chunk);
+    thread::scope(|scope| {
+        let mut handles = Vec::new();
+        while finished_count < total_tasks && (!failure_seen || active_count > 0) {
+            while !failure_seen && active_count < limit {
+                let Some(index) = ready.pop_front() else {
+                    break;
+                };
+                if !options.quiet {
+                    eprintln!(
+                        "{}",
+                        render_task_progress(index + 1, total_tasks, &plan.nodes[index].name)
+                    );
                 }
-            }
-            Ok(StageEvent::Finished {
-                task_index,
-                error,
-                result,
-            }) => {
-                finished[task_index] = true;
-                task_errors[task_index] = error;
-                results[task_index] = result;
-                finished_count += 1;
-
-                while current_index < stage_len {
-                    flush_task_buffer(&mut buffers[current_index])?;
-                    if !finished[current_index] {
-                        break;
+                let node = plan.nodes[index].clone();
+                let working_dir = plan.working_dir.clone();
+                let shell = plan.shell.clone();
+                let event_tx = event_tx.clone();
+                let direct = active_count == 0 && (limit == 1 || ready.is_empty());
+                handles.push(scope.spawn(move || {
+                    if direct {
+                        let error =
+                            run_node_inherit(&node, &working_dir, shell.as_ref(), options.quiet)
+                                .err();
+                        event_tx
+                            .send(ExecutionEvent::Finished {
+                                task_index: index,
+                                error,
+                                result: None,
+                            })
+                            .map_err(|_| {
+                                EngineError::Runtime("failed to finalize task output".to_string())
+                            })
+                    } else {
+                        run_node(index, &node, &working_dir, shell.as_ref(), event_tx)
                     }
-                    let mut task_error = task_errors[current_index].take();
-                    match results[current_index].take() {
-                        Some(TaskResult::Pass(message)) if !quiet => print_task_message(&message)?,
-                        Some(TaskResult::Fail(message)) => {
-                            if let Some(error) = task_error.take() {
-                                task_error = Some(task_failure(error, message));
+                }));
+                active_count += 1;
+            }
+            let event = event_rx.recv().map_err(|_| {
+                EngineError::Runtime("execution event channel closed unexpectedly".to_string())
+            })?;
+            match event {
+                ExecutionEvent::Output { task_index, chunk } => {
+                    if task_index == current_index {
+                        print_output_chunk(&chunk)?;
+                    } else {
+                        buffers[task_index].push(chunk);
+                    }
+                }
+                ExecutionEvent::Finished {
+                    task_index,
+                    error,
+                    result,
+                } => {
+                    active_count -= 1;
+                    finished[task_index] = true;
+                    task_errors[task_index] = error;
+                    results[task_index] = result;
+                    finished_count += 1;
+                    if task_errors[task_index].is_some() {
+                        failure_seen = true;
+                    } else if !failure_seen {
+                        for &successor in &plan.successors[task_index] {
+                            indegree[successor] -= 1;
+                            if indegree[successor] == 0 {
+                                ready.push_back(successor);
                             }
                         }
-                        Some(TaskResult::Pass(_)) | None => {}
                     }
-                    if first_error.is_none() {
-                        first_error = task_error;
-                    }
-                    current_index += 1;
                 }
             }
-            Err(_) => break,
-        }
-    }
 
-    match first_error {
-        Some(error) => Err(error),
-        None => Ok(()),
-    }
-}
-
-fn collect_thread_results(
-    handles: Vec<thread::ScopedJoinHandle<'_, Result<(), EngineError>>>,
-) -> Result<(), EngineError> {
-    let mut first_error = None;
-    for handle in handles {
-        match handle.join() {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) => {
-                if first_error.is_none() {
-                    first_error = Some(error);
+            while current_index < total_tasks && finished[current_index] {
+                flush_task_buffer(&mut buffers[current_index])?;
+                let mut task_error = task_errors[current_index].take();
+                match results[current_index].take() {
+                    Some(TaskResult::Pass(message)) if !options.quiet => {
+                        print_task_message(&message)?
+                    }
+                    Some(TaskResult::Fail(message)) => {
+                        if let Some(error) = task_error.take() {
+                            task_error = Some(task_failure(error, message));
+                        }
+                    }
+                    Some(TaskResult::Pass(_)) | None => {}
                 }
+                task_errors[current_index] = task_error;
+                current_index += 1;
             }
-            Err(payload) => std::panic::resume_unwind(payload),
         }
-    }
-    match first_error {
-        Some(error) => Err(error),
-        None => Ok(()),
-    }
+        drop(event_tx);
+        for handle in handles {
+            if let Err(payload) = handle.join() {
+                std::panic::resume_unwind(payload);
+            }
+        }
+        Ok::<(), EngineError>(())
+    })?;
+
+    task_errors
+        .into_iter()
+        .find_map(|error| error)
+        .map_or(Ok(ExitCode::SUCCESS), Err)
 }
 
 fn run_node(
@@ -210,7 +200,7 @@ fn run_node(
     node: &ExecutionNode,
     working_dir: &std::path::Path,
     default_shell: Option<&ShellKind>,
-    event_tx: mpsc::Sender<StageEvent>,
+    event_tx: mpsc::Sender<ExecutionEvent>,
 ) -> Result<(), EngineError> {
     let (output_tx, output_rx) = mpsc::channel::<OutputChunk>();
     let forwarder = thread::spawn({
@@ -218,7 +208,7 @@ fn run_node(
         move || -> Result<(), EngineError> {
             while let Ok(chunk) = output_rx.recv() {
                 event_tx
-                    .send(StageEvent::Output { task_index, chunk })
+                    .send(ExecutionEvent::Output { task_index, chunk })
                     .map_err(|_| {
                         EngineError::Runtime("failed to forward task output".to_string())
                     })?;
@@ -296,7 +286,7 @@ fn run_node(
     };
 
     event_tx
-        .send(StageEvent::Finished {
+        .send(ExecutionEvent::Finished {
             task_index,
             error: task_error,
             result,
@@ -373,7 +363,7 @@ fn select_shell(node: &ExecutionNode, default_shell: Option<&ShellKind>) -> Shel
 }
 
 #[derive(Debug)]
-enum StageEvent {
+enum ExecutionEvent {
     Output {
         task_index: usize,
         chunk: OutputChunk,
