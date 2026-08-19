@@ -126,11 +126,8 @@ pub(crate) fn parse_tokens(tokens: &[LexToken]) -> ParseResult {
                 builder.push_node(SyntaxKind::NamespaceBlock, token_slice);
                 in_braced_namespace = has_open_brace && !is_close;
             }
-            ParsedTopLevelItem::Task {
-                saw_colon,
-                malformed,
-            } => {
-                if !saw_colon || malformed {
+            ParsedTopLevelItem::Task { malformed } => {
+                if malformed {
                     diagnostics.push(parse_error(
                         "parse.malformed-task-header",
                         "invalid task header",
@@ -170,7 +167,6 @@ enum ParsedTopLevelItem {
         has_open_brace: bool,
     },
     Task {
-        saw_colon: bool,
         malformed: bool,
     },
     Unexpected,
@@ -341,12 +337,19 @@ fn parse_task_item(
     let mut expect_param_indent = false;
 
     while let Some(kind) = input.first().copied() {
-        if header_complete
-            && line_start
+        if line_start
+            && (header_complete || (continuation_header && !saw_colon))
             && (starts_top_level_item(kind)
                 || starts_indented_namespace_boundary(input)
                 || (in_braced_namespace && starts_indented_namespace_member(input)))
         {
+            break;
+        }
+
+        // A blank line terminates a no-body header. It must not be treated as
+        // another multiline clause, otherwise a formatted dependency-only task
+        // would become malformed on the following declaration.
+        if continuation_header && !saw_colon && line_start && kind == SyntaxKind::Newline {
             break;
         }
 
@@ -412,13 +415,17 @@ fn parse_task_item(
                             previous: Some(SyntaxKind::Amp),
                         };
                     }
-                    SyntaxKind::Whitespace | SyntaxKind::Indent => {}
+                    SyntaxKind::ShellKw | SyntaxKind::ShellFallbackKw => {
+                        phase = TaskHeaderPhase::Shell;
+                    }
+                    SyntaxKind::Whitespace | SyntaxKind::Indent | SyntaxKind::Newline => {}
                     SyntaxKind::At if expect_guard_at => {
                         expect_guard_at = false;
                     }
+                    SyntaxKind::Colon => {}
                     _ => {
+                        malformed = true;
                         if expect_guard_at {
-                            malformed = true;
                             expect_guard_at = false;
                         }
                     }
@@ -523,7 +530,11 @@ fn parse_task_item(
                         *previous = Some(kind);
                     }
                 },
-                TaskHeaderPhase::Shell => {}
+                TaskHeaderPhase::Shell => {
+                    if kind == SyntaxKind::Question {
+                        malformed = true;
+                    }
+                }
             }
         }
 
@@ -560,10 +571,7 @@ fn parse_task_item(
         line_start = kind == SyntaxKind::Newline;
     }
 
-    Ok(ParsedTopLevelItem::Task {
-        saw_colon,
-        malformed,
-    })
+    Ok(ParsedTopLevelItem::Task { malformed })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

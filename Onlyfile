@@ -4,8 +4,8 @@
 [help] Build only-cli
 [pass] Build complete.
 [fail] Build failed.
-build(profile = "debug"):
-    cargo build -p only --profile {{profile}}
+build(profile = "dev"):
+    cargo build --profile {{profile}}
 
 [help] Run CI
 [desc] Format, check, lint, test, and build.
@@ -17,7 +17,6 @@ ci()
     & clippy
     & test
     & build("release")
-:
 
 [help] Format code
 [pass] Format complete.

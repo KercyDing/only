@@ -225,3 +225,23 @@ fn formats_dependency_arguments() {
         )
     );
 }
+
+#[test]
+fn omits_empty_task_colon() {
+    let source = concat!(
+        "prepare():\n    true\n",
+        "ci() & prepare & (check, test):\n",
+        "check():\n    true\n",
+        "test():\n    true\n",
+    );
+
+    assert_eq!(
+        format_source(source).expect("source should format"),
+        concat!(
+            "prepare():\n    true\n\n",
+            "ci() & prepare & (check, test)\n\n",
+            "check():\n    true\n\n",
+            "test():\n    true\n",
+        )
+    );
+}

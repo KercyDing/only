@@ -388,12 +388,12 @@ fn format_task(task: &TaskNode, source: &str) -> Result<String, String> {
     let header = task
         .header()
         .ok_or_else(|| "task has no header".to_owned())?;
-    let mut output = format_header(&header, source)?;
     let body = source_range(
         source,
         TextRange::new(header.range().end(), task.range().end()),
     );
     let body = format_task_body(body);
+    let mut output = format_header(&header, source, !body.is_empty())?;
     if !body.is_empty() {
         output.push('\n');
         output.push_str(&body);
@@ -401,7 +401,7 @@ fn format_task(task: &TaskNode, source: &str) -> Result<String, String> {
     Ok(output)
 }
 
-fn format_header(header: &TaskHeaderNode, source: &str) -> Result<String, String> {
+fn format_header(header: &TaskHeaderNode, source: &str, has_body: bool) -> Result<String, String> {
     let name = header
         .name()
         .ok_or_else(|| "task header has no name".to_owned())?;
@@ -424,7 +424,6 @@ fn format_header(header: &TaskHeaderNode, source: &str) -> Result<String, String
     let shell = header
         .shell()
         .map(|shell| format_shell(shell.text().as_str()));
-
     let params_inline = parameters.join(", ");
     let prefix = format!("{name}({params_inline})");
     let mut clauses =
@@ -440,7 +439,9 @@ fn format_header(header: &TaskHeaderNode, source: &str) -> Result<String, String
         inline.push(' ');
         inline.push_str(clause);
     }
-    inline.push(':');
+    if has_body {
+        inline.push(':');
+    }
     if clauses.len() < 3 {
         return Ok(inline);
     }
@@ -451,7 +452,9 @@ fn format_header(header: &TaskHeaderNode, source: &str) -> Result<String, String
         output.push_str(INDENT);
         output.push_str(&clause);
     }
-    output.push_str("\n:");
+    if has_body {
+        output.push_str("\n:");
+    }
     Ok(output)
 }
 

@@ -72,3 +72,34 @@ fn reports_inline_task_command() {
             .any(|diagnostic| diagnostic.code == "parse.malformed-task-header")
     );
 }
+
+#[test]
+fn accepts_dependency_task() {
+    let snapshot = DocumentSnapshot::new(
+        "file:///workspace/Onlyfile",
+        1,
+        "!version 0.3\nprepare():\n    true\nci() & prepare\n",
+    );
+
+    assert!(
+        diagnostics(&snapshot).is_empty(),
+        "{:?}",
+        diagnostics(&snapshot)
+    );
+    assert_eq!(snapshot.semantic.document.tasks.len(), 2);
+}
+
+#[test]
+fn accepts_multiline_dependency_task() {
+    let snapshot = DocumentSnapshot::new(
+        "file:///workspace/Onlyfile",
+        1,
+        "!version 0.4\nprepare():\n    true\nci()\n    & prepare\n",
+    );
+
+    assert!(
+        diagnostics(&snapshot).is_empty(),
+        "{:?}",
+        diagnostics(&snapshot)
+    );
+}

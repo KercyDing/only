@@ -47,6 +47,25 @@ fn parses_document_with_crlf_line_endings() {
 }
 
 #[test]
+fn parses_task_without_colon() {
+    let parsed = parse(
+        "_prepare():\n    true\nci() & _prepare & (check, test)\ncheck():\n    true\ntest():\n    true\n",
+    );
+
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let task = parsed
+        .document()
+        .tasks()
+        .find(|task| task.header().and_then(|header| header.name()).as_deref() == Some("ci"))
+        .expect("dependency-only task should be present");
+    assert!(task.header().expect("task header").terminator().is_none());
+}
+
+#[test]
 fn recovers_after_broken_task_header() {
     let parsed = parse("broken(\nnext():\n    echo next\n");
     let task_count = parsed
@@ -263,6 +282,21 @@ fn rejects_inline_task_command() {
 
     assert_eq!(task_count, 1);
     assert_eq!(error_count, 1);
+    assert!(parsed.diagnostics().iter().any(|diagnostic| diagnostic.code
+        == DiagnosticCode::new("parse.malformed-task-header")));
+}
+
+#[test]
+fn rejects_inline_command() {
+    let parsed = parse("build() cargo build\nnext():\n    cargo check\n");
+
+    assert_eq!(
+        parsed
+            .root_children()
+            .filter(|node| node.kind() == SyntaxKind::TaskDecl)
+            .count(),
+        1
+    );
     assert!(parsed.diagnostics().iter().any(|diagnostic| diagnostic.code
         == DiagnosticCode::new("parse.malformed-task-header")));
 }
