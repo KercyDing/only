@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::io::Read;
+use std::io::{IsTerminal, Read};
 use std::path::Path;
 use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc::Sender;
@@ -43,7 +43,39 @@ pub(crate) struct OutputChunk {
     pub bytes: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TerminalContext {
+    pub use_pty: bool,
+}
+
+pub(crate) fn terminal_context() -> TerminalContext {
+    TerminalContext {
+        use_pty: std::io::stdin().is_terminal()
+            && std::io::stdout().is_terminal()
+            && std::io::stderr().is_terminal()
+            && std::env::var_os("CI").is_none(),
+    }
+}
+
 pub(crate) fn run_with_system_shell(
+    program: &str,
+    arg: &str,
+    command: &str,
+    working_dir: &Path,
+    output: Sender<OutputChunk>,
+    terminal: TerminalContext,
+) -> Result<CommandStatus, EngineError> {
+    if terminal.use_pty
+        && let Some(status) =
+            run_with_system_shell_pty(program, arg, command, working_dir, &output)?
+    {
+        return Ok(status);
+    }
+
+    run_with_system_shell_pipe(program, arg, command, working_dir, output)
+}
+
+fn run_with_system_shell_pipe(
     program: &str,
     arg: &str,
     command: &str,
@@ -84,6 +116,58 @@ pub(crate) fn run_with_system_shell(
     join_output_reader(stderr_handle)?;
 
     Ok(command_status(status))
+}
+
+fn run_with_system_shell_pty(
+    program: &str,
+    arg: &str,
+    command: &str,
+    working_dir: &Path,
+    output: &Sender<OutputChunk>,
+) -> Result<Option<CommandStatus>, EngineError> {
+    let pty_system = portable_pty::native_pty_system();
+    let pair = match pty_system.openpty(portable_pty::PtySize::default()) {
+        Ok(pair) => pair,
+        Err(_) => return Ok(None),
+    };
+
+    let mut builder = portable_pty::CommandBuilder::new(program);
+    builder.arg(arg);
+    builder.arg(command);
+    builder.cwd(working_dir);
+    for (name, value) in build_command_env() {
+        builder.env(name, value);
+    }
+    let mut child = match pair.slave.spawn_command(builder) {
+        Ok(child) => child,
+        Err(_) => return Ok(None),
+    };
+    // Keep only the master side after spawning. Holding the parent slave open
+    // can delay the EOF that terminates the output reader.
+    drop(pair.slave);
+    let reader = match pair.master.try_clone_reader() {
+        Ok(reader) => reader,
+        Err(_) => return Ok(None),
+    };
+    let closed_input = match pair.master.take_writer() {
+        Ok(writer) => writer,
+        Err(_) => return Ok(None),
+    };
+    drop(closed_input);
+    let reader_handle = spawn_output_reader(reader, OutputStream::Stdout, output.clone());
+    let status = child.wait().map_err(|error| {
+        EngineError::Runtime(format!("failed to wait for PTY command: {error}"))
+    })?;
+    join_output_reader(reader_handle)?;
+
+    let status = if status.success() {
+        CommandStatus::Success
+    } else if let Some(signal) = status.signal() {
+        CommandStatus::Failed(format!("pty_signal({signal})"))
+    } else {
+        CommandStatus::from_code(status.exit_code() as i32)
+    };
+    Ok(Some(status))
 }
 
 pub(crate) fn run_with_system_shell_inherit(
@@ -189,7 +273,9 @@ fn platform_exit_reason(code: i32) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::CommandStatus;
+    use std::sync::mpsc;
+
+    use super::{CommandStatus, OutputStream, TerminalContext, run_with_system_shell};
 
     #[test]
     fn formats_exit_status_cleanly() {
@@ -207,5 +293,34 @@ mod tests {
 
         assert_eq!(reason, expected);
         assert!(!reason.contains("ExitCode("));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn pty_merges_command_output() {
+        let (output_tx, output_rx) = mpsc::channel();
+        let status = run_with_system_shell(
+            "sh",
+            "-c",
+            "printf out; printf err >&2",
+            std::path::Path::new("."),
+            output_tx,
+            TerminalContext { use_pty: true },
+        )
+        .expect("PTY command should run");
+
+        assert_eq!(status, CommandStatus::Success);
+        let chunks = output_rx.into_iter().collect::<Vec<_>>();
+        assert!(!chunks.is_empty());
+        assert!(
+            chunks
+                .iter()
+                .all(|chunk| chunk.stream == OutputStream::Stdout)
+        );
+        let bytes = chunks
+            .into_iter()
+            .flat_map(|chunk| chunk.bytes)
+            .collect::<Vec<_>>();
+        assert!(bytes.ends_with(b"outerr"));
     }
 }

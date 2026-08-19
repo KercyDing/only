@@ -12,4 +12,5 @@ only-semantic.workspace = true
 
 anstyle.workspace = true
 deno_task_shell.workspace = true
+portable-pty.workspace = true
 tokio.workspace = true

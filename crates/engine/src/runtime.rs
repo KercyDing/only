@@ -14,7 +14,7 @@ use crate::error::{
     command_block_failed, command_block_start_failed, command_failed, task_failure,
 };
 use crate::interpolate::{interpolate, interpolate_with_parts};
-use crate::process::{OutputChunk, OutputStream};
+use crate::process::{OutputChunk, OutputStream, TerminalContext, terminal_context};
 use crate::shell::{run_command, run_command_inherit};
 use crate::{EngineError, ExecutionNode, ExecutionPlan, ExecutionStep, PlanParam};
 
@@ -95,6 +95,7 @@ pub fn run_plan_with_options(
     let mut finished_count = 0usize;
     let mut active_count = 0usize;
     let mut failure_seen = false;
+    let terminal = terminal_context();
 
     thread::scope(|scope| {
         let mut handles = Vec::new();
@@ -107,7 +108,11 @@ pub fn run_plan_with_options(
                 let working_dir = plan.working_dir.clone();
                 let shell = plan.shell.clone();
                 let event_tx = event_tx.clone();
-                let direct = active_count == 0 && (limit == 1 || ready.is_empty());
+                // Only the selected root may own the caller's stdin. Dependency
+                // tasks stay isolated even when the graph happens to run serially.
+                let direct = plan.successors[index].is_empty()
+                    && active_count == 0
+                    && (limit == 1 || ready.is_empty());
                 handles.push(scope.spawn(move || {
                     event_tx
                         .send(ExecutionEvent::Started { task_index: index })
@@ -130,7 +135,14 @@ pub fn run_plan_with_options(
                                 EngineError::Runtime("failed to finalize task output".to_string())
                             })
                     } else {
-                        run_node(index, &node, &working_dir, shell.as_ref(), event_tx)
+                        run_node(
+                            index,
+                            &node,
+                            &working_dir,
+                            shell.as_ref(),
+                            terminal,
+                            event_tx,
+                        )
                     }
                 }));
                 active_count += 1;
@@ -232,6 +244,7 @@ fn run_node(
     node: &ExecutionNode,
     working_dir: &std::path::Path,
     default_shell: Option<&ShellKind>,
+    terminal: TerminalContext,
     event_tx: mpsc::Sender<ExecutionEvent>,
 ) -> Result<(), EngineError> {
     let (output_tx, output_rx) = mpsc::channel::<OutputChunk>();
@@ -262,7 +275,8 @@ fn run_node(
         };
 
         let shell = select_shell(node, default_shell);
-        let status = match run_command(&rendered, working_dir, &shell, output_tx.clone()) {
+        let status = match run_command(&rendered, working_dir, &shell, output_tx.clone(), terminal)
+        {
             Ok(status) => status,
             Err(error) => {
                 task_error = Some(if step.is_block() {

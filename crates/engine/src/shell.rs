@@ -9,8 +9,8 @@ use only_semantic::{ShellKind, ShellOperator, ShellSelection};
 use crate::EngineError;
 use crate::path_lookup::command_exists_in_path;
 use crate::process::{
-    CommandStatus, OutputChunk, build_command_env, join_output_reader, run_with_system_shell,
-    run_with_system_shell_inherit, spawn_output_reader,
+    CommandStatus, OutputChunk, TerminalContext, build_command_env, join_output_reader,
+    run_with_system_shell, run_with_system_shell_inherit, spawn_output_reader,
 };
 
 pub(crate) fn run_command(
@@ -18,20 +18,26 @@ pub(crate) fn run_command(
     working_dir: &Path,
     shell: &ShellSelection,
     output: Sender<OutputChunk>,
+    terminal: TerminalContext,
 ) -> Result<CommandStatus, EngineError> {
     let resolved_shell = resolve_shell(shell)?;
     match resolved_shell {
         ShellKind::Deno => run_with_deno_task_shell(command, working_dir, output),
-        ShellKind::Sh => run_with_system_shell("sh", "-c", command, working_dir, output),
-        ShellKind::Bash => run_with_system_shell("bash", "-c", command, working_dir, output),
+        ShellKind::Sh => run_with_system_shell("sh", "-c", command, working_dir, output, terminal),
+        ShellKind::Bash => {
+            run_with_system_shell("bash", "-c", command, working_dir, output, terminal)
+        }
         ShellKind::Powershell => run_with_system_shell(
             power_shell_command(),
             "-Command",
             command,
             working_dir,
             output,
+            terminal,
         ),
-        ShellKind::Pwsh => run_with_system_shell("pwsh", "-Command", command, working_dir, output),
+        ShellKind::Pwsh => {
+            run_with_system_shell("pwsh", "-Command", command, working_dir, output, terminal)
+        }
         ShellKind::Unknown(name) => Err(EngineError::UnsupportedShell(name.to_string())),
     }
 }

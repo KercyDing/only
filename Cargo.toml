@@ -26,6 +26,7 @@ only-syntax = { version = "0.4.1", path = "crates/syntax" }
 anstyle = "1.0"
 clap = { version = "4.6", features = ["color", "std", "string"] }
 deno_task_shell = "0.33"
+portable-pty = "0.9"
 logos = "0.16"
 miette = { version = "7.6", features = ["fancy"] }
 minreq = { version = "3", default-features = false }
