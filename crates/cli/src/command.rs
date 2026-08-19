@@ -344,7 +344,7 @@ fn run_inner() -> Result<ExitCode> {
     let partial = parse_global_options()?;
 
     if partial.top_level_help_requested {
-        println!("{}", render_global_help().ansi());
+        print!("{}", render_global_help().ansi());
         return Ok(ExitCode::SUCCESS);
     }
 

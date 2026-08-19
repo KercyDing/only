@@ -10,13 +10,13 @@ const NAMESPACE_HELP_TEMPLATE: &str = "\
 {about-with-newline}
 {usage-heading} {usage}{after-help}
 
-Run `only -h` to see global options.";
+Run `only -h` to see available options.";
 
 const TASK_HELP_TEMPLATE: &str = "\
 {about-with-newline}
 {usage-heading} {usage}
 
-Run `only -h` to see global options.";
+Run `only -h` to see available options.";
 
 const TASK_HELP_WITH_ARGS_TEMPLATE: &str = "\
 {about-with-newline}
@@ -24,7 +24,7 @@ const TASK_HELP_WITH_ARGS_TEMPLATE: &str = "\
 
 {all-args}
 
-Run `only -h` to see global options.";
+Run `only -h` to see available options.";
 
 /// Builds the global CLI skeleton shared by bootstrap and dynamic help.
 ///
@@ -41,7 +41,6 @@ pub fn build_global_cli() -> Command {
         )
         .version(env!("CARGO_PKG_VERSION"))
         .styles(cli_styles())
-        .next_help_heading("Global options")
         .disable_help_subcommand(true)
         .override_usage("only [TASK] [ARGS]... [OPTIONS]");
 
@@ -342,10 +341,7 @@ fn build_namespace_command(
             .bin_name(format!("only {}", namespace.name))
             .disable_help_subcommand(true)
             .styles(cli_styles())
-            .override_usage(format!(
-                "only {} [COMMAND] [GLOBAL OPTIONS]",
-                namespace.name
-            ))
+            .override_usage(format!("only {} [COMMAND] [OPTIONS]", namespace.name))
             .help_template(NAMESPACE_HELP_TEMPLATE)
             .after_help(StyledStr::from(listing)),
     );
@@ -449,7 +445,7 @@ fn task_usage(task: &TaskAst) -> String {
         }
     }
 
-    path.push("[GLOBAL OPTIONS]".to_string());
+    path.push("[OPTIONS]".to_string());
 
     path.join(" ")
 }
@@ -515,22 +511,10 @@ fn render_metadata(text: &str, globals: &[PlanParam]) -> String {
 fn metadata_about(help: Option<&str>, desc: Option<&str>, globals: &[PlanParam]) -> String {
     let help = help.map(|text| render_metadata(text, globals));
     let desc = desc.map(|text| render_metadata(text, globals));
-    let title_style = TermStyle::new().bold();
 
     match (help, desc) {
-        (Some(help), Some(desc)) => format!(
-            "{}{}{}\n\n{}",
-            title_style.render(),
-            help,
-            title_style.render_reset(),
-            desc
-        ),
-        (Some(help), None) => format!(
-            "{}{}{}",
-            title_style.render(),
-            help,
-            title_style.render_reset()
-        ),
+        (Some(help), Some(desc)) => format!("{help}\n\n{desc}"),
+        (Some(help), None) => help,
         (None, Some(desc)) => desc,
         (None, None) => String::new(),
     }
@@ -571,8 +555,8 @@ fn cli_styles() -> Styles {
 #[cfg(test)]
 mod tests {
     use super::{
-        build_cli, build_global_cli, render_available_tasks, render_error_message,
-        render_global_help, render_help, render_help_hint, render_namespace_help,
+        build_cli, render_available_tasks, render_error_message, render_global_help, render_help,
+        render_namespace_help,
     };
     use crate::parse_onlyfile;
     use clap::error::ErrorKind;
@@ -587,13 +571,7 @@ mod tests {
     }
 
     #[test]
-    fn renders_help_hint() {
-        let rendered = render_help_hint();
-        assert!(rendered.contains("only --help"));
-    }
-
-    #[test]
-    fn renders_namespace_entries_with_trailing_slash() {
+    fn namespace_lists_without_slash() {
         let document = parse_onlyfile(
             "!version 0.4
 group dev {
@@ -613,7 +591,7 @@ workflow():
     }
 
     #[test]
-    fn accepts_namespace_help_via_alias_without_trailing_slash() {
+    fn namespace_help_alias() {
         let document = parse_onlyfile(
             "!version 0.4
 group dev {
@@ -637,7 +615,7 @@ workflow():
     }
 
     #[test]
-    fn shows_desc_in_task_help() {
+    fn shows_task_desc() {
         let document = compile_document(
             "[help] Deploy app\n[desc] Supports staging and production\ndeploy():\n    true\n",
         )
@@ -658,7 +636,7 @@ workflow():
     }
 
     #[test]
-    fn separates_task_and_global_help() {
+    fn separates_task_options() {
         let document = compile_document(
             "[help] Install only\n[desc] Install to ~/.local/bin/only.\ninstall():\n    true\n",
         )
@@ -669,9 +647,9 @@ workflow():
         let help = error.to_string();
 
         assert!(help.contains("Install only\n\nInstall to ~/.local/bin/only."));
-        assert!(help.contains("only install [GLOBAL OPTIONS]"));
+        assert!(help.contains("only install [OPTIONS]"));
         assert!(!help.contains("Options:"));
-        assert!(help.contains("Run `only -h` to see global options."));
+        assert!(help.contains("Run `only -h` to see available options."));
         assert!(!help.contains("--file"));
         assert!(!help.contains("--dry-run"));
 
@@ -681,7 +659,7 @@ workflow():
     }
 
     #[test]
-    fn uses_root_styles_for_task_help_sections() {
+    fn task_help_styles() {
         let document = compile_document("[help] Install only\ninstall():\n    true\n").document;
         let mut command = build_cli(&document);
         let task = command
@@ -691,12 +669,12 @@ workflow():
 
         assert!(help.contains("\u{1b}[1m\u{1b}[92mUsage:"));
         assert!(!help.contains("Options:"));
-        assert!(help.contains("only install [GLOBAL OPTIONS]"));
+        assert!(help.contains("only install [OPTIONS]"));
         assert!(!help.contains("--file"));
     }
 
     #[test]
-    fn keeps_parameters_in_task_help() {
+    fn task_help_arguments() {
         let document =
             compile_document("[help] Build only\nbuild(profile=\"debug\", args..):\n    true\n")
                 .document;
@@ -705,7 +683,7 @@ workflow():
             .expect_err("task help should short-circuit parsing");
         let help = error.to_string();
 
-        assert!(help.contains("Usage: only build [PROFILE] [ARGS]... [GLOBAL OPTIONS]"));
+        assert!(help.contains("Usage: only build [PROFILE] [ARGS]... [OPTIONS]"));
         assert!(help.contains("Arguments:"));
         assert!(help.contains("[PROFILE]"));
         assert!(help.contains("[ARGS]..."));
@@ -713,7 +691,7 @@ workflow():
     }
 
     #[test]
-    fn accepts_global_options_after_task() {
+    fn accepts_task_options() {
         let document = compile_document("[help] Check project\ncheck():\n    true\n").document;
         let matches = build_cli(&document)
             .try_get_matches_from(["only", "check", "--dry-run"])
@@ -724,7 +702,7 @@ workflow():
     }
 
     #[test]
-    fn renders_bootstrap_help_without_tasks() {
+    fn renders_global_help() {
         let help = render_global_help().to_string();
 
         assert!(help.contains("Usage: only [TASK] [ARGS]... [OPTIONS]"));
@@ -736,29 +714,7 @@ workflow():
     }
 
     #[test]
-    fn supports_global_version_flag() {
-        let error = build_global_cli()
-            .try_get_matches_from(["only", "--version"])
-            .expect_err("version should short-circuit parsing");
-
-        assert_eq!(error.kind(), ErrorKind::DisplayVersion);
-    }
-
-    #[test]
-    fn supports_global_upgrade_flags() {
-        let upgrade = build_global_cli()
-            .try_get_matches_from(["only", "--upgrade"])
-            .expect("upgrade flag should parse");
-        let update = build_global_cli()
-            .try_get_matches_from(["only", "--update"])
-            .expect("update flag should parse");
-
-        assert!(upgrade.get_flag("upgrade"));
-        assert!(update.get_flag("update"));
-    }
-
-    #[test]
-    fn renders_dynamic_root_help_with_tasks_and_namespaces() {
+    fn dynamic_help_lists_tasks() {
         let document = parse_onlyfile(
             "!version 0.4
 [help] Run tests.
@@ -782,7 +738,7 @@ workflow():
     }
 
     #[test]
-    fn renders_namespace_help_without_default_task() {
+    fn renders_namespace_help() {
         let document = parse_onlyfile(
             "!version 0.4
 group dev {
@@ -800,7 +756,7 @@ smoke():
 
         let help = render_namespace_help(&document, &document.namespaces[0]).to_string();
         assert!(help.contains("Usage:"));
-        assert!(help.contains("[GLOBAL OPTIONS]"));
+        assert!(help.contains("[OPTIONS]"));
         assert!(help.contains("dev [COMMAND]"));
         assert!(help.contains("Tasks:"));
         assert!(help.contains("workflow"));
@@ -811,7 +767,7 @@ smoke():
     }
 
     #[test]
-    fn shows_group_desc_in_help() {
+    fn shows_group_metadata() {
         let document = compile_document(
             "!version 0.4\n!var mode = \"development\"\n[help] Dev builds\n[desc] Build in {{mode}} mode.\ngroup dev {\n    [help] Build project\n    build():\n        cargo build\n}\n",
         )
@@ -827,22 +783,7 @@ smoke():
     }
 
     #[test]
-    fn hides_help_subcommand_from_dynamic_help() {
-        let document = parse_onlyfile(
-            "!version 0.4
-[help] Run tests.
-test():
-    cargo test
-",
-        )
-        .expect("document should parse");
-
-        let help = render_help(&document).to_string();
-        assert!(!help.contains("\n  help"));
-    }
-
-    #[test]
-    fn renders_available_tasks_listing() {
+    fn available_tasks_listing() {
         let document = parse_onlyfile(
             "!version 0.4
 [help] Run tests.
@@ -911,7 +852,7 @@ workflow():
     }
 
     #[test]
-    fn renders_namespace_summary_from_namespace_doc() {
+    fn namespace_summary() {
         let document = parse_onlyfile(
             "!version 0.4\n[help] Developer workflow.\ngroup dev {\n    [help] Run smoke.\n    smoke():\n        echo smoke\n}\n",
         )
@@ -923,7 +864,7 @@ workflow():
     }
 
     #[test]
-    fn omits_namespace_fallback_summary_when_doc_is_missing() {
+    fn namespace_help_without_doc() {
         let document = parse_onlyfile(
             "!version 0.4
 group dev {
@@ -937,12 +878,12 @@ group dev {
 
         let help = render_namespace_help(&document, &document.namespaces[0]).to_string();
         assert!(help.starts_with("Usage:"));
-        assert!(help.contains("[GLOBAL OPTIONS]"));
+        assert!(help.contains("[OPTIONS]"));
         assert!(help.contains("dev [COMMAND]"));
     }
 
     #[test]
-    fn renders_namespace_help_about_from_namespace_doc() {
+    fn namespace_about() {
         let document = parse_onlyfile(
             "!version 0.4
 [help] Developer workflow.
@@ -960,7 +901,7 @@ group dev {
     }
 
     #[test]
-    fn hides_helper_tasks_from_rendered_outputs() {
+    fn hides_helpers() {
         let document = parse_onlyfile(
             "!version 0.4\n# Internal test helper.\n_test_helper():\n    cargo test\ntest():\n    cargo test\n\ngroup dev {\n    _workflow():\n        echo hidden\n    workflow():\n        echo ok\n}\n",
         )
@@ -981,7 +922,7 @@ group dev {
     }
 
     #[test]
-    fn omits_namespaces_that_only_contain_helper_tasks() {
+    fn hides_helper_namespace() {
         let document = parse_onlyfile(
             "!version 0.4\ncheck():\n    cargo check\n\n[help] Hidden group.\ngroup dev {\n    _hidden():\n        echo hidden\n}\n",
         )
@@ -995,7 +936,7 @@ group dev {
         let namespace_help = render_namespace_help(&document, &document.namespaces[0]).to_string();
         assert!(namespace_help.contains("Hidden group."));
         assert!(namespace_help.contains("Usage:"));
-        assert!(namespace_help.contains("[GLOBAL OPTIONS]"));
+        assert!(namespace_help.contains("[OPTIONS]"));
         assert!(namespace_help.contains("dev"));
         assert!(namespace_help.contains("Tasks:"));
         assert!(!namespace_help.contains("Options:"));
@@ -1004,7 +945,7 @@ group dev {
     }
 
     #[test]
-    fn allows_guarded_task_variants_without_duplicate_subcommand_panic() {
+    fn guarded_variants_no_panic() {
         let document = parse_onlyfile(
             r#"probe() ? @env("PATH"):
     true

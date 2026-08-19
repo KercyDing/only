@@ -1396,9 +1396,9 @@ fn helper_task_help_is_available_via_cli_binary() {
     let plain_stderr = strip_ansi(&stderr);
 
     assert_eq!(output.status.code(), Some(0), "stderr was: {stderr}");
-    assert!(plain_stdout.contains("Usage: only _prepare [TARGET] [GLOBAL OPTIONS]"));
+    assert!(plain_stdout.contains("Usage: only _prepare [TARGET] [OPTIONS]"));
     assert!(plain_stdout.contains("[target]  Required parameter"));
-    assert!(plain_stdout.contains("Run `only -h` to see global options."));
+    assert!(plain_stdout.contains("Run `only -h` to see available options."));
     assert!(!plain_stdout.contains("--file"));
     assert!(plain_stderr.is_empty(), "stderr was: {plain_stderr}");
 }
