@@ -42,12 +42,12 @@ pub fn run() -> ExitCode {
     match run_inner() {
         Ok(code) => code,
         Err(OnlyError::NotFound(message)) => {
-            eprintln!("{}", render_error_message(&message));
-            eprintln!("{}", render_help_hint());
+            anstream::eprintln!("{}", render_error_message(&message));
+            anstream::eprintln!("{}", render_help_hint());
             ExitCode::from(2)
         }
         Err(error) => {
-            eprintln!("{}", render_error_message(&error.to_string()));
+            anstream::eprintln!("{}", render_error_message(&error.to_string()));
             ExitCode::from(2)
         }
     }
@@ -75,7 +75,7 @@ pub fn run_with(cli: CliInput) -> Result<ExitCode> {
     let discovered = discover_onlyfile(cli.onlyfile_path.as_deref())?;
 
     if cli.print_discovered_path {
-        println!("{}", discovered.path.display());
+        anstream::println!("{}", discovered.path.display());
         return Ok(ExitCode::SUCCESS);
     }
 
@@ -83,7 +83,7 @@ pub fn run_with(cli: CliInput) -> Result<ExitCode> {
 
     let compiled = compile_for_cli_input_in_dir(&discovered.contents, &cli, discovered.base_dir)?;
     if cli.dry_run {
-        println!("{}", render_dry_run_for_cli(&compiled, &cli)?);
+        anstream::println!("{}", render_dry_run_for_cli(&compiled, &cli)?);
         return Ok(ExitCode::SUCCESS);
     }
     run_compiled_plan(&compiled.plan, &cli)
@@ -349,12 +349,12 @@ fn run_inner() -> Result<ExitCode> {
     let partial = parse_global_options()?;
 
     if partial.top_level_help_requested {
-        print!("{}", render_global_help().ansi());
+        anstream::print!("{}", render_global_help().ansi());
         return Ok(ExitCode::SUCCESS);
     }
 
     if partial.top_level_version_requested {
-        println!("{}", env!("CARGO_PKG_VERSION"));
+        anstream::println!("{}", env!("CARGO_PKG_VERSION"));
         return Ok(ExitCode::SUCCESS);
     }
 
@@ -365,7 +365,7 @@ fn run_inner() -> Result<ExitCode> {
     let discovered = discover_onlyfile(partial.onlyfile_path.as_deref())?;
 
     if partial.print_discovered_path {
-        println!("{}", discovered.path.display());
+        anstream::println!("{}", discovered.path.display());
         return Ok(ExitCode::SUCCESS);
     }
 
@@ -378,7 +378,7 @@ fn run_inner() -> Result<ExitCode> {
         if partial.format_check {
             if formatted != discovered.contents {
                 let line = first_changed_line(&discovered.contents, &formatted);
-                println!(
+                anstream::println!(
                     "{} needs formatting (first change: line {line})",
                     discovered.path.display()
                 );
@@ -403,7 +403,7 @@ fn run_inner() -> Result<ExitCode> {
     ensure_dry_run_has_target(&cli)?;
 
     if cli.task_path.is_empty() {
-        print!("{}", render_available_tasks(&discovered.document));
+        anstream::print!("{}", render_available_tasks(&discovered.document));
         return Ok(ExitCode::SUCCESS);
     }
 
@@ -414,7 +414,7 @@ fn run_inner() -> Result<ExitCode> {
             .iter()
             .find(|namespace| namespace.name == *namespace_name)
     {
-        println!(
+        anstream::println!(
             "{}",
             render_namespace_help(&discovered.document, namespace).ansi()
         );
@@ -423,7 +423,7 @@ fn run_inner() -> Result<ExitCode> {
 
     let compiled = compile_for_cli_input_in_dir(&discovered.contents, &cli, discovered.base_dir)?;
     if cli.dry_run {
-        println!("{}", render_dry_run_for_cli(&compiled, &cli)?);
+        anstream::println!("{}", render_dry_run_for_cli(&compiled, &cli)?);
         return Ok(ExitCode::SUCCESS);
     }
     run_compiled_plan(&compiled.plan, &cli)

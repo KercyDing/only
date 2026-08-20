@@ -59,7 +59,7 @@ struct LatestRelease {
 pub(crate) fn run_upgrade() -> Result<ExitCode> {
     let latest_version = fetch_latest_version()?;
     if compare_versions(env!("CARGO_PKG_VERSION"), &latest_version)? != VersionOrder::Older {
-        println!("Already up to date.");
+        anstream::println!("Already up to date.");
         return Ok(ExitCode::SUCCESS);
     }
 
@@ -73,13 +73,13 @@ pub(crate) fn run_upgrade() -> Result<ExitCode> {
 }
 
 fn run_cargo_upgrade(latest_version: &str) -> Result<ExitCode> {
-    println!(
+    anstream::println!(
         "Update available: {} -> {}",
         env!("CARGO_PKG_VERSION"),
         normalize_version(latest_version)
     );
-    println!("This copy was installed with Cargo.");
-    println!("Running `cargo install only --force`...");
+    anstream::println!("This copy was installed with Cargo.");
+    anstream::println!("Running `cargo install only --force`...");
 
     Command::new("cargo")
         .args(["install", "only", "--force"])
@@ -327,13 +327,13 @@ fn execute_upgrade(plan: &UpgradePlan, latest_version: String) -> Result<()> {
 }
 
 fn print_download_summary(plan: &UpgradePlan, download_url: &str) {
-    println!("Downloading from: {download_url}");
-    println!("Installing to: {}", plan.install_path.display());
+    anstream::println!("Downloading from: {download_url}");
+    anstream::println!("Installing to: {}", plan.install_path.display());
 }
 
 fn print_upgrade_done(installed_version: &str) {
-    println!("{} -> {installed_version}", env!("CARGO_PKG_VERSION"));
-    println!("Done.");
+    anstream::println!("{} -> {installed_version}", env!("CARGO_PKG_VERSION"));
+    anstream::println!("Done.");
 }
 
 fn fetch_release(binary: &str, version: String) -> Result<LatestRelease> {

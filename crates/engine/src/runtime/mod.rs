@@ -18,6 +18,16 @@ use crate::process::{OutputChunk, OutputStream, TerminalContext, begin_terminal_
 use crate::shell::{run_command, run_command_inherit};
 use crate::{EngineError, ExecutionNode, ExecutionPlan, ExecutionStep, PlanParam};
 
+#[cfg(unix)]
+mod unix;
+#[cfg(windows)]
+mod windows;
+
+#[cfg(unix)]
+use unix as platform;
+#[cfg(windows)]
+use windows as platform;
+
 /// Runs a pre-built execution plan.
 ///
 /// Args:
@@ -109,6 +119,7 @@ pub fn run_plan_with_options(
                 let shell = plan.shell.clone();
                 let event_tx = event_tx.clone();
                 let terminal = terminal.clone();
+                let live_output = index == current_index;
                 // Only the selected root may own the caller's stdin. Dependency
                 // tasks stay isolated even when the graph happens to run serially.
                 let direct = plan.successors[index].is_empty()
@@ -146,6 +157,7 @@ pub fn run_plan_with_options(
                             &working_dir,
                             shell.as_ref(),
                             terminal,
+                            live_output,
                             event_tx,
                         )
                     }
@@ -261,9 +273,14 @@ fn run_node(
     working_dir: &std::path::Path,
     default_shell: Option<&ShellKind>,
     terminal: TerminalContext,
+    live_output: bool,
     event_tx: mpsc::Sender<ExecutionEvent>,
 ) -> Result<(), EngineError> {
-    let terminal = terminal.for_captured_output();
+    let terminal = if live_output {
+        terminal
+    } else {
+        terminal.for_captured_output()
+    };
     let (output_tx, output_rx) = mpsc::channel::<OutputChunk>();
     let forwarder = thread::spawn({
         let event_tx = event_tx.clone();
@@ -445,10 +462,11 @@ fn print_task_progress(
         return Ok(());
     }
 
-    eprintln!(
-        "{}",
+    let rendered = format!(
+        "{}\n",
         render_task_progress(task_index + 1, total_tasks, &plan.nodes[task_index].name)
     );
+    write_stderr(rendered.as_bytes())?;
     progress_printed[task_index] = true;
     Ok(())
 }
@@ -475,7 +493,7 @@ fn print_task_message(message: &str) -> Result<(), EngineError> {
         .fg_color(Some(TermAnsiColor::BrightGreen.into()))
         .bold();
     let rendered = format!("{}{}{}\n", style.render(), message, style.render_reset());
-    write_output(rendered.as_bytes(), io::stderr())
+    write_stderr(rendered.as_bytes())
 }
 
 const OUTPUT_MEMORY_LIMIT: usize = 1024 * 1024;
@@ -609,20 +627,17 @@ impl Drop for SpillFile {
 
 fn print_output_chunk(chunk: &OutputChunk) -> Result<(), EngineError> {
     match chunk.stream {
-        OutputStream::Stdout => write_output(&chunk.bytes, io::stdout()),
-        OutputStream::Stderr => write_output(&chunk.bytes, io::stderr()),
+        OutputStream::Stdout => write_stdout(&chunk.bytes),
+        OutputStream::Stderr => write_stderr(&chunk.bytes),
     }
 }
 
-fn write_output(content: &[u8], mut writer: impl Write) -> Result<(), EngineError> {
-    writer
-        .write_all(content)
-        .map_err(|error| EngineError::Runtime(format!("failed to write task output: {error}")))?;
+fn write_stdout(content: &[u8]) -> Result<(), EngineError> {
+    platform::write_stdout(content)
+}
 
-    writer
-        .flush()
-        .map_err(|error| EngineError::Runtime(format!("failed to flush task output: {error}")))?;
-    Ok(())
+fn write_stderr(content: &[u8]) -> Result<(), EngineError> {
+    platform::write_stderr(content)
 }
 
 fn render_task_progress(task_index: usize, total_tasks: usize, task_name: &str) -> String {

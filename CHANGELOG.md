@@ -4,8 +4,8 @@
 
 - Replaced global topological barriers with a ready-queue DAG scheduler, allowing independent branches to advance immediately.
 - Added deterministic ordered presentation based on dependency declaration order, including task progress and result messages.
-- Added PTY execution with ANSI colors, terminal control sequences, bounded output buffering, and pipe fallback.
-- Added terminal resize, stdin ownership, Ctrl-C cancellation, and process-tree cleanup, including Unix PTYs and Windows ConPTY.
+- Added live PTY execution with ANSI colors and terminal control sequences, plus bounded ordered buffering for hidden parallel output.
+- Added terminal resize, stdin ownership, Ctrl-C cancellation, and process-tree cleanup, including Unix PTYs, Windows ConPTY, and a colored merged-pipe fallback when a shell cannot attach to a PTY.
 
 ## 0.4.0 - 2026-08-18
 

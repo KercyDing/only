@@ -8,11 +8,21 @@ use std::time::Duration;
 use only_semantic::{ShellKind, ShellOperator, ShellSelection};
 
 use crate::EngineError;
+
+#[cfg(unix)]
+mod unix;
+#[cfg(windows)]
+mod windows;
+
 use crate::path_lookup::command_exists_in_path;
 use crate::process::{
     CommandStatus, OutputChunk, TerminalContext, build_command_env, join_output_reader,
     run_with_system_shell, run_with_system_shell_inherit, spawn_output_reader,
 };
+#[cfg(unix)]
+use unix as platform;
+#[cfg(windows)]
+use windows as platform;
 
 pub(crate) fn run_command(
     command: &str,
@@ -23,13 +33,13 @@ pub(crate) fn run_command(
 ) -> Result<CommandStatus, EngineError> {
     let resolved_shell = resolve_shell(shell)?;
     match resolved_shell {
-        ShellKind::Deno => run_with_deno_task_shell(command, working_dir, output, terminal),
+        ShellKind::Deno => platform::run_deno(command, working_dir, output, terminal),
         ShellKind::Sh => run_with_system_shell("sh", "-c", command, working_dir, output, terminal),
         ShellKind::Bash => {
             run_with_system_shell("bash", "-c", command, working_dir, output, terminal)
         }
         ShellKind::Powershell => run_with_system_shell(
-            power_shell_command(),
+            platform::power_shell_command(),
             "-Command",
             command,
             working_dir,
@@ -57,7 +67,7 @@ pub(crate) fn run_command_inherit(
             run_with_system_shell_inherit("bash", "-c", command, working_dir, terminal)
         }
         ShellKind::Powershell => run_with_system_shell_inherit(
-            power_shell_command(),
+            platform::power_shell_command(),
             "-Command",
             command,
             working_dir,
@@ -77,7 +87,7 @@ fn resolve_shell(shell: &ShellSelection) -> Result<ShellKind, EngineError> {
                 return Ok(ShellKind::Pwsh);
             }
             if shell.operator == ShellOperator::Fallback
-                && command_exists_in_path(power_shell_command())
+                && command_exists_in_path(platform::power_shell_command())
             {
                 return Ok(ShellKind::Powershell);
             }
@@ -97,7 +107,7 @@ fn resolve_shell(shell: &ShellSelection) -> Result<ShellKind, EngineError> {
             ))
         }
         ShellKind::Powershell => {
-            if command_exists_in_path(power_shell_command()) {
+            if command_exists_in_path(platform::power_shell_command()) {
                 return Ok(ShellKind::Powershell);
             }
             Err(EngineError::ShellNotFound(
@@ -115,23 +125,6 @@ fn resolve_shell(shell: &ShellSelection) -> Result<ShellKind, EngineError> {
         ShellKind::Deno => Ok(ShellKind::Deno),
         ShellKind::Unknown(name) => Err(EngineError::UnsupportedShell(name.to_string())),
     }
-}
-
-fn run_with_deno_task_shell(
-    command: &str,
-    working_dir: &Path,
-    output: Sender<OutputChunk>,
-    terminal: &TerminalContext,
-) -> Result<CommandStatus, EngineError> {
-    #[cfg(unix)]
-    if terminal.backend == crate::process::TerminalBackend::Pty
-        && let Some(status) =
-            run_with_deno_task_shell_pty(command, working_dir, output.clone(), terminal)?
-    {
-        return Ok(status);
-    }
-
-    run_with_deno_task_shell_pipe(command, working_dir, output, terminal)
 }
 
 fn run_with_deno_task_shell_pipe(
@@ -339,20 +332,12 @@ impl Read for ShellPipeReaderAdapter {
     }
 }
 
-fn power_shell_command() -> &'static str {
-    if cfg!(windows) {
-        "powershell.exe"
-    } else {
-        "powershell"
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::mpsc;
     use std::time::{Duration, Instant};
 
-    use super::run_with_deno_task_shell;
+    use super::platform;
     use crate::process::TerminalContext;
 
     #[test]
@@ -363,7 +348,7 @@ mod tests {
         let working_dir = std::env::current_dir().expect("current directory should be available");
         let started = Instant::now();
         let command = std::thread::spawn(move || {
-            run_with_deno_task_shell("sleep 30", &working_dir, output_tx, &execution_context)
+            platform::run_deno("sleep 30", &working_dir, output_tx, &execution_context)
         });
 
         std::thread::sleep(Duration::from_millis(50));
@@ -382,7 +367,7 @@ mod tests {
     fn deno_pty_exposes_terminal() {
         let (output_tx, output_rx) = mpsc::channel();
         let working_dir = std::env::current_dir().expect("current directory should be available");
-        let status = super::run_with_deno_task_shell(
+        let status = platform::run_deno(
             "sh -c 'test -t 1 && printf tty || printf pipe'",
             &working_dir,
             output_tx,
@@ -400,11 +385,11 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn deno_merged_pipe_preserves_order() {
+    fn deno_merged_preserves_order() {
         let (output_tx, output_rx) = mpsc::channel();
         let working_dir = std::env::current_dir().expect("current directory should be available");
         let terminal = TerminalContext::pty().for_captured_output();
-        let status = super::run_with_deno_task_shell(
+        let status = platform::run_deno(
             "printf first; printf second >&2; printf third",
             &working_dir,
             output_tx,
@@ -422,11 +407,11 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn deno_merged_pipe_preserves_large_output() {
+    fn deno_merged_preserves_large_output() {
         let (output_tx, output_rx) = mpsc::channel();
         let working_dir = std::env::current_dir().expect("current directory should be available");
         let terminal = TerminalContext::pty().for_captured_output();
-        let status = super::run_with_deno_task_shell(
+        let status = platform::run_deno(
             "sh -c 'i=1; while test $i -le 2000; do printf \"line-%04d\\n\" $i >&2; i=$((i + 1)); done'",
             &working_dir,
             output_tx,

@@ -11,6 +11,7 @@ description = "Execution planning and runtime engine for only tasks."
 only-semantic.workspace = true
 
 anstyle.workspace = true
+anstream.workspace = true
 ctrlc.workspace = true
 deno_task_shell.workspace = true
 libc.workspace = true
