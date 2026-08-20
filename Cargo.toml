@@ -31,7 +31,6 @@ deno_task_shell = "0.33"
 libc = "0.2"
 portable-pty = "0.9"
 logos = "0.16"
-miette = { version = "7.6", features = ["fancy"] }
 minreq = { version = "3", default-features = false }
 rowan = "0.17"
 self-replace = "1.5"

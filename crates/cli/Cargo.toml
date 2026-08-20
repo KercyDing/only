@@ -26,12 +26,9 @@ only-syntax.workspace = true
 
 self-replace.workspace = true
 sha2.workspace = true
-tokio.workspace = true
 anstyle.workspace = true
 anstream.workspace = true
 clap.workspace = true
-deno_task_shell.workspace = true
-miette.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 minreq = { workspace = true, features = ["https-rustls"] }
