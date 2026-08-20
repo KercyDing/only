@@ -1058,7 +1058,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "only"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1077,14 +1077,14 @@ dependencies = [
 
 [[package]]
 name = "only-diagnostic"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "text-size",
 ]
 
 [[package]]
 name = "only-engine"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1100,7 +1100,7 @@ dependencies = [
 
 [[package]]
 name = "only-lsp"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "only-diagnostic",
  "only-semantic",
@@ -1112,7 +1112,7 @@ dependencies = [
 
 [[package]]
 name = "only-semantic"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "only-diagnostic",
  "only-syntax",
@@ -1122,7 +1122,7 @@ dependencies = [
 
 [[package]]
 name = "only-syntax"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "logos",
  "only-diagnostic",
