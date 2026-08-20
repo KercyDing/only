@@ -12,7 +12,10 @@ use only_semantic::{ShellKind, ShellSelection};
 
 use crate::error::{command_block_failed, command_block_start_failed, command_failed};
 use crate::interpolate::{interpolate, interpolate_with_parts};
-use crate::process::{OutputChunk, OutputStream, TerminalContext, begin_terminal_invocation};
+use crate::process::{
+    OutputChunk, OutputStream, StdinAccess, TerminalBackend, TerminalContext,
+    begin_terminal_invocation,
+};
 use crate::shell::{run_command, run_command_inherit};
 use crate::{EngineError, ExecutionNode, ExecutionPlan, ExecutionStep, PlanParam};
 
@@ -104,6 +107,11 @@ pub fn run_plan_with_options(
     let mut active_count = 0usize;
     let mut failure_seen = false;
     let terminal = begin_terminal_invocation()?;
+    // Windows cannot both capture a task's output and give it a real console.
+    // Progress bars ask the child's own stderr for a width, which only answers
+    // when the child holds a console handle, so an attached Windows terminal
+    // trades ordered presentation for direct output.
+    let passthrough = cfg!(windows) && terminal.backend == TerminalBackend::Pty;
 
     thread::scope(|scope| {
         let mut handles = Vec::new();
@@ -119,9 +127,15 @@ pub fn run_plan_with_options(
                 let terminal = terminal.clone();
                 // Only the selected root may own the caller's stdin. Dependency
                 // tasks stay isolated even when the graph happens to run serially.
-                let direct = plan.successors[index].is_empty()
+                let stdin = if plan.successors[index].is_empty()
                     && active_count == 0
-                    && (limit == 1 || ready.is_empty());
+                    && (limit == 1 || ready.is_empty())
+                {
+                    StdinAccess::Owned
+                } else {
+                    StdinAccess::Closed
+                };
+                let direct = passthrough || stdin == StdinAccess::Owned;
                 handles.push(scope.spawn(move || {
                     event_tx
                         .send(ExecutionEvent::Started { task_index: index })
@@ -134,6 +148,7 @@ pub fn run_plan_with_options(
                             &working_dir,
                             shell.as_ref(),
                             &terminal,
+                            stdin,
                         ) {
                             Ok(result) => result,
                             Err(error) => (Some(error), None),
@@ -165,7 +180,10 @@ pub fn run_plan_with_options(
             })?;
             match event {
                 ExecutionEvent::Started { task_index } => {
-                    if task_index == current_index {
+                    // A passthrough task writes straight to the terminal, so its
+                    // marker has to land when it starts rather than when its turn
+                    // in the declaration order arrives.
+                    if passthrough || task_index == current_index {
                         print_task_progress(
                             task_index,
                             total_tasks,
@@ -368,14 +386,15 @@ fn run_node_inherit(
     working_dir: &std::path::Path,
     default_shell: Option<&ShellKind>,
     terminal: &TerminalContext,
+    stdin: StdinAccess,
 ) -> Result<(Option<EngineError>, Option<TaskResult>), EngineError> {
     let total_steps = node.steps.len();
     let execution = (|| {
         for (index, step) in node.steps.iter().enumerate() {
             let rendered = interpolate_step(step, &node.params)?;
             let shell = select_shell(node, default_shell);
-            let status =
-                run_command_inherit(&rendered, working_dir, &shell, terminal).map_err(|error| {
+            let status = run_command_inherit(&rendered, working_dir, &shell, terminal, stdin)
+                .map_err(|error| {
                     if step.is_block() {
                         command_block_start_failed(shell.kind.as_str(), error)
                     } else {

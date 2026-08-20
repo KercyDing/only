@@ -56,7 +56,7 @@ pub(crate) fn run_with_system_shell_pty(
     terminal: &TerminalContext,
 ) -> Result<Option<CommandStatus>, EngineError> {
     let pty_system = portable_pty::native_pty_system();
-    let pair = match pty_system.openpty(terminal.size) {
+    let pair = match pty_system.openpty(terminal.size.into()) {
         Ok(pair) => pair,
         Err(_) => return Ok(None),
     };

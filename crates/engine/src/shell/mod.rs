@@ -16,8 +16,8 @@ mod windows;
 
 use crate::path_lookup::command_exists_in_path;
 use crate::process::{
-    CommandStatus, OutputChunk, TerminalContext, build_command_env, join_output_reader,
-    run_with_system_shell, run_with_system_shell_inherit, spawn_output_reader,
+    CommandStatus, OutputChunk, StdinAccess, TerminalContext, build_command_env,
+    join_output_reader, run_with_system_shell, run_with_system_shell_inherit, spawn_output_reader,
 };
 #[cfg(unix)]
 use unix as platform;
@@ -58,13 +58,16 @@ pub(crate) fn run_command_inherit(
     working_dir: &Path,
     shell: &ShellSelection,
     terminal: &TerminalContext,
+    stdin: StdinAccess,
 ) -> Result<CommandStatus, EngineError> {
     let resolved_shell = resolve_shell(shell)?;
     match resolved_shell {
-        ShellKind::Deno => run_with_deno_task_shell_inherit(command, working_dir, terminal),
-        ShellKind::Sh => run_with_system_shell_inherit("sh", "-c", command, working_dir, terminal),
+        ShellKind::Deno => run_with_deno_task_shell_inherit(command, working_dir, terminal, stdin),
+        ShellKind::Sh => {
+            run_with_system_shell_inherit("sh", "-c", command, working_dir, terminal, stdin)
+        }
         ShellKind::Bash => {
-            run_with_system_shell_inherit("bash", "-c", command, working_dir, terminal)
+            run_with_system_shell_inherit("bash", "-c", command, working_dir, terminal, stdin)
         }
         ShellKind::Powershell => run_with_system_shell_inherit(
             platform::power_shell_command(),
@@ -72,9 +75,10 @@ pub(crate) fn run_command_inherit(
             command,
             working_dir,
             terminal,
+            stdin,
         ),
         ShellKind::Pwsh => {
-            run_with_system_shell_inherit("pwsh", "-Command", command, working_dir, terminal)
+            run_with_system_shell_inherit("pwsh", "-Command", command, working_dir, terminal, stdin)
         }
         ShellKind::Unknown(name) => Err(EngineError::UnsupportedShell(name.to_string())),
     }
@@ -209,7 +213,7 @@ fn run_with_deno_task_shell_pty(
         EngineError::Runtime(format!("failed to parse command `{command}`: {error}"))
     })?;
     let pty_system = portable_pty::native_pty_system();
-    let pair = match pty_system.openpty(terminal.size) {
+    let pair = match pty_system.openpty(terminal.size.into()) {
         Ok(pair) => pair,
         Err(_) => return Ok(None),
     };
@@ -276,6 +280,7 @@ fn run_with_deno_task_shell_inherit(
     command: &str,
     working_dir: &Path,
     terminal: &TerminalContext,
+    stdin: StdinAccess,
 ) -> Result<CommandStatus, EngineError> {
     let parsed = deno_task_shell::parser::parse(command).map_err(|error| {
         EngineError::Runtime(format!("failed to parse command `{command}`: {error}"))
@@ -296,7 +301,10 @@ fn run_with_deno_task_shell_inherit(
         let execution = deno_task_shell::execute_with_pipes(
             parsed,
             state,
-            deno_task_shell::ShellPipeReader::stdin(),
+            match stdin {
+                StdinAccess::Owned => deno_task_shell::ShellPipeReader::stdin(),
+                StdinAccess::Closed => closed_stdin(),
+            },
             deno_task_shell::ShellPipeWriter::stdout(),
             deno_task_shell::ShellPipeWriter::stderr(),
         );

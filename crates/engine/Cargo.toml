@@ -14,15 +14,15 @@ anstyle.workspace = true
 anstream.workspace = true
 ctrlc.workspace = true
 deno_task_shell.workspace = true
-libc.workspace = true
-portable-pty.workspace = true
 terminal_size.workspace = true
 tokio.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+portable-pty.workspace = true
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [
     "Win32_Foundation",
-    "Win32_Security",
     "Win32_System_JobObjects",
-    "Win32_System_Threading",
 ] }

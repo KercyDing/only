@@ -65,10 +65,49 @@ pub(crate) enum TerminalBackend {
     Pty,
 }
 
+/// Decides whether a directly-attached task may read the caller's stdin.
+///
+/// Only one task can meaningfully own the terminal's input. Tasks that run
+/// alongside others get a closed stdin so they cannot steal keystrokes from
+/// the task the user is actually interacting with.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum StdinAccess {
+    Owned,
+    Closed,
+}
+
+/// Terminal dimensions in character cells.
+///
+/// Kept independent of `portable_pty::PtySize` so that Windows, which has no
+/// PTY path left, does not drag in the PTY stack for four integers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TerminalSize {
+    pub rows: u16,
+    pub cols: u16,
+}
+
+impl Default for TerminalSize {
+    fn default() -> Self {
+        Self { rows: 24, cols: 80 }
+    }
+}
+
+#[cfg(unix)]
+impl From<TerminalSize> for portable_pty::PtySize {
+    fn from(size: TerminalSize) -> Self {
+        Self {
+            rows: size.rows,
+            cols: size.cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct TerminalContext {
     pub backend: TerminalBackend,
-    pub size: portable_pty::PtySize,
+    pub size: TerminalSize,
     cancelled: Arc<AtomicBool>,
 }
 
@@ -95,16 +134,16 @@ impl TerminalContext {
     pub(crate) fn pipe() -> Self {
         Self {
             backend: TerminalBackend::Pipe,
-            size: portable_pty::PtySize::default(),
+            size: TerminalSize::default(),
             cancelled: Arc::new(AtomicBool::new(false)),
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn pty() -> Self {
         Self {
             backend: TerminalBackend::Pty,
-            size: portable_pty::PtySize::default(),
+            size: TerminalSize::default(),
             cancelled: Arc::new(AtomicBool::new(false)),
         }
     }
@@ -166,16 +205,14 @@ pub(crate) fn terminal_context() -> TerminalContext {
     }
 }
 
-fn host_pty_size() -> portable_pty::PtySize {
+fn host_pty_size() -> TerminalSize {
     detected_pty_size().unwrap_or_default()
 }
 
-fn detected_pty_size() -> Option<portable_pty::PtySize> {
-    terminal_size::terminal_size().map(|(width, height)| portable_pty::PtySize {
+fn detected_pty_size() -> Option<TerminalSize> {
+    terminal_size::terminal_size().map(|(width, height)| TerminalSize {
         rows: height.0,
         cols: width.0,
-        pixel_width: 0,
-        pixel_height: 0,
     })
 }
 
@@ -187,6 +224,7 @@ pub(crate) fn run_with_system_shell(
     output: Sender<OutputChunk>,
     terminal: &TerminalContext,
 ) -> Result<CommandStatus, EngineError> {
+    #[cfg(unix)]
     if terminal.backend == TerminalBackend::Pty
         && !platform::uses_pipe_for_system_shell(program)
         && let Some(status) = platform::run_with_system_shell_pty(
@@ -302,11 +340,12 @@ fn wait_for_pipe_child(
     }
 }
 
+#[cfg(unix)]
 fn wait_for_pty_child(
     child: &mut dyn portable_pty::Child,
     process_tree: &ProcessTree,
     master: &dyn portable_pty::MasterPty,
-    mut size: portable_pty::PtySize,
+    mut size: TerminalSize,
     cancelled: &AtomicBool,
 ) -> Result<portable_pty::ExitStatus, EngineError> {
     loop {
@@ -324,7 +363,7 @@ fn wait_for_pty_child(
         if let Some(next_size) = detected_pty_size()
             && next_size != size
         {
-            let _ = master.resize(next_size);
+            let _ = master.resize(next_size.into());
             size = next_size;
         }
         thread::sleep(Duration::from_millis(20));
@@ -337,6 +376,7 @@ pub(crate) fn run_with_system_shell_inherit(
     command: &str,
     working_dir: &Path,
     terminal: &TerminalContext,
+    stdin: StdinAccess,
 ) -> Result<CommandStatus, EngineError> {
     let mut process = Command::new(program);
     add_powershell_process_flags(&mut process, program);
@@ -345,7 +385,10 @@ pub(crate) fn run_with_system_shell_inherit(
         .arg(arg)
         .arg(command)
         .envs(build_command_env(terminal))
-        .stdin(Stdio::inherit())
+        .stdin(match stdin {
+            StdinAccess::Owned => Stdio::inherit(),
+            StdinAccess::Closed => Stdio::null(),
+        })
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
@@ -387,7 +430,7 @@ pub(crate) fn build_command_env(terminal: &TerminalContext) -> HashMap<OsString,
     env_vars
 }
 
-fn configure_terminal_env(env_vars: &mut HashMap<OsString, OsString>, size: portable_pty::PtySize) {
+fn configure_terminal_env(env_vars: &mut HashMap<OsString, OsString>, size: TerminalSize) {
     // Keep explicit user values intact and fill in the standard terminal
     // capability hints when a child is running in a PTY-like execution path.
     env_vars
@@ -481,6 +524,7 @@ fn command_status(status: ExitStatus) -> CommandStatus {
     CommandStatus::Failed("unknown_exit_status".to_string())
 }
 
+#[cfg(unix)]
 pub(crate) fn pty_command_status(status: portable_pty::ExitStatus) -> CommandStatus {
     if status.success() {
         CommandStatus::Success
@@ -508,7 +552,8 @@ mod tests {
     #[cfg(unix)]
     use super::OutputStream;
     use super::{
-        CommandStatus, TerminalBackend, configure_terminal_env, enable_color, terminal_context,
+        CommandStatus, TerminalBackend, TerminalSize, configure_terminal_env, enable_color,
+        terminal_context,
     };
     #[cfg(any(unix, windows))]
     use super::{TerminalContext, run_with_system_shell};
@@ -573,30 +618,6 @@ mod tests {
 
     #[cfg(windows)]
     #[test]
-    fn pwsh_pty_exits() {
-        let (result_tx, result_rx) = mpsc::channel();
-        let (output_tx, _output_rx) = mpsc::channel();
-        std::thread::spawn(move || {
-            let result = run_with_system_shell(
-                "pwsh",
-                "-Command",
-                "exit 0",
-                std::path::Path::new("."),
-                output_tx,
-                &TerminalContext::pty(),
-            );
-            let _ = result_tx.send(result);
-        });
-
-        let status = result_rx
-            .recv_timeout(Duration::from_secs(5))
-            .expect("PowerShell PTY should exit promptly")
-            .expect("PowerShell PTY should run");
-        assert_eq!(status, CommandStatus::Success);
-    }
-
-    #[cfg(windows)]
-    #[test]
     fn detached_child_outlives_task() {
         // The Windows installer task spawns a helper that waits for `only` to
         // exit before replacing the running binary. The job object that groups a
@@ -624,7 +645,7 @@ mod tests {
             &command,
             std::path::Path::new("."),
             output_tx,
-            &TerminalContext::pty(),
+            &TerminalContext::pipe(),
         )
         .expect("PowerShell should run");
         assert_eq!(status, CommandStatus::Success);
@@ -825,15 +846,7 @@ mod tests {
     #[test]
     fn terminal_env_has_hints() {
         let mut env_vars = HashMap::new();
-        configure_terminal_env(
-            &mut env_vars,
-            portable_pty::PtySize {
-                rows: 31,
-                cols: 97,
-                pixel_width: 0,
-                pixel_height: 0,
-            },
-        );
+        configure_terminal_env(&mut env_vars, TerminalSize { rows: 31, cols: 97 });
 
         assert_eq!(
             env_vars.get(std::ffi::OsStr::new("TERM")),
@@ -859,15 +872,7 @@ mod tests {
             (OsString::from("TERM"), OsString::from("dumb")),
             (OsString::from("COLUMNS"), OsString::from("120")),
         ]);
-        configure_terminal_env(
-            &mut env_vars,
-            portable_pty::PtySize {
-                rows: 31,
-                cols: 97,
-                pixel_width: 0,
-                pixel_height: 0,
-            },
-        );
+        configure_terminal_env(&mut env_vars, TerminalSize { rows: 31, cols: 97 });
 
         assert_eq!(
             env_vars.get(std::ffi::OsStr::new("TERM")),

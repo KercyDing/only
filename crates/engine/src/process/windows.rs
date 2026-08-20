@@ -1,12 +1,3 @@
-use std::io::{Read, Write};
-use std::path::Path;
-use std::sync::mpsc::Sender;
-use std::thread;
-
-use super::{
-    CommandStatus, OutputChunk, OutputStream, TerminalContext, join_output_reader,
-    pty_command_status, wait_for_pty_child,
-};
 use crate::EngineError;
 
 pub(crate) struct ProcessTree {
@@ -27,16 +18,6 @@ impl ProcessTree {
         Ok(Self { job })
     }
 
-    pub(crate) fn attach_pty(child: &mut dyn portable_pty::Child) -> Result<Self, EngineError> {
-        let handle = child.as_raw_handle().ok_or_else(|| {
-            EngineError::Runtime("PTY child did not expose a process handle".to_string())
-        })?;
-        let job = WindowsJob::assign(handle).map_err(|error| {
-            EngineError::Runtime(format!("failed to manage PTY process tree: {error}"))
-        })?;
-        Ok(Self { job })
-    }
-
     pub(crate) fn terminate(&self) -> Result<(), EngineError> {
         self.job.terminate().map_err(|error| {
             EngineError::Runtime(format!("failed to terminate process tree: {error}"))
@@ -46,158 +27,21 @@ impl ProcessTree {
 
 pub(crate) fn configure_process_group(_command: &mut std::process::Command) {}
 
+/// Reports that captured Windows output always flows through pipes.
+///
+/// ConPTY would hand the child a real console, but it emits full-screen redraw
+/// instructions that fight with the task progress `only` draws on the same
+/// screen, and its device queries would reach the host terminal. Tasks that
+/// need a real console take the inherit path instead, where the child writes
+/// straight to the caller's terminal.
 pub(crate) fn uses_pipe_for_system_shell(_program: &str) -> bool {
-    false
+    true
 }
 
 pub(crate) fn add_powershell_process_flags(process: &mut std::process::Command, program: &str) {
     if is_powershell(program) {
         process.args(["-NoLogo", "-NoProfile", "-NonInteractive"]);
     }
-}
-
-pub(crate) fn add_powershell_pty_flags(builder: &mut portable_pty::CommandBuilder, program: &str) {
-    if is_powershell(program) {
-        builder.args(["-NoLogo", "-NoProfile", "-NonInteractive"]);
-    }
-}
-
-pub(crate) fn run_with_system_shell_pty(
-    program: &str,
-    arg: &str,
-    command: &str,
-    working_dir: &Path,
-    output: &Sender<OutputChunk>,
-    terminal: &TerminalContext,
-) -> Result<Option<CommandStatus>, EngineError> {
-    let pty_system = portable_pty::native_pty_system();
-    let pair = match pty_system.openpty(terminal.size) {
-        Ok(pair) => pair,
-        Err(_) => return Ok(None),
-    };
-    let reader = match pair.master.try_clone_reader() {
-        Ok(reader) => reader,
-        Err(_) => return Ok(None),
-    };
-    let closed_input = match pair.master.take_writer() {
-        Ok(writer) => writer,
-        Err(_) => return Ok(None),
-    };
-    let mut builder = portable_pty::CommandBuilder::new(program);
-    builder.set_controlling_tty(true);
-    add_powershell_pty_flags(&mut builder, program);
-    builder.arg(arg);
-    builder.arg(command);
-    builder.cwd(working_dir);
-    for (name, value) in super::build_command_env(terminal) {
-        builder.env(name, value);
-    }
-    let mut child = match pair.slave.spawn_command(builder) {
-        Ok(child) => child,
-        Err(_) => return Ok(None),
-    };
-    let process_tree = ProcessTree::attach_pty(child.as_mut())?;
-    drop(pair.slave);
-    let reader_handle = spawn_conpty_output_reader(reader, closed_input, output.clone());
-    let status = wait_for_pty_child(
-        child.as_mut(),
-        &process_tree,
-        pair.master.as_ref(),
-        terminal.size,
-        &terminal.cancelled,
-    )?;
-    drop(pair.master);
-    join_output_reader(reader_handle)?;
-    Ok(Some(pty_command_status(status)))
-}
-
-fn spawn_conpty_output_reader<R, W>(
-    mut reader: R,
-    mut input: W,
-    output: Sender<OutputChunk>,
-) -> thread::JoinHandle<Result<(), EngineError>>
-where
-    R: Read + Send + 'static,
-    W: Write + Send + 'static,
-{
-    thread::spawn(move || {
-        let mut buffer = [0u8; 8192];
-        let mut pending = Vec::new();
-        let mut replied_to_cursor_query = false;
-
-        loop {
-            let bytes_read = reader.read(&mut buffer).map_err(|error| {
-                EngineError::Runtime(format!("failed to read ConPTY output: {error}"))
-            })?;
-            if bytes_read == 0 {
-                break;
-            }
-            pending.extend_from_slice(&buffer[..bytes_read]);
-            forward_conpty_output(
-                &mut pending,
-                &mut replied_to_cursor_query,
-                &mut input,
-                &output,
-                false,
-            )?;
-        }
-        forward_conpty_output(
-            &mut pending,
-            &mut replied_to_cursor_query,
-            &mut input,
-            &output,
-            true,
-        )
-    })
-}
-
-fn forward_conpty_output<W>(
-    pending: &mut Vec<u8>,
-    replied_to_cursor_query: &mut bool,
-    input: &mut W,
-    output: &Sender<OutputChunk>,
-    eof: bool,
-) -> Result<(), EngineError>
-where
-    W: Write,
-{
-    const CURSOR_QUERY: &[u8] = b"\x1b[6n";
-    const CURSOR_POSITION: &[u8] = b"\x1b[1;1R";
-
-    let mut forwarded = Vec::with_capacity(pending.len());
-    let mut index = 0;
-    while index < pending.len() {
-        let remaining = &pending[index..];
-        // portable-pty enables INHERIT_CURSOR, so ConPTY blocks startup until
-        // its initial cursor-position query receives a response.
-        if !*replied_to_cursor_query
-            && remaining.len() < CURSOR_QUERY.len()
-            && CURSOR_QUERY.starts_with(remaining)
-            && !eof
-        {
-            break;
-        }
-        if !*replied_to_cursor_query && remaining.starts_with(CURSOR_QUERY) {
-            input.write_all(CURSOR_POSITION).map_err(|error| {
-                EngineError::Runtime(format!("failed to answer ConPTY cursor query: {error}"))
-            })?;
-            *replied_to_cursor_query = true;
-            index += CURSOR_QUERY.len();
-        } else {
-            forwarded.push(pending[index]);
-            index += 1;
-        }
-    }
-    pending.drain(..index);
-    if !forwarded.is_empty() {
-        output
-            .send(OutputChunk {
-                stream: OutputStream::Stdout,
-                bytes: forwarded,
-            })
-            .map_err(|_| EngineError::Runtime("failed to forward task output".to_string()))?;
-    }
-    Ok(())
 }
 
 fn is_powershell(program: &str) -> bool {
