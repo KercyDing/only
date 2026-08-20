@@ -222,7 +222,7 @@ fn format_top_level_node(node: SyntaxNode, source: &str) -> Result<(ItemKind, St
             let text = if value.is_empty() {
                 format!("[{field}]")
             } else {
-                format!("[{field}] {value}")
+                format!("[{field}] {}", normalize_interpolations(&value))
             };
             Ok((ItemKind::Metadata, text))
         }
@@ -540,14 +540,43 @@ fn format_task_body(raw: &str) -> String {
             if content.is_empty() {
                 format!("{INDENT}|")
             } else {
-                format!("{INDENT}| {content}")
+                format!("{INDENT}| {}", normalize_interpolations(content))
             }
         } else {
-            format!("{INDENT}{body}")
+            format!("{INDENT}{}", normalize_interpolations(body))
         };
         output.push(formatted);
     }
     output.join("\n")
+}
+
+fn normalize_interpolations(input: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut index = 0;
+
+    while index < input.len() {
+        let remaining = &input[index..];
+        if remaining.starts_with("{{")
+            && (index == 0 || input.as_bytes()[index - 1] != b'\\')
+            && let Some(end) = remaining[2..].find("}}")
+        {
+            let end = index + 2 + end;
+            output.push_str("{{");
+            output.push_str(input[index + 2..end].trim());
+            output.push_str("}}");
+            index = end + 2;
+            continue;
+        }
+
+        let character = remaining
+            .chars()
+            .next()
+            .expect("index must remain within input");
+        output.push(character);
+        index += character.len_utf8();
+    }
+
+    output
 }
 
 fn source_range(source: &str, range: TextRange) -> &str {

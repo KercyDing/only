@@ -17,6 +17,48 @@ fn formatting_is_idempotent() {
 }
 
 #[test]
+fn normalizes_interpolation_spacing() {
+    let source = concat!(
+        "build(name):\n",
+        "    echo {{ name }} {{  name  }} {{name}}\n",
+        "    | echo \\{{ name \\}}\n",
+    );
+
+    assert_eq!(
+        format_source(source).expect("valid source should format"),
+        concat!(
+            "build(name):\n",
+            "    echo {{name}} {{name}} {{name}}\n",
+            "    | echo \\{{ name \\}}\n",
+        )
+    );
+}
+
+#[test]
+fn normalizes_metadata_interpolation_spacing() {
+    let source = concat!(
+        "[help] Build {{ name }}\n",
+        "[desc] Uses {{  profile  }}.\n",
+        "[pass] Built {{name}}\n",
+        "[fail] Failed {{ name }}\n",
+        "build(name):\n",
+        "    true\n",
+    );
+
+    assert_eq!(
+        format_source(source).expect("valid source should format"),
+        concat!(
+            "[help] Build {{name}}\n",
+            "[desc] Uses {{profile}}.\n",
+            "[pass] Built {{name}}\n",
+            "[fail] Failed {{name}}\n",
+            "build(name):\n",
+            "    true\n",
+        )
+    );
+}
+
+#[test]
 fn wraps_long_task_headers() {
     let source = concat!(
         "release(channel=\"nightly-build-with-a-long-channel-name\", ",
