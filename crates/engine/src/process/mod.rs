@@ -492,13 +492,7 @@ pub(crate) fn pty_command_status(status: portable_pty::ExitStatus) -> CommandSta
 }
 
 fn platform_exit_reason(code: i32) -> String {
-    if cfg!(windows) {
-        format!("windows_exit_code({code})")
-    } else if cfg!(unix) {
-        format!("unix_exit_code({code})")
-    } else {
-        format!("exit_code({code})")
-    }
+    format!("exit code {code}")
 }
 
 #[cfg(test)]
@@ -523,13 +517,7 @@ mod tests {
         let reason = status
             .failure_reason()
             .expect("a non-zero status should have a failure reason");
-        let expected = if cfg!(windows) {
-            "windows_exit_code(1)"
-        } else if cfg!(unix) {
-            "unix_exit_code(1)"
-        } else {
-            "exit_code(1)"
-        };
+        let expected = "exit code 1";
 
         assert_eq!(reason, expected);
         assert!(!reason.contains("ExitCode("));

@@ -679,7 +679,7 @@ fn task_body_steps(node: &SyntaxNode) -> impl Iterator<Item = TaskStepNode> + '_
         let line = lines[index];
         let trimmed = line.text.trim_start_matches([' ', '\t']);
         if block_line_content(trimmed).is_none() {
-            if !trimmed.is_empty() && !trimmed.starts_with("//") {
+            if !trimmed.is_empty() && !trimmed.starts_with('#') {
                 let indent = line.text.len() - trimmed.len();
                 steps.push(TaskStepNode::Command(TaskCommandNode {
                     text: SmolStr::new(trimmed),

@@ -66,7 +66,7 @@ fn gates_before_full_parse() {
 #[test]
 fn compiles_after_compatible_gate() {
     let compiled = compile_document_for_runner(
-        "\u{feff}// tasks\r\n!version 0.1\r\n\r\nbuild():\r\n    true\r\n",
+        "\u{feff}# tasks\r\n!version 0.1\r\n\r\nbuild():\r\n    true\r\n",
         "0.8.0",
     );
 

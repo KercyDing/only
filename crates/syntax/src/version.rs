@@ -45,7 +45,7 @@ pub fn scan_bootstrap_header(source: &str) -> Result<BootstrapHeader, Diagnostic
         let leading = line.len() - line.trim_start_matches([' ', '\t']).len();
         let declaration = &line[leading..];
 
-        if declaration.is_empty() || declaration.starts_with("//") || declaration.starts_with('#') {
+        if declaration.is_empty() || declaration.starts_with('#') {
             offset = next_line_offset(source, line_end);
             continue;
         }

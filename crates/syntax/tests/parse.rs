@@ -106,7 +106,7 @@ fn recovers_after_unexpected_top_level_token() {
 
 #[test]
 fn keeps_parsing_after_comments_and_blank_lines() {
-    let parsed = parse("# docs\n\n// comment\nbuild():\n    cargo build\n");
+    let parsed = parse("# docs\n\nbuild():\n    cargo build\n");
     let kinds: Vec<_> = parsed.root_children().map(|node| node.kind()).collect();
 
     assert!(kinds.contains(&SyntaxKind::TaskDecl));
@@ -136,7 +136,7 @@ fn parses_task_metadata_without_group_conflicts() {
 
 #[test]
 fn top_level_comment_ends_previous_task_body() {
-    let parsed = parse("build():\n    cargo build\n// comment\ncheck():\n    cargo check\n");
+    let parsed = parse("build():\n    cargo build\n# comment\ncheck():\n    cargo check\n");
     let task_count = parsed
         .root_children()
         .filter(|node| node.kind() == SyntaxKind::TaskDecl)
@@ -178,7 +178,7 @@ fn reports_malformed_directive_and_recovers() {
 
 #[test]
 fn reports_inline_comment_in_directive() {
-    let parsed = parse("!shell bash // comment\nbuild():\n    cargo build\n");
+    let parsed = parse("!shell bash # comment\nbuild():\n    cargo build\n");
     let task_count = parsed
         .root_children()
         .filter(|node| node.kind() == SyntaxKind::TaskDecl)
@@ -217,7 +217,7 @@ fn reports_malformed_task_params_and_recovers() {
 
 #[test]
 fn reports_inline_comment_in_task_header() {
-    let parsed = parse("build(): // comment\nnext():\n    echo next\n");
+    let parsed = parse("build(): # comment\nnext():\n    echo next\n");
     let task_count = parsed
         .root_children()
         .filter(|node| node.kind() == SyntaxKind::TaskDecl)

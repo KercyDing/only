@@ -477,7 +477,7 @@ fn propagates_command_failure() {
     let error = run_plan(&plan).expect_err("runtime should return contextual error");
     let rendered = error.to_string();
     assert!(rendered.contains("task 'fail' failed at step [1/1]"));
-    assert!(rendered.contains("due to "));
+    assert!(rendered.contains(" with "));
     assert!(!rendered.contains("ExitCode("));
     assert!(!rendered.contains("command:"));
 }
@@ -925,7 +925,7 @@ demo():
     let failure_stderr = strip_ansi(
         &String::from_utf8(failure.stderr).expect("failure stderr should be valid utf-8"),
     );
-    let error = "Error: task 'demo' failed at step [1/1] due to unix_exit_code(1)";
+    let error = "Error: task 'demo' failed at step [1/1] with exit code 1";
     let error_index = failure_stderr
         .find(error)
         .expect("runtime error should be printed");
@@ -934,7 +934,7 @@ demo():
         .expect("failure message should be printed");
 
     assert_ne!(failure.status.code(), Some(0));
-    assert!(error_index < message_index);
+    assert!(message_index < error_index);
     assert!(!failure_stderr.contains("ExitCode("));
     assert!(!failure_stderr.contains("Fail:"));
     assert!(!failure_stderr.contains("command:"));

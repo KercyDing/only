@@ -34,6 +34,7 @@ check():
 [fail] Clippy failed.
 clippy():
     cargo clippy {{cargo_flags}} -- -D warnings
+    echo "Done"
 
 [help] Run tests
 [desc] Use cargo-nextest.

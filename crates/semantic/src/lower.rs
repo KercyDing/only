@@ -115,10 +115,11 @@ pub(crate) fn lower_syntax(snapshot: &SyntaxSnapshot) -> (DocumentAst, Vec<Diagn
             left_directive_region = true;
             discard_detached_metadata(&mut pending_docs, &source, task.range().start());
             let docs = std::mem::take(&mut pending_docs);
+            let has_guard = task.header_info().guard.is_some();
             let empty_body_range = task
                 .header()
                 .and_then(|header| header.terminator().map(|terminator| terminator.range()))
-                .filter(|_| task.steps().next().is_none());
+                .filter(|_| !has_guard && task.steps().next().is_none());
             match lower_task(&task, current_namespace.clone(), docs) {
                 Ok(task) => {
                     if let Some(range) = empty_body_range {
@@ -194,7 +195,7 @@ fn discard_detached_metadata(
         || gap.contains('\r')
         || gap.lines().any(|line| {
             let line = line.trim_start();
-            line.starts_with('#') || line.starts_with("//")
+            line.starts_with('#')
         });
     if detached {
         pending.clear();

@@ -10,9 +10,7 @@ use std::thread;
 
 use only_semantic::{ShellKind, ShellSelection};
 
-use crate::error::{
-    command_block_failed, command_block_start_failed, command_failed, task_failure,
-};
+use crate::error::{command_block_failed, command_block_start_failed, command_failed};
 use crate::interpolate::{interpolate, interpolate_with_parts};
 use crate::process::{OutputChunk, OutputStream, TerminalContext, begin_terminal_invocation};
 use crate::shell::{run_command, run_command_inherit};
@@ -225,15 +223,13 @@ pub fn run_plan_with_options(
                     options.quiet,
                 )?;
                 buffers[current_index].flush()?;
-                let mut task_error = task_errors[current_index].take();
+                let task_error = task_errors[current_index].take();
                 match results[current_index].take() {
                     Some(TaskResult::Pass(message)) if !options.quiet => {
-                        print_task_message(&message)?
+                        print_task_message(&message, false)?
                     }
                     Some(TaskResult::Fail(message)) => {
-                        if let Some(error) = task_error.take() {
-                            task_error = Some(task_failure(error, message));
-                        }
+                        print_task_message(&message, true)?;
                     }
                     Some(TaskResult::Pass(_)) | None => {}
                 }
@@ -488,9 +484,13 @@ fn task_result_message(node: &ExecutionNode, success: bool) -> Result<Option<Str
         .transpose()
 }
 
-fn print_task_message(message: &str) -> Result<(), EngineError> {
+fn print_task_message(message: &str, failure: bool) -> Result<(), EngineError> {
     let style = TermStyle::new()
-        .fg_color(Some(TermAnsiColor::BrightGreen.into()))
+        .fg_color(Some(if failure {
+            TermAnsiColor::BrightRed.into()
+        } else {
+            TermAnsiColor::BrightGreen.into()
+        }))
         .bold();
     let rendered = format!("{}{}{}\n", style.render(), message, style.render_reset());
     write_stderr(rendered.as_bytes())

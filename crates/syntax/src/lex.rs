@@ -45,8 +45,6 @@ enum RawTokenKind {
     String,
     #[regex(r"[A-Za-z_-][A-Za-z0-9_-]*")]
     Ident,
-    #[regex(r"//[^\n]*", allow_greedy = true)]
-    Comment,
     #[regex(r"[ \t]+")]
     Spaces,
     #[regex(r"\r\n|\n|\r")]
@@ -92,7 +90,6 @@ pub fn lex(source: &str) -> Vec<LexToken> {
             Ok(RawTokenKind::String) => SyntaxKind::String,
             Ok(RawTokenKind::Ident) if text == GROUP_KEYWORD => SyntaxKind::GroupKw,
             Ok(RawTokenKind::Ident) => SyntaxKind::Ident,
-            Ok(RawTokenKind::Comment) => SyntaxKind::Comment,
             Ok(RawTokenKind::Newline) => SyntaxKind::Newline,
             Ok(RawTokenKind::Spaces) if line_start => SyntaxKind::Indent,
             Ok(RawTokenKind::Spaces) => SyntaxKind::Whitespace,

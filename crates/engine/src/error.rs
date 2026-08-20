@@ -26,10 +26,6 @@ pub enum EngineError {
         shell: String,
         source: Box<EngineError>,
     },
-    TaskFailure {
-        source: Box<EngineError>,
-        message: String,
-    },
     Interpolation(String),
     ShellNotFound(String),
     UnsupportedShell(String),
@@ -52,7 +48,7 @@ impl fmt::Display for EngineError {
                 reason,
             } => write!(
                 f,
-                "task '{task}' failed at step [{step}/{total}] due to {}",
+                "task '{task}' failed at step [{step}/{total}] with {}",
                 reason
             ),
             Self::CommandBlockFailed {
@@ -62,7 +58,7 @@ impl fmt::Display for EngineError {
                 reason,
             } => write!(
                 f,
-                "task '{task}' failed at step [{step}/{total}] due to {}",
+                "task '{task}' failed at step [{step}/{total}] with {}",
                 reason
             ),
             Self::CommandBlockStartFailed { shell, source } => {
@@ -71,7 +67,6 @@ impl fmt::Display for EngineError {
                     "could not start command block with shell '{shell}'\n{source}"
                 )
             }
-            Self::TaskFailure { source, message } => write!(f, "{source}\n{message}"),
             Self::Interpolation(message) => f.write_str(message),
             Self::ShellNotFound(message) => f.write_str(message),
             Self::UnsupportedShell(shell) => write!(f, "shell '{shell}' is not supported"),
@@ -103,9 +98,7 @@ impl std::error::Error for EngineError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io { source, .. } => Some(source),
-            Self::CommandBlockStartFailed { source, .. } | Self::TaskFailure { source, .. } => {
-                Some(source.as_ref())
-            }
+            Self::CommandBlockStartFailed { source, .. } => Some(source.as_ref()),
             _ => None,
         }
     }
@@ -120,13 +113,6 @@ pub(crate) fn command_block_start_failed(shell: &str, source: EngineError) -> En
             source: Box::new(source),
         },
         other => other,
-    }
-}
-
-pub(crate) fn task_failure(source: EngineError, message: String) -> EngineError {
-    EngineError::TaskFailure {
-        source: Box::new(source),
-        message,
     }
 }
 

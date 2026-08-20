@@ -10,7 +10,7 @@ fn diagnostic_code(source: &str) -> DiagnosticCode {
 
 #[test]
 fn scans_header_trivia_and_span() {
-    let source = "\u{feff}\r\n// project tasks\r\n# language gate\r\n  !version 0.12\r\nbuild():\r\n    true\r\n";
+    let source = "\u{feff}\r\n# project tasks\r\n# language gate\r\n  !version 0.12\r\nbuild():\r\n    true\r\n";
     let header = scan_bootstrap_header(source).expect("header should scan");
     let requirement = header.required_version.expect("version should be present");
     let span = &source[usize::from(requirement.span.start())..usize::from(requirement.span.end())];
@@ -101,7 +101,7 @@ fn validates_runner_semver() {
 
 #[test]
 fn reparses_compatible_source_from_start() {
-    let source = "\u{feff}// tasks\n!version 1.2\n\nbuild():\n    true\n";
+    let source = "\u{feff}# tasks\n!version 1.2\n\nbuild():\n    true\n";
     bootstrap(source, "1.8.4+build.2").expect("version should be compatible");
     let syntax = snapshot(source);
     let directive = syntax

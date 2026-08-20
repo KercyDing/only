@@ -65,11 +65,52 @@ fn snapshot_exposes_typed_document_root() {
 
 #[test]
 fn skips_task_body_comment_lines() {
-    let syntax = snapshot("check():\n    // comment\n    cargo check\n");
+    let syntax = snapshot("check():\n    # comment\n    cargo check\n");
     let document = syntax.document();
     let task = document.tasks().next().expect("task should exist");
 
     assert_eq!(task.commands().collect::<Vec<_>>(), vec!["cargo check"]);
+}
+
+#[test]
+fn keeps_hash_command() {
+    let syntax = snapshot("clippy():\n    # Nothing here\n    cargo clippy --all-targets\n");
+    let task = syntax.document().tasks().next().expect("task should exist");
+
+    assert_eq!(
+        task.commands().collect::<Vec<_>>(),
+        vec!["cargo clippy --all-targets"]
+    );
+}
+
+#[test]
+fn keeps_full_command() {
+    let syntax = snapshot(
+        "!version 0.4\n!var cargo_flags = \"--all-targets\"\n\n[help] Lint code\nclippy():\n    # Nothing here\n    cargo clippy {{cargo_flags}} -- -D warnings\n",
+    );
+    let tasks = syntax.document().tasks().collect::<Vec<_>>();
+    assert_eq!(tasks.len(), 1);
+    assert_eq!(
+        tasks[0].commands().collect::<Vec<_>>(),
+        vec!["cargo clippy {{cargo_flags}} -- -D warnings"]
+    );
+}
+
+#[test]
+fn repo_clippy_command() {
+    let syntax = snapshot(include_str!("../../../Onlyfile"));
+    let task = syntax
+        .document()
+        .tasks()
+        .find(|task| task.name().as_deref() == Some("clippy"))
+        .expect("clippy task should exist");
+    assert_eq!(
+        task.commands().collect::<Vec<_>>(),
+        vec![
+            "cargo clippy {{cargo_flags}} -- -D warnings",
+            "echo \"Done\""
+        ]
+    );
 }
 
 #[test]
@@ -238,7 +279,7 @@ fn recognizes_only_delimited_block_markers() {
 
 #[test]
 fn blank_lines_and_comments_split_blocks() {
-    let syntax = snapshot("task():\n    | first\n\n    | second\n    // separator\n    | third\n");
+    let syntax = snapshot("task():\n    | first\n\n    | second\n    # separator\n    | third\n");
     let task = syntax.document().tasks().next().expect("task should exist");
     let steps = task.steps().collect::<Vec<_>>();
 

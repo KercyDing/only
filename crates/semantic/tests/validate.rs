@@ -1,4 +1,42 @@
-use only_semantic::compile_document;
+use only_semantic::{compile_document, compile_document_for_runner};
+
+#[test]
+fn keeps_hash_command() {
+    let source = "!version 0.4\n!var cargo_flags = \"--all-targets\"\n\n[help] Lint code\n[pass] Clippy passed.\n[fail] Clippy failed.\nclippy():\n    # Nothing here\n    cargo clippy {{cargo_flags}} -- -D warnings\n";
+    let compiled = compile_document_for_runner(source, "0.5.0");
+    assert!(
+        !compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "semantic.empty-task-body"),
+        "diagnostics: {:?}",
+        compiled.diagnostics
+    );
+}
+
+#[test]
+fn repo_has_no_empty_tasks() {
+    let compiled = compile_document_for_runner(include_str!("../../../Onlyfile"), "0.5.0");
+    assert!(
+        !compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.code.as_str() == "semantic.empty-task-body"),
+        "diagnostics: {:?}",
+        compiled.diagnostics
+    );
+}
+
+#[test]
+fn allows_guarded_empty() {
+    let compiled = compile_document("test() ? @has(\"tool\"):\n    # disabled\n");
+    assert!(
+        !compiled
+            .diagnostics
+            .iter()
+            .any(|diagnostic| { diagnostic.code.as_str() == "semantic.empty-task-body" })
+    );
+}
 
 #[test]
 fn reports_validation_errors_for_dependencies_and_variables() {

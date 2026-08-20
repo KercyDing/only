@@ -14,13 +14,13 @@ fn lexes_directive_task_and_trivia() {
 
 #[test]
 fn keeps_comment_and_unknown_tokens() {
-    let tokens = lex("# doc\n// tail\n@\n");
+    let tokens = lex("# doc\n@\n");
     assert_eq!(
         tokens
             .iter()
             .filter(|token| token.kind == SyntaxKind::Comment)
             .count(),
-        2
+        1
     );
     assert!(tokens.iter().any(|token| token.kind == SyntaxKind::At));
 }

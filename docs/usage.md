@@ -779,7 +779,6 @@ Check that:
 
 | Syntax | Meaning |
 | --- | --- |
-| `// text` | ordinary comment |
 | `# text` | ordinary comment |
 | `!version MAJOR.MINOR` | tell `only` the oldest language version your file needs |
 | `!shell bash` | set the file-level shell |

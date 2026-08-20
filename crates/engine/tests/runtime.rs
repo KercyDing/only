@@ -39,7 +39,7 @@ fn reports_command_failure_with_context() {
     let error = run_plan(&plan).expect_err("runtime should fail");
     let rendered = error.to_string();
     assert!(rendered.contains("task 'fail' failed at step [1/1]"));
-    assert!(rendered.contains("due to "));
+    assert!(rendered.contains(" with "));
     assert!(!rendered.contains("ExitCode("));
     assert!(!rendered.contains("command:"));
 }
@@ -203,7 +203,7 @@ fn reports_command_block_failure() {
     let error = run_plan(&plan).expect_err("block should fail");
     let rendered = error.to_string();
     assert!(rendered.contains("step [1/2]"));
-    assert!(rendered.contains("due to "));
+    assert!(rendered.contains(" with "));
     assert!(!rendered.contains("ExitCode("));
 }
 
@@ -243,7 +243,7 @@ fn handles_signal_exit_from_block() {
     let error = run_plan(&plan).expect_err("signal should fail the block");
     let rendered = error.to_string();
     assert!(rendered.contains("task 'signal' failed at step [1/2]"));
-    assert!(rendered.contains("due to "));
+    assert!(rendered.contains(" with "));
     assert!(!rendered.contains("ExitCode("));
 }
 

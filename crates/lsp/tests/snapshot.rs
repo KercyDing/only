@@ -33,7 +33,7 @@ fn keeps_uri_when_reparsing_new_version() {
 #[test]
 fn ordinary_comment_has_no_hover() {
     let source =
-        "// section header\n\n# macOS-only task.\nbuild-macos(target=\"debug\"):\n    echo ok\n";
+        "# section header\n\n# macOS-only task.\nbuild-macos(target=\"debug\"):\n    echo ok\n";
     let snapshot = DocumentSnapshot::new("file:///workspace/Onlyfile", 1, source);
     let offset = TextSize::from(source.find("macOS-only").expect("doc text should exist") as u32);
 
