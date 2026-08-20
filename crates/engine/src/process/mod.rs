@@ -723,12 +723,7 @@ mod tests {
     #[test]
     fn pty_uses_terminal_size() {
         let mut context = TerminalContext::pty();
-        context.size = portable_pty::PtySize {
-            rows: 31,
-            cols: 97,
-            pixel_width: 0,
-            pixel_height: 0,
-        };
+        context.size = TerminalSize { rows: 31, cols: 97 };
         let (output_tx, output_rx) = mpsc::channel();
         let status = run_with_system_shell(
             "sh",
