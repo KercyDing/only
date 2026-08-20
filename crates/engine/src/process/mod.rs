@@ -100,7 +100,7 @@ impl TerminalContext {
         }
     }
 
-    #[cfg(all(test, unix))]
+    #[cfg(test)]
     pub(crate) fn pty() -> Self {
         Self {
             backend: TerminalBackend::Pty,
@@ -500,16 +500,20 @@ mod tests {
     use std::collections::HashMap;
     use std::ffi::OsString;
     use std::io::IsTerminal;
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     use std::sync::mpsc;
+    #[cfg(any(unix, windows))]
+    use std::time::Duration;
     #[cfg(unix)]
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
+    #[cfg(unix)]
+    use super::OutputStream;
     use super::{
         CommandStatus, TerminalBackend, configure_terminal_env, enable_color, terminal_context,
     };
-    #[cfg(unix)]
-    use super::{OutputStream, TerminalContext, run_with_system_shell};
+    #[cfg(any(unix, windows))]
+    use super::{TerminalContext, run_with_system_shell};
 
     #[test]
     fn formats_exit_status_cleanly() {
@@ -566,6 +570,30 @@ mod tests {
         )
         .expect("PTY command should run");
 
+        assert_eq!(status, CommandStatus::Success);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn pwsh_pty_exits() {
+        let (result_tx, result_rx) = mpsc::channel();
+        let (output_tx, _output_rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let result = run_with_system_shell(
+                "pwsh",
+                "-Command",
+                "exit 0",
+                std::path::Path::new("."),
+                output_tx,
+                &TerminalContext::pty(),
+            );
+            let _ = result_tx.send(result);
+        });
+
+        let status = result_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("PowerShell PTY should exit promptly")
+            .expect("PowerShell PTY should run");
         assert_eq!(status, CommandStatus::Success);
     }
 
