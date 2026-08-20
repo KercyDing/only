@@ -117,7 +117,6 @@ pub fn run_plan_with_options(
                 let shell = plan.shell.clone();
                 let event_tx = event_tx.clone();
                 let terminal = terminal.clone();
-                let live_output = index == current_index;
                 // Only the selected root may own the caller's stdin. Dependency
                 // tasks stay isolated even when the graph happens to run serially.
                 let direct = plan.successors[index].is_empty()
@@ -155,7 +154,6 @@ pub fn run_plan_with_options(
                             &working_dir,
                             shell.as_ref(),
                             terminal,
-                            live_output,
                             event_tx,
                         )
                     }
@@ -269,14 +267,8 @@ fn run_node(
     working_dir: &std::path::Path,
     default_shell: Option<&ShellKind>,
     terminal: TerminalContext,
-    live_output: bool,
     event_tx: mpsc::Sender<ExecutionEvent>,
 ) -> Result<(), EngineError> {
-    let terminal = if live_output {
-        terminal
-    } else {
-        terminal.for_captured_output()
-    };
     let (output_tx, output_rx) = mpsc::channel::<OutputChunk>();
     let forwarder = thread::spawn({
         let event_tx = event_tx.clone();
