@@ -503,9 +503,7 @@ mod tests {
     #[cfg(any(unix, windows))]
     use std::sync::mpsc;
     #[cfg(any(unix, windows))]
-    use std::time::Duration;
-    #[cfg(unix)]
-    use std::time::Instant;
+    use std::time::{Duration, Instant};
 
     #[cfg(unix)]
     use super::OutputStream;
@@ -595,6 +593,52 @@ mod tests {
             .expect("PowerShell PTY should exit promptly")
             .expect("PowerShell PTY should run");
         assert_eq!(status, CommandStatus::Success);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn detached_child_outlives_task() {
+        // The Windows installer task spawns a helper that waits for `only` to
+        // exit before replacing the running binary. The job object that groups a
+        // task's process tree must not kill such a helper when it is closed, so
+        // the helper here waits for its own parent shell to exit and only then
+        // writes the marker.
+        let marker =
+            std::env::temp_dir().join(format!("only-detached-child-{}.txt", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let command = format!(
+            concat!(
+                "$script = \"Wait-Process -Id $PID -ErrorAction SilentlyContinue; ",
+                "Set-Content -LiteralPath '{}' -Value survived\"; ",
+                "$encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($script)); ",
+                "Start-Process -WindowStyle Hidden -FilePath (Get-Process -Id $PID).Path ",
+                "-ArgumentList '-NoProfile','-EncodedCommand',$encoded"
+            ),
+            marker.display()
+        );
+
+        let (output_tx, _output_rx) = mpsc::channel();
+        let status = run_with_system_shell(
+            "pwsh",
+            "-Command",
+            &command,
+            std::path::Path::new("."),
+            output_tx,
+            &TerminalContext::pty(),
+        )
+        .expect("PowerShell should run");
+        assert_eq!(status, CommandStatus::Success);
+
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while !marker.exists() && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let survived = marker.exists();
+        let _ = std::fs::remove_file(&marker);
+        assert!(
+            survived,
+            "detached helper should outlive the task process tree"
+        );
     }
 
     #[cfg(unix)]

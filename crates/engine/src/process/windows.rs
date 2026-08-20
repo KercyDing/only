@@ -210,32 +210,22 @@ fn is_powershell(program: &str) -> bool {
 struct WindowsJob(windows_sys::Win32::Foundation::HANDLE);
 
 impl WindowsJob {
+    /// Groups a shell process and every process it spawns, so that cancelling a
+    /// task can terminate the whole tree in one call.
+    ///
+    /// The job deliberately carries no `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`.
+    /// Closing the handle must not kill the members: a task may legitimately
+    /// spawn a process that outlives `only`, such as a Windows installer helper
+    /// that waits for `only` to exit before replacing the running binary.
+    /// Cancellation still tears the tree down through `terminate`.
     fn assign(process: std::os::windows::io::RawHandle) -> std::io::Result<Self> {
-        use std::mem::size_of;
         use std::ptr;
-        use windows_sys::Win32::System::JobObjects::{
-            AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
-            SetInformationJobObject,
-        };
+        use windows_sys::Win32::System::JobObjects::{AssignProcessToJobObject, CreateJobObjectW};
         let handle = unsafe { CreateJobObjectW(ptr::null(), ptr::null()) };
         if handle.is_null() {
             return Err(std::io::Error::last_os_error());
         }
         let job = Self(handle);
-        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        let configured = unsafe {
-            SetInformationJobObject(
-                job.0,
-                JobObjectExtendedLimitInformation,
-                (&raw const limits).cast(),
-                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            )
-        };
-        if configured == 0 {
-            return Err(std::io::Error::last_os_error());
-        }
         let assigned = unsafe { AssignProcessToJobObject(job.0, process.cast()) };
         if assigned == 0 {
             return Err(std::io::Error::last_os_error());
