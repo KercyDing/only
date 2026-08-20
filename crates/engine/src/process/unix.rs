@@ -47,12 +47,6 @@ pub(crate) fn uses_pipe_for_system_shell(_program: &str) -> bool {
     false
 }
 
-pub(crate) fn add_powershell_pty_flags(
-    _builder: &mut portable_pty::CommandBuilder,
-    _program: &str,
-) {
-}
-
 pub(crate) fn run_with_system_shell_pty(
     program: &str,
     arg: &str,
