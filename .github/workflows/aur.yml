@@ -19,7 +19,7 @@ jobs:
           - pkg: only-git
             dir: packaging/arch/only-git
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Normalize version
         id: version

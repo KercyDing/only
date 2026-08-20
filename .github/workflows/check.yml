@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -28,7 +28,7 @@ jobs:
         run: cargo fmt --all --check
 
       - name: Check build
-        run: cargo check --workspace --locked
+        run: cargo check --workspace --all-targets --locked
 
       - name: Check lints
         run: cargo clippy --workspace --all-targets -- -D warnings
@@ -37,7 +37,7 @@ jobs:
         run: cargo build --workspace --bins --locked
 
       - name: Run tests
-        run: cargo nextest run --workspace --locked
+        run: cargo nextest run --workspace --no-fail-fast --locked
 
   platform-tests:
     name: Platform tests (${{ matrix.os }})
@@ -51,7 +51,7 @@ jobs:
           - windows-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@master
         with:
@@ -63,7 +63,7 @@ jobs:
         uses: taiki-e/install-action@nextest
 
       - name: Check build
-        run: cargo check --workspace --locked
+        run: cargo check --workspace --all-targets --locked
 
       - name: Run tests
-        run: cargo nextest run --workspace --locked
+        run: cargo nextest run --workspace --no-fail-fast --locked
