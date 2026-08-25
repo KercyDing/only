@@ -277,3 +277,15 @@ fn blank_line_detaches_metadata() {
 
     assert!(compiled.document.tasks[0].metadata.help.is_none());
 }
+
+#[test]
+fn comment_does_not_detach_metadata() {
+    let compiled = compile_document(
+        "!version 0.4\n[help] Build selected targets\n# only build app\nbuild(target..):\n    true\n",
+    );
+
+    assert_eq!(
+        compiled.document.tasks[0].metadata.help.as_deref(),
+        Some("Build selected targets")
+    );
+}

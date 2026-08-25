@@ -191,12 +191,8 @@ fn discard_detached_metadata(
     let start = usize::from(last.range().end());
     let end = usize::from(declaration_start);
     let gap = source.get(start..end).unwrap_or_default();
-    let detached = gap.contains('\n')
-        || gap.contains('\r')
-        || gap.lines().any(|line| {
-            let line = line.trim_start();
-            line.starts_with('#')
-        });
+    let detached = (gap.contains('\n') || gap.contains('\r'))
+        && gap.lines().any(|line| line.trim().is_empty());
     if detached {
         pending.clear();
     }
